@@ -1,63 +1,57 @@
 # Learning Drasi Server
 
-Tutorials and learning resources for [Drasi Server](https://github.com/drasi-project/drasi-server) — a
-standalone server for real-time data change processing.
+Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-server).
 
-Drasi Server monitors your data sources, runs continuous queries, and triggers automated
-reactions when results change — all through a simple YAML configuration or visual Web UI.
-This repository contains hands-on tutorials that show you how to build change-driven
-solutions with Drasi Server.
-
-> Looking for Drasi on Kubernetes (the Drasi Platform)? See the
-> [`drasi-project/learning`](https://github.com/drasi-project/learning) repository instead.
-
-## Getting Started
-
-The fastest way to try a tutorial is in the browser with GitHub Codespaces — no local setup
-required.
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/drasi-project/learning-drasi-server)
-
-Or run a tutorial locally. All you need is [Docker](https://docs.docker.com/get-docker/):
-
-```bash
-git clone https://github.com/drasi-project/learning-drasi-server.git
-cd learning-drasi-server/tutorial/getting-started
-docker compose up
-```
+If you are looking for Drasi Platform (Kubernetes) tutorials, use
+[drasi-project/learning](https://github.com/drasi-project/learning).
 
 ## Tutorials
 
-| Tutorial | Description |
-| --- | --- |
-| [Getting Started](tutorial/getting-started) | Create your first Drasi Server pipeline: a mock source, a continuous query, and a log reaction. |
+| Tutorial | What you learn | How to trigger it |
+| --- | --- | --- |
+| [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Follow [drasi.io/drasi-server/getting-started](https://drasi.io/drasi-server/getting-started/) and run commands from `drasi-server/examples/getting-started` |
 
-More tutorials will be added over time. See [tutorial/](tutorial) for the full list and the
-[tutorial template](tutorial/TEMPLATE) for authoring guidance.
+See [tutorials](tutorials) for the full list of tutorials.
 
-## Repository Layout
+## Run Locally
 
+For the current getting-started tutorial, use the canonical upstream files in
+`drasi-server/examples/getting-started`:
+
+```bash
+git clone https://github.com/drasi-project/drasi-server.git
+cd drasi-server/examples/getting-started
 ```
-tutorial/                 # One folder per tutorial
-  getting-started/        # First tutorial
-  TEMPLATE/               # Starting point for new tutorials
-.devcontainer/            # Codespaces / Dev Container configuration
-.github/                  # Workflows, issue templates, labels, CODEOWNERS
-```
 
-## Contributing
+Then follow:
 
-Contributions are welcome! See the org-wide
-[CONTRIBUTING.md](https://github.com/drasi-project/.github/blob/main/CONTRIBUTING.md) and
-[Code of Conduct](https://github.com/drasi-project/.github/blob/main/CODE_OF_CONDUCT.md)
-for how to contribute.
+- [drasi.io/drasi-server/getting-started](https://drasi.io/drasi-server/getting-started/)
+- [examples/getting-started README](https://github.com/drasi-project/drasi-server/tree/main/examples/getting-started)
 
-## Related Projects
+## Run in a Dev Container
 
-- [Drasi Server](https://github.com/drasi-project/drasi-server) — the standalone change-processing server
-- [Drasi Platform](https://github.com/drasi-project) — the full Drasi project
-- [Drasi Documentation](https://drasi.io/) — complete documentation
+From the repository root:
+
+1. Open in VS Code.
+2. Run Reopen in Container.
+3. The dev container opens directly in [tutorials/getting-started](tutorials/getting-started).
+4. Follow [tutorials/getting-started](tutorials/getting-started), which points to the upstream
+	`drasi-server/examples/getting-started` steps.
+
+## Run in Codespaces
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/drasi-project/learning-drasi-server)
+
+After the Codespace starts, follow the getting-started guide in
+[tutorials/getting-started](tutorials/getting-started).
+
+## Project Links
+
+- [Drasi Server](https://github.com/drasi-project/drasi-server)
+- [Drasi Documentation](https://drasi.io/)
+- [Org contributing guide](https://github.com/drasi-project/.github/blob/main/CONTRIBUTING.md)
+- [Code of Conduct](https://github.com/drasi-project/.github/blob/main/CODE_OF_CONDUCT.md)
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE)
