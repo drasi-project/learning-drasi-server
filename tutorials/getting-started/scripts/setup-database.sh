@@ -59,6 +59,7 @@ $COMPOSE_CMD down -v 2>/dev/null || true
 
 # Start PostgreSQL
 echo "Starting PostgreSQL with WAL replication..."
+docker network inspect drasi-network >/dev/null 2>&1 || docker network create drasi-network >/dev/null
 $COMPOSE_CMD up -d
 
 # Wait for PostgreSQL to be ready
