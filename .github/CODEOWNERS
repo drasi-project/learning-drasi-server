@@ -1,0 +1,4 @@
+# Default owners for everything in this repository.
+# NOTE: confirm/adjust the team to match the org's repo-standardization plan
+# (e.g. a dedicated maintainers-learning-server team).
+* @drasi-project/maintainers-server

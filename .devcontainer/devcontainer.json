@@ -1,0 +1,32 @@
+{
+  "name": "Drasi Server - Getting Started",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/tutorial/getting-started",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "hostRequirements": {
+    "cpus": 4
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": "false"
+    }
+  },
+  "onCreateCommand": "sed -i 's/\\r$//' ../../.devcontainer/post-create.sh",
+  "postCreateCommand": "bash ../../.devcontainer/post-create.sh",
+  "runArgs": [
+    "--init"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "portsAttributes": {
+    "8080": {
+      "label": "drasi-server",
+      "onAutoForward": "notify"
+    }
+  }
+}

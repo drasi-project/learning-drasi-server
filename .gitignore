@@ -1,0 +1,25 @@
+# Build artifacts
+target/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Drasi Server runtime data
+data/
+*.redb
+
+# Environment files
+.env
+.env.local
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json

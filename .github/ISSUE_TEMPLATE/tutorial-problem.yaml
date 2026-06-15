@@ -1,0 +1,45 @@
+name: Tutorial problem
+description: Report a tutorial that is broken, unclear, or out of date.
+title: "[tutorial] <short summary>"
+labels: ["bug", "tutorial"]
+body:
+  - type: input
+    id: tutorial
+    attributes:
+      label: Which tutorial?
+      description: The tutorial folder name, e.g. "getting-started".
+      placeholder: getting-started
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What went wrong?
+      description: Describe the problem. Include the step number where it occurred.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output or logs
+      description: Paste any error messages or command output. This is automatically formatted as code.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: How are you running the tutorial (Codespaces, local Docker, OS, Docker version)?
+      placeholder: |
+        - Running in: local Docker
+        - OS: macOS 14
+        - Docker version: 27.x
+    validations:
+      required: false
