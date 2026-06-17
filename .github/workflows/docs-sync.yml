@@ -1,0 +1,32 @@
+name: Docs Sync
+
+on:
+  pull_request:
+    paths:
+      - "tutorials/**/index.md"
+      - "tutorials/**/README.md"
+      - "scripts/render-tutorials.py"
+      - ".github/workflows/docs-sync.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tutorials/**/index.md"
+      - "tutorials/**/README.md"
+      - "scripts/render-tutorials.py"
+      - ".github/workflows/docs-sync.yml"
+
+jobs:
+  check-generated-readmes:
+    name: Verify tutorial READMEs are in sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Verify generated READMEs match index.md sources
+        run: python3 scripts/render-tutorials.py --check

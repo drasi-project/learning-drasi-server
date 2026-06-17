@@ -1,4 +1,3 @@
-<!-- DO NOT EDIT. Generated from index.md by scripts/render-tutorials.py. Edit index.md and run `python3 scripts/render-tutorials.py`. -->
 
 Imagine you want to react the instant data changes — a new row in a database, a value crossing a threshold, or something that *should* have changed but didn't. Maybe something more complex like cross-referencing the pods running on your Kubernetes cluster against a database of vulnerable and non-compliant images.
 
@@ -58,11 +57,11 @@ You'll configure each of these building blocks yourself as you work through the 
 | **[Step 5: Add an Aggregation Query](#phase-3)** | Add a query with `count()` — see aggregations update automatically as data changes and add a new Reaction that generates Server-Sent Events (SSE) when query results change | 5 min |
 | **[Step 6: Add Time-Based Detection](#phase-4)** | Detect the *absence of change* over time — a powerful capability for monitoring and alerting | 5 min |
 
-> **Before you begin**
->
-> - **Terminals:** you'll use more than one. **Terminal 1** runs Drasi Server; use **Terminal 2** for `docker` and `curl` commands. Step 5 adds **Terminal 3** for the SSE CLI.
-> - **Command tabs:** commands are shown in tabs (for example *bash / zsh* and *PowerShell*) — use the one for your shell.
-> - **Expected output** blocks are illustrative — exact versions, IDs, and timestamps will differ. Field ordering may also differ, as may whether ID fields are represented as numbers or strings, whether additional metadata fields are present (such as `row_signature` on aggregation events), and the relative ordering of notifications between different queries.
+{{% alert title="Before you begin" color="info" %}}
+- **Terminals:** you'll use more than one. **Terminal 1** runs Drasi Server; use **Terminal 2** for `docker` and `curl` commands. Step 5 adds **Terminal 3** for the SSE CLI.
+- **Command tabs:** commands are shown in tabs (for example *bash / zsh* and *PowerShell*) — use the one for your shell.
+- **Expected output** blocks are illustrative — exact versions, IDs, and timestamps will differ. Field ordering may also differ, as may whether ID fields are represented as numbers or strings, whether additional metadata fields are present (such as `row_signature` on aggregation events), and the relative ordering of notifications between different queries.
+{{% /alert %}}
 
 ## Step 1 of 6: Set Up Your Environment {#setup}
 
@@ -136,9 +135,9 @@ getting-started-postgres   postgres:14-alpine   "docker-entrypoint.s…"   postg
 
 If the container shows a different status or you see errors, check the container logs with `docker compose -f examples/getting-started/database/docker-compose.yml logs`. See the [Docker Compose documentation](https://docs.docker.com/compose/) for additional troubleshooting help.
 
-> **Port already in use?**
->
-> The database publishes on host port `5432`. If that port is already taken (for example by a local PostgreSQL), `docker compose ... up -d` will fail to bind it. Set `POSTGRES_HOST_PORT` to a free port before starting — for example add `POSTGRES_HOST_PORT=5433` to `examples/getting-started/.env` (or export it in your shell), then run the `up` command again. Note that later tutorial steps assume the database is reachable on the default port `5432`, so if you change the host port you'll also need to set the matching Source `port` in your Drasi Server config accordingly.
+{{% alert title="Port already in use?" color="info" %}}
+The database publishes on host port `5432`. If that port is already taken (for example by a local PostgreSQL), `docker compose ... up -d` will fail to bind it. Set `POSTGRES_HOST_PORT` to a free port before starting — for example add `POSTGRES_HOST_PORT=5433` to `examples/getting-started/.env` (or export it in your shell), then run the `up` command again. Note that later tutorial steps assume the database is reachable on the default port `5432`, so if you change the host port you'll also need to set the matching Source `port` in your Drasi Server config accordingly.
+{{% /alert %}}
 
 ### Initialize the Database
 
@@ -168,17 +167,14 @@ The `Message` table is initially populated with these messages:
 
 Run the database initialization script:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -i getting-started-postgres psql -U postgres -d getting_started < examples/getting-started/database/init.sql
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Get-Content examples/getting-started/database/init.sql | docker exec -i getting-started-postgres psql -U postgres -d getting_started
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 You should see:
 
@@ -191,17 +187,14 @@ NOTICE:  Replication slot: drasi_slot
 
 Verify the sample data was loaded:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec getting-started-postgres psql -U drasi_user -d getting_started -c 'SELECT * FROM "Message";'
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec getting-started-postgres psql -U drasi_user -d getting_started -c "SELECT * FROM \""Message\"";"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 You should see the 4 sample messages:
 
@@ -231,17 +224,14 @@ The config file creates:
 
 From the tutorial root folder, copy the pre-prepared config file and rename it `getting-started.yaml`:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 cp examples/getting-started/configs/getting-started-step-3.yaml getting-started.yaml
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Copy-Item examples/getting-started/configs/getting-started-step-3.yaml getting-started.yaml
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 ### The all-messages Continuous Query
 
@@ -262,9 +252,9 @@ The `sources` section connects the query to the `my-postgres` Source, so it rece
 
 The `query` itself is deliberately trivial — just enough to get started. The `MATCH` clause selects every `Message` node from the Source, and the `RETURN` clause passes through the `MessageId`, `From`, and `Message` fields unchanged. There's no `WHERE` filter or aggregation, so the result set is simply *every* message in the table, kept continuously up to date. In Steps 4, 5, and 6 you'll write queries that filter, aggregate, and reason about time — but this one establishes the basic shape: `MATCH` what you care about, `RETURN` the fields you want.
 
-> **Graph queries over any source**
->
-> Notice that you're using a *graph* query language (GQL) to query a *relational* database. Drasi Server projects every Source — relational, NoSQL, an HTTP API, and more — into a common graph model, so the same query language works regardless of where the data lives. This is also what lets a single Continuous Query draw on *multiple, disparate* Sources at once, correlating changes across systems that have no knowledge of each other. See [Continuous Queries](/concepts/continuous-queries/) to go deeper.
+{{% alert title="Graph queries over any source" color="info" %}}
+Notice that you're using a *graph* query language (GQL) to query a *relational* database. Drasi Server projects every Source — relational, NoSQL, an HTTP API, and more — into a common graph model, so the same query language works regardless of where the data lives. This is also what lets a single Continuous Query draw on *multiple, disparate* Sources at once, correlating changes across systems that have no knowledge of each other. See [Continuous Queries](/concepts/continuous-queries/) to go deeper.
+{{% /alert %}}
 
 ### Start Drasi Server
 
@@ -274,19 +264,19 @@ In **Terminal 1**, run Drasi Server with your new configuration:
 ./bin/drasi-server --config getting-started.yaml
 ```
 
-> **The first launch downloads plugins — give it a minute**
->
-> The **first** time you start Drasi Server it downloads and cryptographically verifies the required plugins (Source, Bootstrap, and Reaction) from a container registry. This can pause for up to a minute — longer on a slow connection — while showing only a line such as:
->
-> ```text
-> INFO drasi_host_sdk::registry::resolver: Resolving latest compatible version for ghcr.io/drasi-project/source/postgres...
-> ```
->
-> This is normal — **do not interrupt it**. Subsequent starts are fast because the plugins are cached locally.
+{{% alert title="The first launch downloads plugins — give it a minute" color="info" %}}
+The **first** time you start Drasi Server it downloads and cryptographically verifies the required plugins (Source, Bootstrap, and Reaction) from a container registry. This can pause for up to a minute — longer on a slow connection — while showing only a line such as:
 
-> **About the plugin signature-verification lines**
->
-> As each plugin is downloaded, Drasi Server verifies its cosign signature and logs a line for it. The signer subject may reference an internal publishing branch name from the Drasi project's CI — this is expected and does not indicate a problem. As long as verification succeeds (the line is prefixed with a `✓` and reports the plugin as trusted/signed), the plugin is authentic and safe to use.
+```text
+INFO drasi_host_sdk::registry::resolver: Resolving latest compatible version for ghcr.io/drasi-project/source/postgres...
+```
+
+This is normal — **do not interrupt it**. Subsequent starts are fast because the plugins are cached locally.
+{{% /alert %}}
+
+{{% alert title="About the plugin signature-verification lines" color="info" %}}
+As each plugin is downloaded, Drasi Server verifies its cosign signature and logs a line for it. The signer subject may reference an internal publishing branch name from the Drasi project's CI — this is expected and does not indicate a problem. As long as verification succeeds (the line is prefixed with a `✓` and reports the plugin as trusted/signed), the plugin is authentic and safe to use.
+{{% /alert %}}
 
 You'll see detailed startup logs as Drasi Server downloads plugins and initializes all configured Sources, Continuous Queries, and Reactions. There's a lot of output, so look for these key lines at the end of the startup process:
 
@@ -306,11 +296,11 @@ This shows that Drasi Server has started successfully and lists the URLs for Dra
 
 You can confirm the server is healthy at any time by requesting its health endpoint: `curl http://localhost:8080/health`.
 
-> **If Drasi Server didn't start**
->
-> - **`Address already in use`**: port 8080 is already taken. Stop the process using it, or change the port in `getting-started.yaml`.
-> - **Plugin download errors**: Drasi downloads plugins on first start. Check your network or proxy, then run the command again.
-> - Drasi Server is safe to stop (`Ctrl+C`) and restart; it reloads from `getting-started.yaml`.
+{{% alert title="If Drasi Server didn't start" color="info" %}}
+- **`Address already in use`**: port 8080 is already taken. Stop the process using it, or change the port in `getting-started.yaml`.
+- **Plugin download errors**: Drasi downloads plugins on first start. Check your network or proxy, then run the command again.
+- Drasi Server is safe to stop (`Ctrl+C`) and restart; it reloads from `getting-started.yaml`.
+{{% /alert %}}
 
 As part of the startup process, Drasi Server would have bootstrapped the `all-messages` Continuous Query by loading all existing messages from the `Message` table and processing them through the query. Within the log output you should be able to see a message like this confirming the bootstrap process completed successfully:
 
@@ -322,13 +312,15 @@ As part of the startup process, Drasi Server would have bootstrapped the `all-me
 
 At any time during the tutorial you can view the current result set of a Continuous Query using Drasi Server's [REST API](../reference/rest-api/). For example, choose your preferred method to view the `all-messages` query results:
 
-**Browser**
+{{< tabpane text=true >}}
+{{% tab header="Browser" %}}
 
 Click to open the following URL in a browser:
 
 <a href="http://localhost:8080/api/v1/queries/all-messages/results" target="_blank">http://localhost:8080/api/v1/queries/all-messages/results</a>
 
-**curl**
+{{% /tab %}}
+{{% tab header="curl" %}}
 
 Run the following curl command in the terminal:
 
@@ -336,11 +328,15 @@ Run the following curl command in the terminal:
 curl -s http://localhost:8080/api/v1/queries/all-messages/results
 ```
 
-**VS Code REST Client**
+{{% /tab %}}
+{{% tab header="VS Code REST Client" %}}
 
 If you are using VS Code, you can call the REST API using the <a href="https://marketplace.visualstudio.com/items?itemName=humao.rest-client" target="_blank">REST Client extension</a>.
 
 The Drasi Server repo includes a file at `examples/getting-started/requests.http` that contains a variety of pre-written REST API requests for use with the Getting Started tutorial.
+
+{{% /tab %}}
+{{< /tabpane >}}
 
 However you choose to view the `all-messages` results, that data will look something like this (formatted for readability):
 
@@ -373,9 +369,9 @@ However you choose to view the `all-messages` results, that data will look somet
 }
 ```
 
-> **Tip**
->
-> The Drasi Server REST API also provides a Swagger UI at <a href="http://localhost:8080/api/v1/docs/" target="_blank" rel="noopener noreferrer">http://localhost:8080/api/v1/docs/</a> where you can explore all available endpoints interactively.
+{{% alert title="Tip" color="primary" %}}
+The Drasi Server REST API also provides a Swagger UI at <a href="http://localhost:8080/api/v1/docs/" target="_blank" rel="noopener noreferrer">http://localhost:8080/api/v1/docs/</a> where you can explore all available endpoints interactively.
+{{% /alert %}}
 
 If a `curl` command can't connect, confirm Drasi Server is still running in **Terminal 1** and reported that the API is available on port 8080.
 
@@ -383,18 +379,15 @@ If a `curl` command can't connect, confirm Drasi Server is still running in **Te
 
 Open **Terminal 2** and run the following command, which calls `psql` in the database container to manually **insert** a record into the `Message` table:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('You', 'My first message!');"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('You', 'My first message!');"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 Watch the Drasi Server console — a notification of an addition to the `all-messages` query result appears instantly output by the Log Reaction:
 
@@ -407,18 +400,15 @@ If you view the `all-messages` query results again through the REST API, you'll 
 
 Now, run the following command to **update** the message we just inserted and change its text:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "UPDATE \"Message\" SET \"Message\" = 'My first UPDATED message!' WHERE \"MessageId\" = 5;"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "UPDATE \""Message\"" SET \""Message\"" = 'My first UPDATED message!' WHERE \""MessageId\"" = 5;"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 The notification output by the Log Reaction shows the item before and after the update — Drasi reports the transition because it maintains the query's result set, not just the latest change:
 
@@ -431,18 +421,15 @@ If you view the `all-messages` query results again through the REST API, you'll 
 
 Finally, **delete** the message with this command:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "DELETE FROM \"Message\" WHERE \"MessageId\" = 5;"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "DELETE FROM \""Message\"" WHERE \""MessageId\"" = 5;"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 The console shows the message being deleted from the query's result set:
 
@@ -457,9 +444,9 @@ With three SQL statements you've now seen all three change notifications the Log
 
 Try it with your own data: insert a few more messages with any text you like, and watch each change appear in the Log Reaction output.
 
-> **Key Concept**
->
-> All data source changes that alter the result set of a Continuous Query generate notifications that are delivered to subscribed Reactions for handling. The above example demonstrates the simple Log Reaction that displays these notifications to the console, but there are more sophisticated Reactions that can send notifications to other systems, trigger actions, update databases, and more. You can also write your own custom Reactions to implement any behavior you want in response to changes in your data.
+{{% alert title="Key Concept" color="info" %}}
+All data source changes that alter the result set of a Continuous Query generate notifications that are delivered to subscribed Reactions for handling. The above example demonstrates the simple Log Reaction that displays these notifications to the console, but there are more sophisticated Reactions that can send notifications to other systems, trigger actions, update databases, and more. You can also write your own custom Reactions to implement any behavior you want in response to changes in your data.
+{{% /alert %}}
 
 <div style="margin-top: 1.5rem;"></div>
 
@@ -499,9 +486,8 @@ This is the kind of filter that turns a raw change feed into a focused signal �
 
 In **Terminal 2**, use the following `curl` command to create the `hello-world-senders` Continuous Query:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 curl -X POST http://localhost:8080/api/v1/queries \
   -H "Content-Type: application/json" \
   -d '{
@@ -511,11 +497,8 @@ curl -X POST http://localhost:8080/api/v1/queries \
     "query": "MATCH (m:Message) WHERE m.Message = '\''Hello World'\'' RETURN m.MessageId AS Id, m.From AS Sender",
     "queryLanguage": "Cypher"
   }'
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
   -ContentType "application/json" `
   -Body '{
@@ -525,11 +508,12 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
     "query": "MATCH (m:Message) WHERE m.Message = ''Hello World'' RETURN m.MessageId AS Id, m.From AS Sender",
     "queryLanguage": "Cypher"
   }'
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
-> **Note**
->
-> This command is also included in the `examples/getting-started/requests.http` file for use with the VS Code REST Client extension.
+{{% alert title="Note" color="info" %}}
+This command is also included in the `examples/getting-started/requests.http` file for use with the VS Code REST Client extension.
+{{% /alert %}}
 
 ### Update the Log Reaction
 
@@ -541,9 +525,8 @@ In Drasi Server, a single Reaction can subscribe to multiple Continuous Queries 
 
 To subscribe the Log Reaction to the new query, you need to delete and re-create it using these calls to the Drasi Server REST API.
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 # Delete the existing log-reaction
 curl -X DELETE http://localhost:8080/api/v1/reactions/log-reaction
 
@@ -556,11 +539,8 @@ curl -X POST http://localhost:8080/api/v1/reactions \
     "queries": ["all-messages", "hello-world-senders"],
     "autoStart": true
   }'
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 # Delete the existing log reaction
 Invoke-RestMethod -Method Delete -Uri http://localhost:8080/api/v1/reactions/log-reaction
 
@@ -573,7 +553,8 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/reactions `
     "queries": ["all-messages", "hello-world-senders"],
     "autoStart": true
   }'
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 You should see in the Drasi Server console that the `log-reaction` is created and subscribed to both queries.
 
@@ -583,17 +564,14 @@ Also, if you open the Drasi Server config file (getting-started.yaml), you'll se
 
 Even though you haven't inserted any new data, if you view the `hello-world-senders` query results through the REST API using the following command:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 curl -s http://localhost:8080/api/v1/queries/hello-world-senders/results
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Invoke-RestMethod -Method Get -Uri http://localhost:8080/api/v1/queries/hello-world-senders/results
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 ...you'll see that it already includes Brian Kernighan's "Hello World" message:
 
@@ -614,18 +592,15 @@ This is because Drasi Server's Continuous Query bootstrap process loaded all exi
 
 Now, run the following command to **insert** a new message that contains **Hello World**, and so matches the `WHERE` criteria of the `hello-world-senders` query:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('Alice', 'Hello World');"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('Alice', 'Hello World');"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 Watch the console and you will see notifications for both the `all-messages` and `hello-world-senders` queries — the new message is part of both query result sets:
 
@@ -638,18 +613,15 @@ Watch the console and you will see notifications for both the `all-messages` and
 
 Now **insert** a message that doesn't match the `hello-world-senders` criteria:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('Bob', 'Goodbye World');"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('Bob', 'Goodbye World');"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 The console shows the new message in the `all-messages` query, but there is no notification for the `hello-world-senders` query because the new message doesn't meet the query's `WHERE` criteria and so isn't part of that query's result set:
 
@@ -662,9 +634,9 @@ The console shows the new message in the `all-messages` query, but there is no n
 
 Doing this without Drasi would typically mean adding a filter stage to a stream-processing job and redeploying it; here it's one `WHERE` clause added to a running server.
 
-> **Note**
->
-> The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-4.yaml` if you want to compare it with your config file or use it as a reference for future use.
+{{% alert title="Note" color="info" %}}
+The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-4.yaml` if you want to compare it with your config file or use it as a reference for future use.
+{{% /alert %}}
 ---
 
 ## Step 5 of 6: Add an Aggregation Query and the SSE Reaction {#phase-3}
@@ -698,9 +670,8 @@ In the `query` section, the `RETURN` clause includes the `count(m)` aggregation,
 
 In **Terminal 2**, use the following curl command to create the `message-counts` Continuous Query:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 curl -X POST http://localhost:8080/api/v1/queries \
   -H "Content-Type: application/json" \
   -d '{
@@ -710,11 +681,8 @@ curl -X POST http://localhost:8080/api/v1/queries \
     "query": "MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count",
     "queryLanguage": "Cypher"
   }'
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
   -ContentType "application/json" `
   -Body '{
@@ -724,7 +692,8 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
     "query": "MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count",
     "queryLanguage": "Cypher"
   }'
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 ### Installing the SSE Reaction
 
@@ -732,27 +701,24 @@ Until now, you've been observing Continuous Query changes through the Log Reacti
 
 To install the SSE Reaction plugin on your Drasi Server from the Drasi plugin repository, run the following command in your terminal:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 curl -X POST http://localhost:8080/api/v1/plugins/install \
   -H "Content-Type: application/json" \
   -d '{
      "ref": "reaction/sse",
      "registry": "ghcr.io/drasi-project"
   }'
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/plugins/install `
   -ContentType "application/json" `
   -Body '{
     "ref": "reaction/sse",
     "registry": "ghcr.io/drasi-project"
   }'
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 In the Drasi Server console, you will see logs indicating that the SSE Reaction plugin is being downloaded and installed.
 
@@ -764,21 +730,18 @@ The SSE CLI will enable you to see query result updates from the `message-counts
 
 In **Terminal 3**, start the SSE CLI to stream changes from the `message-counts` query. You must specify the Drasi Server URL and the Continuous Query ID you want the SSE Reaction to subscribe to:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 ./bin/drasi-sse-cli \
   --server http://localhost:8080 \
   --query message-counts
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 ./bin/drasi-sse-cli `
   --server http://localhost:8080 `
   --query message-counts
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 You'll see:
 
@@ -795,18 +758,15 @@ You will also see in the Drasi Server console that a new SSE Reaction has been c
 
 In **Terminal 2**, insert a new "Hello World" message:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('Eve', 'Hello World');"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('Eve', 'Hello World');"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 Watch the SSE CLI terminal — you'll see the **Count** field has increased from the `before` value of `2` to the `after` value of `3` for the "MessageText" of "Hello World":
 
@@ -833,18 +793,15 @@ Watch the SSE CLI terminal — you'll see the **Count** field has increased from
 
 Now delete Eve's message:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "DELETE FROM \"Message\" WHERE \"From\" = 'Eve';"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "DELETE FROM \""Message\"" WHERE \""From\"" = 'Eve';"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 The `Count` decreases from 3 to 2:
 
@@ -869,17 +826,17 @@ The `Count` decreases from 3 to 2:
 }
 ```
 
-> **Key Concept**
->
-> Drasi Server didn't re-scan the `Message` table in the database at any point — it incrementally updated the Continuous Query's aggregation from each individual change as it processed it. This is what lets a query stay current over a large dataset without the cost of repeatedly re-reading it.
+{{% alert title="Key Concept" color="info" %}}
+Drasi Server didn't re-scan the `Message` table in the database at any point — it incrementally updated the Continuous Query's aggregation from each individual change as it processed it. This is what lets a query stay current over a large dataset without the cost of repeatedly re-reading it.
+{{% /alert %}}
 
 Press `Ctrl+C` in the SSE CLI terminal to stop streaming and delete the SSE Reaction.
 
 **✅ Checkpoint**: You understand that Drasi tracks state — aggregations update in real-time as data changes, without re-querying the database. You have seen it is possible to create temporary Reactions programmatically (like the SSE CLI) that subscribe to Continuous Queries on the fly to stream changes in real time. To do the equivalent yourself, you would write and maintain the kind of stateful, incremental-aggregation logic you'd normally implement in a stream processor; here it is a query plus a Reaction.
 
-> **Note**
->
-> The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-5.yaml` if you want to compare it with your config file or use it as a reference for future use.
+{{% alert title="Note" color="info" %}}
+The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-5.yaml` if you want to compare it with your config file or use it as a reference for future use.
+{{% /alert %}}
 
 ---
 
@@ -925,9 +882,8 @@ The `WHERE` clause combines two conditions with `OR`: senders who are *already* 
 
 In **Terminal 2**, use the following curl command to create the `inactive-senders` Continuous Query:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 curl -X POST http://localhost:8080/api/v1/queries \
   -H "Content-Type: application/json" \
   -d '{
@@ -937,11 +893,8 @@ curl -X POST http://localhost:8080/api/v1/queries \
     "query": "MATCH (m:Message) WITH m.From AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }) OR drasi.trueLater(LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }), LastMessageTimestamp + duration({ seconds: 20 })) RETURN MessageFrom, LastMessageTimestamp",
     "queryLanguage": "Cypher"
   }'
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
   -ContentType "application/json" `
   -Body '{
@@ -951,48 +904,43 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
     "query": "MATCH (m:Message) WITH m.From AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }) OR drasi.trueLater(LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }), LastMessageTimestamp + duration({ seconds: 20 })) RETURN MessageFrom, LastMessageTimestamp",
     "queryLanguage": "Cypher"
   }'
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 ### Stream the inactive-senders Query
 
 In **Terminal 3**, start the SSE CLI:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 ./bin/drasi-sse-cli \
   --server http://localhost:8080 \
   --query inactive-senders
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 ./bin/drasi-sse-cli `
   --server http://localhost:8080 `
   --query inactive-senders
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 ### Test the inactive-senders Continuous Query
 
-> **What you'll see, given the earlier steps**
->
-> Because every sender created in earlier steps (Buzz Lightyear, Brian Kernighan, Antoninus, David, Alice, Bob) has now been idle for far more than 20 seconds, the `inactive-senders` result set is **already pre-populated** with all of them when you start streaming — `GET /api/v1/queries/inactive-senders/results` returns them all immediately. As a result, the transitions below are relative to that pre-populated state: re-inserting a message for Alice first **removes** her from the set (a `DELETE`, because she's active again) and then, about 20 seconds later, **adds** her back (an `ADD`) when she becomes idle once more. If you'd prefer to watch a sender enter the set from an empty starting point, start the tutorial from a fresh database.
+{{% alert title="What you'll see, given the earlier steps" color="info" %}}
+Because every sender created in earlier steps (Buzz Lightyear, Brian Kernighan, Antoninus, David, Alice, Bob) has now been idle for far more than 20 seconds, the `inactive-senders` result set is **already pre-populated** with all of them when you start streaming — `GET /api/v1/queries/inactive-senders/results` returns them all immediately. As a result, the transitions below are relative to that pre-populated state: re-inserting a message for Alice first **removes** her from the set (a `DELETE`, because she's active again) and then, about 20 seconds later, **adds** her back (an `ADD`) when she becomes idle once more. If you'd prefer to watch a sender enter the set from an empty starting point, start the tutorial from a fresh database.
+{{% /alert %}}
 
 In **Terminal 2**, create a new message from Alice:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('Alice', 'About to go inactive');"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('Alice', 'About to go inactive');"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 Because Alice was already in the `inactive-senders` result set (see the note above), this new message first makes her active, so you'll immediately see a `DELETE` notification removing her. Then wait for 20 seconds — with no further messages from Alice she ages back into the set, and you'll see this query result `ADD` notification in your terminal:
 
@@ -1014,18 +962,15 @@ Because Alice was already in the `inactive-senders` result set (see the note abo
 
 Now make Alice active again, by adding a new message from her:
 
-**bash / zsh**
-
-```bash
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
   "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('Alice', 'Active again');"
-```
-
-**PowerShell**
-
-```powershell
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
 docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('Alice', 'Active again');"
-```
+{{< /tab >}}
+{{< /tabpane >}}
 
 Alice will be immediately removed from the `inactive-senders` query result because she has sent a message within the last 20 seconds. The subscribed SSE Reaction will forward the change to the SSE CLI and you will see this query result `DELETE` notification in your terminal:
 
@@ -1053,9 +998,9 @@ Press `Ctrl+C` to stop the SSE CLI.
 
 **✅ Checkpoint**: You understand that Drasi can detect the *absence of change* over time — a powerful capability for monitoring, alerting, and SLA enforcement — without a scheduler or background worker you run.
 
-> **Note**
->
-> The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-6.yaml` if you want to compare it with your config file or use it as a reference for future use.
+{{% alert title="Note" color="info" %}}
+The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-6.yaml` if you want to compare it with your config file or use it as a reference for future use.
+{{% /alert %}}
 
 ---
 
