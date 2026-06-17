@@ -10,39 +10,11 @@ Building this kind of capability by hand usually means stitching together severa
 
 **What you'll build:** a running Drasi Server that connects to a live PostgreSQL database and reacts to its changes, assembled from Drasi's three core building blocks:
 
-<div class="flow-diagram">
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-database"></i>
-    </div>
-    <div class="flow-step__label">Sources</div>
-    <div class="flow-step__description">Connect to your data sources</div>
-  </div>
+**Sources** → **Continuous Queries** → **Reactions**
 
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-filter"></i>
-    </div>
-    <div class="flow-step__label">Continuous Queries</div>
-    <div class="flow-step__description">Define what changes matter</div>
-  </div>
-
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-bolt"></i>
-    </div>
-    <div class="flow-step__label">Reactions</div>
-    <div class="flow-step__description">Take action automatically</div>
-  </div>
-</div>
+- **Sources** — Connect to your data sources
+- **Continuous Queries** — Define what changes matter
+- **Reactions** — Take action automatically
 
 You'll configure each of these building blocks yourself as you work through the steps below.
 

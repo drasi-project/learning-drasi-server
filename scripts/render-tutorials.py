@@ -59,6 +59,15 @@ _CARD_RE = re.compile(
     r'unified-card-summary">(?P<summary>.*?)</p>.*?</a>',
     re.DOTALL,
 )
+_FLOW_DIAGRAM_RE = re.compile(
+    r'^<div\s+class="flow-diagram">\n(?P<body>.*?)\n</div>[ \t]*$',
+    re.DOTALL | re.MULTILINE,
+)
+_FLOW_STEP_RE = re.compile(
+    r'flow-step__label">(?P<label>.*?)</div>.*?'
+    r'flow-step__description">(?P<description>.*?)</div>',
+    re.DOTALL,
+)
 
 
 def _parse_attrs(raw: str) -> dict[str, str]:
@@ -119,6 +128,25 @@ def _render_card_grid(match: re.Match[str]) -> str:
     return "\n".join(items) if items else match.group(0)
 
 
+def _render_flow_diagram(match: re.Match[str]) -> str:
+    """Convert a Docsy ``flow-diagram`` into a Markdown arrow chain plus list.
+
+    GitHub renders the nested ``<div>`` steps as stray words, so we emit an
+    arrow chain of the step labels followed by a bullet list of each step's
+    description. The doc site keeps the styled diagram.
+    """
+    steps = [
+        (" ".join(m.group("label").split()), " ".join(m.group("description").split()))
+        for m in _FLOW_STEP_RE.finditer(match.group("body"))
+    ]
+    if not steps:
+        return match.group(0)
+
+    chain = " → ".join(f"**{label}**" for label, _ in steps)
+    bullets = "\n".join(f"- **{label}** — {desc}" for label, desc in steps)
+    return f"{chain}\n\n{bullets}"
+
+
 _HEADING_ID_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*\{#(?P<id>[\w-]+)\}\s*$", re.MULTILINE)
 
 
@@ -160,6 +188,7 @@ def _rewrite_heading_ids(source: str) -> str:
 def render(source: str) -> str:
     out = _rewrite_heading_ids(source)
     out = _CARD_GRID_RE.sub(_render_card_grid, out)
+    out = _FLOW_DIAGRAM_RE.sub(_render_flow_diagram, out)
     out = _TABPANE_RE.sub(_render_tabpane, out)
     out = _ALERT_RE.sub(_render_alert, out)
     # Collapse 3+ blank lines that conversions can introduce.
