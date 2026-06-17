@@ -93,8 +93,47 @@ def _render_alert(match: re.Match[str]) -> str:
     return "\n".join(lines)
 
 
+_HEADING_ID_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*\{#(?P<id>[\w-]+)\}\s*$", re.MULTILINE)
+
+
+def _github_slug(text: str) -> str:
+    """Approximate GitHub's heading-to-anchor slug algorithm."""
+    slug = text.strip().lower()
+    # Drop characters GitHub strips (anything not a word char, space, or hyphen).
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    # Collapse whitespace runs to single hyphens.
+    slug = re.sub(r"\s+", "-", slug)
+    return slug
+
+
+def _rewrite_heading_ids(source: str) -> str:
+    """Strip Hugo ``{#id}`` heading attributes and repoint in-page links.
+
+    Hugo uses ``## Title {#id}`` to set an explicit anchor, and links such as
+    ``[Title](#id)`` rely on it. Plain Markdown viewers render the ``{#id}``
+    literally and instead auto-generate anchors from the heading text, so we
+    remove the attribute and rewrite every ``#id`` link to the slug GitHub
+    derives from the heading text.
+    """
+    id_to_slug: dict[str, str] = {}
+    for match in _HEADING_ID_RE.finditer(source):
+        id_to_slug[match.group("id")] = _github_slug(match.group("text"))
+
+    # Remove the {#id} attribute from headings.
+    out = _HEADING_ID_RE.sub(lambda m: f"{m.group('hashes')} {m.group('text')}", source)
+
+    # Repoint in-page links that targeted the explicit ids.
+    def _replace_link(m: re.Match[str]) -> str:
+        slug = id_to_slug.get(m.group("id"))
+        return f"](#{slug})" if slug else m.group(0)
+
+    out = re.sub(r"\]\(#(?P<id>[\w-]+)\)", _replace_link, out)
+    return out
+
+
 def render(source: str) -> str:
-    out = _TABPANE_RE.sub(_render_tabpane, source)
+    out = _rewrite_heading_ids(source)
+    out = _TABPANE_RE.sub(_render_tabpane, out)
     out = _ALERT_RE.sub(_render_alert, out)
     # Collapse 3+ blank lines that conversions can introduce.
     out = re.sub(r"\n{4,}", "\n\n\n", out)

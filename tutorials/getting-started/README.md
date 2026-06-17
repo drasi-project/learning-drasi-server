@@ -51,12 +51,12 @@ You'll configure each of these building blocks yourself as you work through the 
 
 | Step | What You'll Learn | Time |
 | ---- | ----------------- | ---- |
-| **[Step 1: Set Up Your Environment](#setup)** | Install Drasi Server and set up your development environment | 5 min |
-| **[Step 2: Set Up the Tutorial Database](#database)** | Start a PostgreSQL database and load sample data | 3 min |
-| **[Step 3: Create Your First Configuration](#phase-1)** | Start from a provided config file with a Source, Continuous Query, and Log Reaction — see Drasi detect and react to change in real time | 3 min |
-| **[Step 4: Add a Continuous Query with Criteria](#phase-2)** | Add a filtered query via the REST API — learn how `WHERE` clauses tell Drasi what changes you are interested in | 3 min |
-| **[Step 5: Add an Aggregation Query](#phase-3)** | Add a query with `count()` — see aggregations update automatically as data changes and add a new Reaction that generates Server-Sent Events (SSE) when query results change | 5 min |
-| **[Step 6: Add Time-Based Detection](#phase-4)** | Detect the *absence of change* over time — a powerful capability for monitoring and alerting | 5 min |
+| **[Step 1: Set Up Your Environment](#step-1-of-6-set-up-your-environment)** | Install Drasi Server and set up your development environment | 5 min |
+| **[Step 2: Set Up the Tutorial Database](#step-2-of-6-set-up-the-tutorial-database)** | Start a PostgreSQL database and load sample data | 3 min |
+| **[Step 3: Create Your First Configuration](#step-3-of-6-run-your-first-drasi-server)** | Start from a provided config file with a Source, Continuous Query, and Log Reaction — see Drasi detect and react to change in real time | 3 min |
+| **[Step 4: Add a Continuous Query with Criteria](#step-4-of-6-add-a-continuous-query-with-criteria)** | Add a filtered query via the REST API — learn how `WHERE` clauses tell Drasi what changes you are interested in | 3 min |
+| **[Step 5: Add an Aggregation Query](#step-5-of-6-add-an-aggregation-query-and-the-sse-reaction)** | Add a query with `count()` — see aggregations update automatically as data changes and add a new Reaction that generates Server-Sent Events (SSE) when query results change | 5 min |
+| **[Step 6: Add Time-Based Detection](#step-6-of-6-add-time-based-detection)** | Detect the *absence of change* over time — a powerful capability for monitoring and alerting | 5 min |
 
 > **Before you begin**
 >
@@ -64,8 +64,7 @@ You'll configure each of these building blocks yourself as you work through the 
 > - **Command tabs:** commands are shown in tabs (for example *bash / zsh* and *PowerShell*) — use the one for your shell.
 > - **Expected output** blocks are illustrative — exact versions, IDs, and timestamps will differ. Field ordering may also differ, as may whether ID fields are represented as numbers or strings, whether additional metadata fields are present (such as `row_signature` on aggregation events), and the relative ordering of notifications between different queries.
 
-## Step 1 of 6: Set Up Your Environment {#setup}
-
+## Step 1 of 6: Set Up Your Environment
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
 <div class="card-grid">
@@ -113,8 +112,7 @@ After completing your preferred setup, return here to continue with the tutorial
 
 ---
 
-## Step 2 of 6: Set Up the Tutorial Database {#database}
-
+## Step 2 of 6: Set Up the Tutorial Database
 The tutorial uses a PostgreSQL database as a data source. Start the database container using Docker Compose:
 
 ```bash
@@ -217,8 +215,7 @@ You should see the 4 sample messages:
 
 ---
 
-## Step 3 of 6: Run Your First Drasi Server {#phase-1}
-
+## Step 3 of 6: Run Your First Drasi Server
 Now you'll create your initial Drasi Server configuration. To keep this first step focused on getting Drasi Server running, you'll start from a pre-prepared config file included with the tutorial.
 
 The config file creates:
@@ -467,8 +464,7 @@ Try it with your own data: insert a few more messages with any text you like, an
 
 ---
 
-## Step 4 of 6: Add a Continuous Query with Criteria {#phase-2}
-
+## Step 4 of 6: Add a Continuous Query with Criteria
 The `all-messages` Continuous Query is very simple and includes all messages written to the Message table. Now you'll add a second Continuous Query that answers the question "Who sent messages containing 'Hello World'?". You will add the new `hello-world-senders` Continuous Query using the Drasi Server REST API so you learn how to extend your configuration without restarting Drasi Server.
 
 ### The hello-world-senders Continuous Query
@@ -667,8 +663,7 @@ Doing this without Drasi would typically mean adding a filter stage to a stream-
 > The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-4.yaml` if you want to compare it with your config file or use it as a reference for future use.
 ---
 
-## Step 5 of 6: Add an Aggregation Query and the SSE Reaction {#phase-3}
-
+## Step 5 of 6: Add an Aggregation Query and the SSE Reaction
 Drasi maintains state across all the data it processes, enabling Continuous Queries that compute aggregations — like counts, sums, or averages — that update automatically as the underlying data changes. This is useful for dashboards, reporting, and any scenario where you need live summary statistics without polling or recalculating from scratch.
 
 In this step, you'll add a new `message-counts` Continuous Query that contains the count of how many times each unique message text has been sent. As you insert, update, or delete messages, you'll see the counts of each unique message update in real time.
@@ -883,8 +878,7 @@ Press `Ctrl+C` in the SSE CLI terminal to stop streaming and delete the SSE Reac
 
 ---
 
-## Step 6 of 6: Add Time-Based Detection {#phase-4}
-
+## Step 6 of 6: Add Time-Based Detection
 Drasi can query patterns over time, including the **absence of change**. This is powerful for monitoring and alerting scenarios — for example queries that contain:
 
 - all sensors that have stopped reporting data for more than 5 minutes
@@ -1059,8 +1053,7 @@ Press `Ctrl+C` to stop the SSE CLI.
 
 ---
 
-## What You've Learned {#summary}
-
+## What You've Learned
 That concludes the Drasi Server Getting Started tutorial. You have learned the core Drasi Server concepts that enable you to build change-driven solutions that react to data changes in real time:
 
 | Concept | What You Did |
@@ -1077,8 +1070,7 @@ A conventional change-driven stack would assemble these capabilities from separa
 
 ---
 
-## Cleanup {#cleanup}
-
+## Cleanup
 Stop the SSE CLI if it's still running by pressing `Ctrl+C` in the terminal where it's running.
 
 Stop Drasi Server with `Ctrl+C` in the Drasi Server console.
