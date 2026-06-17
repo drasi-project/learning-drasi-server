@@ -68,7 +68,7 @@ You'll configure each of these building blocks yourself as you work through the 
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
 <div class="card-grid">
-  <a href="download-binary/">
+  <a href="https://drasi.io/drasi-server/getting-started/download-binary/">
     <div class="unified-card unified-card--tutorials">
       <div class="unified-card-icon"><i class="fas fa-download"></i></div>
       <div class="unified-card-content">
@@ -77,7 +77,7 @@ Choose your preferred environment for working through the Getting Started tutori
       </div>
     </div>
   </a>
-  <a href="github-codespace/">
+  <a href="https://drasi.io/drasi-server/getting-started/github-codespace/">
     <div class="unified-card unified-card--tutorials">
       <div class="unified-card-icon"><i class="fab fa-github"></i></div>
       <div class="unified-card-content">
@@ -86,7 +86,7 @@ Choose your preferred environment for working through the Getting Started tutori
       </div>
     </div>
   </a>
-  <a href="dev-container/">
+  <a href="https://drasi.io/drasi-server/getting-started/dev-container/">
     <div class="unified-card unified-card--tutorials">
       <div class="unified-card-icon"><i class="fas fa-cube"></i></div>
       <div class="unified-card-content">
@@ -95,7 +95,7 @@ Choose your preferred environment for working through the Getting Started tutori
       </div>
     </div>
   </a>
-  <a href="build-from-source/">
+  <a href="https://drasi.io/drasi-server/getting-started/build-from-source/">
     <div class="unified-card unified-card--tutorials">
       <div class="unified-card-icon"><i class="fas fa-hammer"></i></div>
       <div class="unified-card-content">

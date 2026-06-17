@@ -67,44 +67,10 @@ You'll configure each of these building blocks yourself as you work through the 
 ## Step 1 of 6: Set Up Your Environment
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
-<div class="card-grid">
-  <a href="download-binary/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fas fa-download"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">Download Binary</h3>
-        <p class="unified-card-summary">Download a prebuilt binary. The fastest way to get started (recommended).</p>
-      </div>
-    </div>
-  </a>
-  <a href="github-codespace/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fab fa-github"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">GitHub Codespace</h3>
-        <p class="unified-card-summary">One-click cloud environment. No local installation needed.</p>
-      </div>
-    </div>
-  </a>
-  <a href="dev-container/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fas fa-cube"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">Dev Container</h3>
-        <p class="unified-card-summary">VS Code Dev Container with all dependencies preconfigured.</p>
-      </div>
-    </div>
-  </a>
-  <a href="build-from-source/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fas fa-hammer"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">Build from Source</h3>
-        <p class="unified-card-summary">Clone and build Drasi Server yourself. Ideal for would-be contributors.</p>
-      </div>
-    </div>
-  </a>
-</div>
+- **[Download Binary](https://drasi.io/drasi-server/getting-started/download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
+- **[GitHub Codespace](https://drasi.io/drasi-server/getting-started/github-codespace/)** — One-click cloud environment. No local installation needed.
+- **[Dev Container](https://drasi.io/drasi-server/getting-started/dev-container/)** — VS Code Dev Container with all dependencies preconfigured.
+- **[Build from Source](https://drasi.io/drasi-server/getting-started/build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
 
 <div style="margin-top: 2rem;"></div>
 

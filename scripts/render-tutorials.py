@@ -49,6 +49,16 @@ _ALERT_RE = re.compile(
     r"\{\{%\s*alert\s+(?P<attrs>[^}]*?)%\}\}(?P<body>.*?)\{\{%\s*/\s*alert\s*%\}\}",
     re.DOTALL,
 )
+_CARD_GRID_RE = re.compile(
+    r'^<div\s+class="card-grid">\n(?P<body>.*?)\n</div>[ \t]*$',
+    re.DOTALL | re.MULTILINE,
+)
+_CARD_RE = re.compile(
+    r'<a\s+href="(?P<href>[^"]+)">.*?'
+    r'unified-card-title">(?P<title>.*?)</h3>.*?'
+    r'unified-card-summary">(?P<summary>.*?)</p>.*?</a>',
+    re.DOTALL,
+)
 
 
 def _parse_attrs(raw: str) -> dict[str, str]:
@@ -93,6 +103,22 @@ def _render_alert(match: re.Match[str]) -> str:
     return "\n".join(lines)
 
 
+def _render_card_grid(match: re.Match[str]) -> str:
+    """Convert a Docsy ``card-grid`` of link cards into a Markdown list.
+
+    GitHub renders ``<a href><div>...</div></a>`` cards as empty links because
+    it hoists the block-level ``<div>`` out of the anchor. The doc site keeps
+    the cards; here we emit a plain bullet list of named links instead.
+    """
+    items: list[str] = []
+    for card in _CARD_RE.finditer(match.group("body")):
+        href = card.group("href").strip()
+        title = " ".join(card.group("title").split())
+        summary = " ".join(card.group("summary").split())
+        items.append(f"- **[{title}]({href})** — {summary}")
+    return "\n".join(items) if items else match.group(0)
+
+
 _HEADING_ID_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*\{#(?P<id>[\w-]+)\}\s*$", re.MULTILINE)
 
 
@@ -133,6 +159,7 @@ def _rewrite_heading_ids(source: str) -> str:
 
 def render(source: str) -> str:
     out = _rewrite_heading_ids(source)
+    out = _CARD_GRID_RE.sub(_render_card_grid, out)
     out = _TABPANE_RE.sub(_render_tabpane, out)
     out = _ALERT_RE.sub(_render_alert, out)
     # Collapse 3+ blank lines that conversions can introduce.
