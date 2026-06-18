@@ -1,0 +1,40 @@
+#!/bin/bash
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Reset Room Script
+# Resets a room (or every room when no id is given) to the comfortable defaults
+# temperature=70, humidity=40, co2=10. Mirrors the "Reset" button from the
+# original tutorial.
+
+set -e
+
+CONTAINER="${POSTGRES_CONTAINER:-building-comfort-postgres}"
+DB="${POSTGRES_DATABASE:-building_comfort}"
+DB_USER="${POSTGRES_USER:-drasi_user}"
+
+ROOM_ID="${1:-}"
+
+if [ -z "$ROOM_ID" ]; then
+    echo "Resetting ALL rooms -> temperature=70 humidity=40 co2=10"
+    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \
+        "UPDATE \"Room\" SET temperature=70, humidity=40, co2=10 RETURNING id, name, temperature, humidity, co2;"
+else
+    echo "Resetting $ROOM_ID -> temperature=70 humidity=40 co2=10"
+    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \
+        "UPDATE \"Room\" SET temperature=70, humidity=40, co2=10 WHERE id='$ROOM_ID' RETURNING id, name, temperature, humidity, co2;"
+fi
+
+echo
+echo "Done. The dashboard at http://localhost:${DASHBOARD_PORT:-3000} should return to green."

@@ -1,0 +1,81 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Drasi Server Building Comfort - HTTP Requests
+# =============================================================================
+# Use with the VSCode REST Client extension (humao.rest-client) or similar.
+# API documentation is served at http://localhost:8380/api/v1/docs/
+
+@baseUrl = http://localhost:8380
+@dashboardUrl = http://localhost:3000
+
+### ==========================================================================
+### Health & Info
+### ==========================================================================
+
+### Health check
+GET {{baseUrl}}/health
+
+### List API versions
+GET {{baseUrl}}/api/versions
+
+### ==========================================================================
+### Sources
+### ==========================================================================
+
+### List all sources
+GET {{baseUrl}}/api/v1/sources
+
+### Get the building-facilities source status
+GET {{baseUrl}}/api/v1/sources/building-facilities
+
+### ==========================================================================
+### Continuous Queries
+### ==========================================================================
+
+### List all queries
+GET {{baseUrl}}/api/v1/queries
+
+### Per-room comfort levels (the building view feed)
+GET {{baseUrl}}/api/v1/queries/building-comfort-ui/results
+
+### Overall building comfort level
+GET {{baseUrl}}/api/v1/queries/building-comfort-level-calc/results
+
+### Per-floor comfort levels
+GET {{baseUrl}}/api/v1/queries/floor-comfort-level-calc/results
+
+### Rooms outside the comfortable band (alerts)
+GET {{baseUrl}}/api/v1/queries/room-alert/results
+
+### Floors outside the comfortable band (alerts)
+GET {{baseUrl}}/api/v1/queries/floor-alert/results
+
+### Building outside the comfortable band (alert)
+GET {{baseUrl}}/api/v1/queries/building-alert/results
+
+### ==========================================================================
+### Reactions
+### ==========================================================================
+
+### List all reactions
+GET {{baseUrl}}/api/v1/reactions
+
+### Get the dashboard reaction status
+GET {{baseUrl}}/api/v1/reactions/building-comfort-dashboard
+
+### Open the dashboard in a browser instead: {{dashboardUrl}}
+### The seeded "Building Comfort" dashboard is available via the dashboard API:
+GET {{dashboardUrl}}/api/dashboards

@@ -10,6 +10,7 @@ If you are looking for Drasi Platform (Kubernetes) tutorials, use
 | Tutorial | What you learn | How to trigger it |
 | --- | --- | --- |
 | [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Follow [drasi.io/drasi-server/getting-started](https://drasi.io/drasi-server/getting-started/) and run commands from `drasi-server/examples/getting-started` |
+| [building-comfort](tutorials/building-comfort) | Smart-building comfort monitoring (PostgreSQL CDC, six comfort/alert queries with synthetic joins, the dashboard reaction) | Open the **Drasi Server - Building Comfort Tutorial** dev container and follow [tutorials/building-comfort](tutorials/building-comfort) |
 
 See [tutorials](tutorials) for the full list of tutorials.
 
@@ -34,9 +35,11 @@ From the repository root:
 
 1. Open in VS Code.
 2. Run Reopen in Container.
-3. The dev container opens directly in [tutorials/getting-started](tutorials/getting-started).
-4. Follow [tutorials/getting-started](tutorials/getting-started), which points to the upstream
-	`drasi-server/examples/getting-started` steps.
+3. When prompted, choose a configuration:
+	- **Drasi Server - Getting Started Tutorial** — opens [tutorials/getting-started](tutorials/getting-started).
+	- **Drasi Server - Building Comfort Tutorial** — installs everything for
+	  [tutorials/building-comfort](tutorials/building-comfort) (PostgreSQL client + Drasi Server binary).
+4. Follow the README in the matching tutorial folder.
 
 ## Run in Codespaces
 
