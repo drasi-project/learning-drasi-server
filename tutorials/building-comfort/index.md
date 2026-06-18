@@ -99,21 +99,11 @@ Everything runs from a single configuration file, `server-config.yaml`. In **Ter
 bash scripts/start-demo.sh
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
-# Start PostgreSQL, then load the schema and seed data
-cd database
-$env:POSTGRES_HOST_PORT = "5732"
-docker compose up -d
-Start-Sleep -Seconds 8
-Get-Content init.sql | docker exec -i building-comfort-postgres psql -v ON_ERROR_STOP=1 -U postgres -d building_comfort
-cd ..
-
-# Start Drasi Server with the full configuration
-$env:POSTGRES_HOST = "localhost"; $env:POSTGRES_PORT = "5732"; $env:SERVER_PORT = "8380"; $env:DASHBOARD_PORT = "3000"
-.\bin\drasi-server.exe --config server-config.yaml
+powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
 {{< /tab >}}
 {{< /tabpane >}}
 
-The `start-demo.sh` script does two things: it starts PostgreSQL (seeding one building, three floors, and nine rooms — every room comfortable to begin with) and then runs Drasi Server in the foreground.
+The `start-demo` script does two things: it starts PostgreSQL (seeding one building, three floors, and nine rooms — every room comfortable to begin with) and then runs Drasi Server in the foreground.
 
 On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `reaction/dashboard`, `reaction/log`) from `ghcr.io/drasi-project`, connects to the database, and starts the six continuous queries and the dashboard. When you see a line like the following, it's ready:
 
@@ -124,18 +114,18 @@ Drasi Server started successfully with API on port 8380
 Leave this running. Everything else happens from **Terminal 2** (or your browser).
 
 {{% alert title="Stopping and resetting" color="info" %}}
-Press **Ctrl+C** in Terminal 1 to stop the server. To remove the database container when you're completely done, run `bash scripts/cleanup.sh` (add `--volumes` to also delete the data).
+Press **Ctrl+C** in Terminal 1 to stop the server. To remove the database container when you're completely done, run `bash scripts/cleanup.sh` (bash) or `powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1` (PowerShell). Add `--volumes` (bash) or `-RemoveVolumes` (PowerShell) to also delete the data.
 {{% /alert %}}
 
 ## Step 3 of 4: Open the Dashboard {#dashboard}
 
-Drasi Server's dashboard reaction hosts a live web dashboard — there's no separate app to build or run. Open it in your browser:
+Drasi Server's dashboard reaction hosts a live web dashboard — there's no separate app to build or run. **Wait until Terminal 1 prints `Drasi Server started successfully`** (on the first run this takes ~30 seconds while the plugins download), then open it in your browser:
 
 ```text
 http://localhost:3000
 ```
 
-In the dev container or Codespaces, port `3000` is forwarded automatically (the **Comfort Dashboard** port opens for you).
+In the dev container or Codespaces, port `3000` is forwarded automatically — VS Code shows a notification when the dashboard is ready, and you can also open it from the **Ports** panel (the **Comfort Dashboard** entry). If you open the page before the server has finished starting, just refresh once it's ready.
 
 You'll see the **Building Comfort** dashboard:
 
@@ -318,9 +308,11 @@ bash scripts/cleanup.sh
 bash scripts/cleanup.sh --volumes
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
-cd database
-docker compose down -v
-cd ..
+# Stop containers, keep data
+powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1
+
+# Stop containers and delete the data volume
+powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1 -RemoveVolumes
 {{< /tab >}}
 {{< /tabpane >}}
 
