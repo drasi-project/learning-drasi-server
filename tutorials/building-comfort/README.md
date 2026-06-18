@@ -51,7 +51,7 @@ This tutorial recreates the classic Drasi **Building Comfort** demo on **Drasi S
 > **Before you begin**
 >
 > - **Terminals:** you'll use two. **Terminal 1** runs the demo (it stays in the foreground). Use **Terminal 2** for the helper scripts that change data.
-> - **Working directory:** run every command from the repository root (`learning-drasi-server/`).
+> - **Working directory:** run every command from the tutorial directory (`tutorials/building-comfort/`). The dev container opens there automatically; if you're running locally, `cd tutorials/building-comfort` first.
 > - **Command tabs:** commands are shown in tabs (*bash / zsh* and *PowerShell*) — use the one for your shell. The dev container and Codespaces use *bash*.
 > - **Ports:** the Drasi Server API is on `8380`, the dashboard is on `3000`, and PostgreSQL is published on `5732`.
 
@@ -66,23 +66,33 @@ The easiest way to follow this tutorial is the **dev container**, which installs
 
 That's it — skip ahead to [Step 2](#step-2-of-4-run-the-demo).
 
+> **Windows + WSL: container fails to start?**
+>
+> If **Reopen in Container** fails with `accessing specified distro mount service: stat /run/guest-services/distro-services/<distro>.sock: no such file or directory`, that's a known VS Code + Docker Desktop issue ([vscode-remote-release#9293](https://github.com/microsoft/vscode-remote-release/issues/9293)) where VS Code tries to mount the WSLg Wayland socket into the container but Docker Desktop can't reach it. It is unrelated to this tutorial. Fix it by turning off the Wayland mount in VS Code **User** settings:
+>
+> 1. Open **Settings** (`Ctrl+,`), search for **Mount Wayland Socket**.
+> 2. Uncheck **Dev › Containers: Mount Wayland Socket** (the setting `dev.containers.mountWaylandSocket`). It is an application-scoped setting, so set it in User settings, not workspace settings.
+> 3. Run **Reopen in Container** again.
+
 ### Option B: Run Locally
 
-You'll need **Docker** (for PostgreSQL) and **bash** (the helper scripts use it; on Windows use Git Bash or WSL). Download the Drasi Server binary:
+You'll need **Docker** (for PostgreSQL) and **bash** (the helper scripts use it; on Windows use Git Bash or WSL). From the repository root, move into the tutorial directory and download the Drasi Server binary:
 
 **bash / zsh**
 
 ```bash
-bash tutorials/building-comfort/scripts/download.sh
+cd tutorials/building-comfort
+bash scripts/download.sh
 ```
 
 **PowerShell**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tutorials/building-comfort/scripts/download.ps1
+cd tutorials/building-comfort
+powershell -ExecutionPolicy Bypass -File scripts/download.ps1
 ```
 
-This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows).
+This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
 
 ## Step 2 of 4: Run the Demo
 Everything runs from a single configuration file, `server-config.yaml`. In **Terminal 1**, start the demo:
@@ -90,22 +100,23 @@ Everything runs from a single configuration file, `server-config.yaml`. In **Ter
 **bash / zsh**
 
 ```bash
-bash tutorials/building-comfort/scripts/start-demo.sh
+bash scripts/start-demo.sh
 ```
 
 **PowerShell**
 
 ```powershell
-# Start and seed PostgreSQL
-cd tutorials/building-comfort/database
+# Start PostgreSQL, then load the schema and seed data
+cd database
 $env:POSTGRES_HOST_PORT = "5732"
 docker compose up -d
 Start-Sleep -Seconds 8
-cd ../../..
+Get-Content init.sql | docker exec -i building-comfort-postgres psql -v ON_ERROR_STOP=1 -U postgres -d building_comfort
+cd ..
 
 # Start Drasi Server with the full configuration
 $env:POSTGRES_HOST = "localhost"; $env:POSTGRES_PORT = "5732"; $env:SERVER_PORT = "8380"; $env:DASHBOARD_PORT = "3000"
-.\bin\drasi-server.exe --config tutorials/building-comfort/server-config.yaml
+.\bin\drasi-server.exe --config server-config.yaml
 ```
 
 The `start-demo.sh` script does two things: it starts PostgreSQL (seeding one building, three floors, and nine rooms — every room comfortable to begin with) and then runs Drasi Server in the foreground.
@@ -120,7 +131,7 @@ Leave this running. Everything else happens from **Terminal 2** (or your browser
 
 > **Stopping and resetting**
 >
-> Press **Ctrl+C** in Terminal 1 to stop the server. To remove the database container when you're completely done, run `bash tutorials/building-comfort/scripts/cleanup.sh` (add `--volumes` to also delete the data).
+> Press **Ctrl+C** in Terminal 1 to stop the server. To remove the database container when you're completely done, run `bash scripts/cleanup.sh` (add `--volumes` to also delete the data).
 
 ## Step 3 of 4: Open the Dashboard
 Drasi Server's dashboard reaction hosts a live web dashboard — there's no separate app to build or run. Open it in your browser:
@@ -150,7 +161,7 @@ Push a single room out of the comfortable band (sets `temperature = 40`, `humidi
 **bash / zsh**
 
 ```bash
-bash tutorials/building-comfort/scripts/break-room.sh room_01_01_01
+bash scripts/break-room.sh room_01_01_01
 ```
 
 **PowerShell**
@@ -169,10 +180,10 @@ Return a room — or the whole building — to comfortable defaults (`70 / 40 / 
 
 ```bash
 # Reset one room
-bash tutorials/building-comfort/scripts/reset-room.sh room_01_01_01
+bash scripts/reset-room.sh room_01_01_01
 
 # Reset every room
-bash tutorials/building-comfort/scripts/reset-room.sh
+bash scripts/reset-room.sh
 ```
 
 **PowerShell**
@@ -191,7 +202,7 @@ Try partial degradation — make a room too hot without touching CO2:
 
 ```bash
 # set-room.sh <room_id> <temperature> <humidity> <co2>
-bash tutorials/building-comfort/scripts/set-room.sh room_01_02_03 82 40 10
+bash scripts/set-room.sh room_01_02_03 82 40 10
 ```
 
 **PowerShell**
@@ -209,14 +220,14 @@ To keep the dashboard alive without typing, run the simulator. It picks a random
 **bash / zsh**
 
 ```bash
-bash tutorials/building-comfort/scripts/simulate.sh
+bash scripts/simulate.sh
 ```
 
 **PowerShell**
 
 ```powershell
 # The simulator is a bash script; run it from Git Bash or WSL:
-bash tutorials/building-comfort/scripts/simulate.sh
+bash scripts/simulate.sh
 ```
 
 Press **Ctrl+C** to stop the simulator, then `reset-room.sh` to return everything to comfortable.
@@ -316,18 +327,18 @@ When you're finished, stop Drasi Server with **Ctrl+C** in Terminal 1, then remo
 
 ```bash
 # Stop containers, keep data
-bash tutorials/building-comfort/scripts/cleanup.sh
+bash scripts/cleanup.sh
 
 # Stop containers and delete the data volume
-bash tutorials/building-comfort/scripts/cleanup.sh --volumes
+bash scripts/cleanup.sh --volumes
 ```
 
 **PowerShell**
 
 ```powershell
-cd tutorials/building-comfort/database
+cd database
 docker compose down -v
-cd ../../..
+cd ..
 ```
 
 ## What You Learned

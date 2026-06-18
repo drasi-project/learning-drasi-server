@@ -33,10 +33,9 @@ services:
     ports:
       - "${POSTGRES_HOST_PORT:-5732}:5432"
     volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - building_comfort_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U drasi_user -d building_comfort"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d building_comfort"]
       interval: 5s
       timeout: 5s
       retries: 5

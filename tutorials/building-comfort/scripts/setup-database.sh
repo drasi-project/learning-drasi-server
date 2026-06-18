@@ -61,7 +61,7 @@ echo "Waiting for PostgreSQL to be ready..."
 MAX_RETRIES=30
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker exec building-comfort-postgres pg_isready -U drasi_user -d building_comfort &> /dev/null; then
+    if docker exec building-comfort-postgres pg_isready -U postgres -d building_comfort &> /dev/null; then
         echo "PostgreSQL is ready!"
         break
     fi
@@ -75,6 +75,15 @@ if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
     echo "Check logs with: docker logs building-comfort-postgres"
     exit 1
 fi
+
+# Apply the schema and seed data over stdin. We pipe init.sql into psql with
+# `docker exec -i` instead of bind-mounting it into the container. A bind mount
+# would break under docker-outside-of-docker (the dev container's file path does
+# not exist on the host's Docker daemon); piping over stdin works the same way
+# for the dev container, Codespaces, and bare-metal runs.
+echo "Applying schema and seed data..."
+docker exec -i building-comfort-postgres \
+    psql -v ON_ERROR_STOP=1 -U postgres -d building_comfort < "$DATABASE_DIR/init.sql"
 
 echo
 echo "Verifying database setup..."
