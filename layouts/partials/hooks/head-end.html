@@ -1,0 +1,21 @@
+<!-- Default to light mode unless the visitor has explicitly chosen a theme.
+     Runs after Docsy's inline theme script (which falls back to the OS
+     preference) so the initial paint matches the light default and avoids a
+     flash of dark mode on OS-dark devices. -->
+<script>
+  (function () {
+    try {
+      if (!localStorage.getItem('td-color-theme')) {
+        document.documentElement.setAttribute('data-bs-theme', 'light');
+      }
+    } catch (e) { /* localStorage unavailable; leave default theme */ }
+  })();
+</script>
+
+<!-- Google Fonts - Inter for body, JetBrains Mono for code.
+     The SCSS in assets/scss/_variables_project.scss sets these as the
+     sans-serif / monospace families, so they must be loaded here to match
+     the main Drasi documentation site's typography. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">

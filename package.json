@@ -1,0 +1,16 @@
+{
+  "name": "learning-drasi-server-docs",
+  "version": "0.1.0",
+  "description": "Hugo + Docsy documentation site for the Drasi Server tutorials.",
+  "private": true,
+  "scripts": {
+    "serve": "hugo server",
+    "build": "hugo --gc --minify",
+    "get:modules": "hugo mod get -u ./..."
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "postcss-cli": "^11.0.1"
+  }
+}

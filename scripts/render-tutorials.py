@@ -33,6 +33,8 @@ GENERATED_BANNER = (
 
 _ATTR_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
 
+_FRONT_MATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
+
 _TABPANE_RE = re.compile(
     r"\{\{<\s*tabpane[^}]*>\}\}(?P<body>.*?)\{\{<\s*/\s*tabpane\s*>\}\}",
     re.DOTALL,
@@ -186,7 +188,8 @@ def _rewrite_heading_ids(source: str) -> str:
 
 
 def render(source: str) -> str:
-    out = _rewrite_heading_ids(source)
+    out = _FRONT_MATTER_RE.sub("", source)
+    out = _rewrite_heading_ids(out)
     out = _CARD_GRID_RE.sub(_render_card_grid, out)
     out = _FLOW_DIAGRAM_RE.sub(_render_flow_diagram, out)
     out = _TABPANE_RE.sub(_render_tabpane, out)

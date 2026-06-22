@@ -13,21 +13,6 @@ If you are looking for Drasi Platform (Kubernetes) tutorials, use
 
 See [tutorials](tutorials) for the full list of tutorials.
 
-## Run Locally
-
-For the current getting-started tutorial, use the canonical upstream files in
-`drasi-server/examples/getting-started`:
-
-```bash
-git clone https://github.com/drasi-project/drasi-server.git
-cd drasi-server/examples/getting-started
-```
-
-Then follow:
-
-- [drasi.io/drasi-server/getting-started](https://drasi.io/drasi-server/getting-started/)
-- [examples/getting-started README](https://github.com/drasi-project/drasi-server/tree/main/examples/getting-started)
-
 ## Run in a Dev Container
 
 From the repository root:
@@ -44,6 +29,51 @@ From the repository root:
 
 After the Codespace starts, follow the getting-started guide in
 [tutorials/getting-started](tutorials/getting-started).
+
+## Documentation Site
+
+The tutorials also render as a [Docsy](https://www.docsy.dev/)/[Hugo](https://gohugo.io/)
+documentation site. Each tutorial is authored once in `tutorials/<name>/index.md`
+(the single source of truth) and mounted into the Hugo content tree, so the doc
+site and the GitHub `README.md` files stay in sync.
+
+### Prerequisites
+
+- [Hugo Extended](https://gohugo.io/installation/) `0.152.2` or newer
+- [Go](https://go.dev/dl/) `1.24` or newer (for Hugo Modules)
+- [Node.js](https://nodejs.org/) `18` or newer with npm (for the PostCSS pipeline)
+
+### Build
+
+```bash
+# 1. Install the PostCSS dependencies used by Docsy's SCSS pipeline
+npm install
+
+# 2. Build the static site into ./public
+hugo --gc --minify
+```
+
+### Preview locally
+
+```bash
+hugo server
+```
+
+Then open <http://localhost:1313>.
+
+> Hugo writes the `public/webfonts/*` files as read-only, which can make a later
+> rebuild fail with a "permission denied" error. If that happens, remove the
+> generated output before rebuilding: `rm -rf public resources`.
+
+### Regenerate the GitHub READMEs
+
+After editing any `tutorials/<name>/index.md`, regenerate the plain-Markdown
+`README.md` files so they match:
+
+```bash
+python3 scripts/render-tutorials.py          # write README.md files
+python3 scripts/render-tutorials.py --check   # fail if any are stale (CI check)
+```
 
 ## Project Links
 
