@@ -1,4 +1,4 @@
-<!-- DO NOT EDIT. Generated from index.md by scripts/render-tutorials.py. Edit index.md and run `python3 scripts/render-tutorials.py`. -->
+<!-- DO NOT EDIT. Generated from _index.md by scripts/render-tutorials.py. Edit _index.md and run `python3 scripts/render-tutorials.py`. -->
 
 Imagine you want to react the instant data changes — a new row in a database, a value crossing a threshold, or something that *should* have changed but didn't. Maybe something more complex like cross-referencing the pods running on your Kubernetes cluster against a database of vulnerable and non-compliant images.
 
@@ -39,10 +39,10 @@ You'll configure each of these building blocks yourself as you work through the 
 ## Step 1 of 6: Set Up Your Environment
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
-- **[Download Binary](https://drasi.io/drasi-server/getting-started/download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
-- **[GitHub Codespace](https://drasi.io/drasi-server/getting-started/github-codespace/)** — One-click cloud environment. No local installation needed.
-- **[Dev Container](https://drasi.io/drasi-server/getting-started/dev-container/)** — VS Code Dev Container with all dependencies preconfigured.
-- **[Build from Source](https://drasi.io/drasi-server/getting-started/build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
+- **[Download Binary](download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
+- **[GitHub Codespace](github-codespace/)** — One-click cloud environment. No local installation needed.
+- **[Dev Container](dev-container/)** — VS Code Dev Container with all dependencies preconfigured.
+- **[Build from Source](build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
 
 <div style="margin-top: 2rem;"></div>
 

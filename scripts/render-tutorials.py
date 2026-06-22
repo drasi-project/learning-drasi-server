@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Render Docsy/Hugo tutorial sources into plain Markdown READMEs.
 
-Each tutorial is authored once in an ``index.md`` that may use Docsy/Hugo
+Each tutorial is authored once in an ``_index.md`` that may use Docsy/Hugo
 shortcodes (``{{< tabpane >}}``, ``{{% alert %}}``, ...). The doc site consumes
-``index.md`` directly so the tab widgets and styled alerts render. GitHub and
+``_index.md`` directly so the tab widgets and styled alerts render. GitHub and
 plain Markdown viewers cannot process shortcodes, so this script generates a
 sibling ``README.md`` with the shortcodes converted to equivalent plain
 Markdown.
 
-Source of truth:   tutorials/<name>/index.md   (shortcodes, used by doc site)
-Generated output:  tutorials/<name>/README.md  (plain Markdown, shown on GitHub)
+Source of truth:   tutorials/<name>/_index.md   (shortcodes, used by doc site)
+Generated output:  tutorials/<name>/README.md   (plain Markdown, shown on GitHub)
 
 Usage:
     python3 scripts/render-tutorials.py          # write README.md files
@@ -27,8 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TUTORIALS_DIR = REPO_ROOT / "tutorials"
 
 GENERATED_BANNER = (
-    "<!-- DO NOT EDIT. Generated from index.md by scripts/render-tutorials.py. "
-    "Edit index.md and run `python3 scripts/render-tutorials.py`. -->\n\n"
+    "<!-- DO NOT EDIT. Generated from _index.md by scripts/render-tutorials.py. "
+    "Edit _index.md and run `python3 scripts/render-tutorials.py`. -->\n\n"
 )
 
 _ATTR_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
@@ -202,7 +202,7 @@ def render(source: str) -> str:
 def iter_sources() -> list[Path]:
     if not TUTORIALS_DIR.is_dir():
         return []
-    return sorted(TUTORIALS_DIR.glob("*/index.md"))
+    return sorted(TUTORIALS_DIR.glob("*/_index.md"))
 
 
 def main() -> int:
@@ -216,7 +216,7 @@ def main() -> int:
 
     sources = iter_sources()
     if not sources:
-        print("No tutorials/*/index.md sources found.", file=sys.stderr)
+        print("No tutorials/*/_index.md sources found.", file=sys.stderr)
         return 0
 
     stale: list[Path] = []
