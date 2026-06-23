@@ -1,6 +1,15 @@
+---
+type: "docs"
+title: "Building Comfort"
+linkTitle: "Building Comfort"
+weight: 20
+description: >
+  Monitor a smart building's comfort in real time with PostgreSQL CDC, six continuous queries with synthetic joins, and the dashboard reaction.
+---
+
 Imagine you manage a building and want to know — the instant it happens — when any room becomes uncomfortable: too hot, too cold, or stuffy with CO2. You don't want to poll sensors on a timer or wire up a stream processor by hand. You just want to describe what "uncomfortable" means and have something watch every room, floor, and the whole building for you, continuously.
 
-This tutorial recreates the classic Drasi **Building Comfort** demo on **Drasi Server**. A PostgreSQL database holds a building made of floors and rooms, each room reporting `temperature`, `humidity`, and `co2`. You'll start Drasi Server with a single configuration, watch a live dashboard light up, and then change room readings and see everything react in real time — without writing any application code, and **without building a bespoke web UI**. Instead of a hand-written dashboard, the demo uses Drasi Server's built-in **dashboard reaction**.
+This tutorial builds a **Building Comfort** monitoring demo on **Drasi Server**. A PostgreSQL database holds a building made of floors and rooms, each room reporting `temperature`, `humidity`, and `co2`. You'll start Drasi Server with a single configuration, watch a live dashboard light up, and then change room readings and see everything react in real time — without writing any application code, and **without building a bespoke web UI**. Instead of a hand-written dashboard, the demo uses Drasi Server's built-in **dashboard reaction**.
 
 **What you'll build:** a running Drasi Server that connects to PostgreSQL and reacts to room sensor changes in real time, assembled from Drasi's three core building blocks:
 
@@ -105,7 +114,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
 
 The `start-demo` script does two things: it starts PostgreSQL (seeding one building, three floors, and nine rooms — every room comfortable to begin with) and then runs Drasi Server in the foreground.
 
-On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `reaction/dashboard`, `reaction/log`) from `ghcr.io/drasi-project`, connects to the database, and starts the six continuous queries and the dashboard. When you see a line like the following, it's ready:
+On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `reaction/dashboard`, `reaction/log`) from `ghcr.io/drasi-project` and caches them under `~/.drasi/plugins`, connects to the database, and starts the six continuous queries and the dashboard. When you see a line like the following, it's ready:
 
 ```text
 Drasi Server started successfully with API on port 8380
@@ -264,7 +273,7 @@ joins:
       - { label: Building, property: id }
 ```
 
-With those joins declared, a query can match the whole hierarchy. This Cypher is copied **unchanged** from the original Drasi Platform tutorial — Drasi Server runs the same query engine:
+With those joins declared, a query can match the whole hierarchy:
 
 ```cypher
 MATCH (r:Room)-[:PART_OF_FLOOR]->(f:Floor)-[:PART_OF_BUILDING]->(b:Building)

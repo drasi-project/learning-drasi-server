@@ -28,8 +28,21 @@ ROOM_ID="${1:-}"
 
 if [ -z "$ROOM_ID" ]; then
     echo "Resetting ALL rooms -> temperature=70 humidity=40 co2=10"
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \
-        "UPDATE \"Room\" SET temperature=70, humidity=40, co2=10 RETURNING id, name, temperature, humidity, co2;"
+    # Drasi's PostgreSQL source propagates one row-change per transaction, so a
+    # single multi-row "UPDATE \"Room\" SET ..." would only reach Drasi for one
+    # room and the dashboard would not fully reset. Update each room in its own
+    # statement/transaction so every change is captured.
+    ROOM_IDS=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -tAc \
+        'SELECT id FROM "Room" ORDER BY id;')
+    COUNT=0
+    for id in $ROOM_IDS; do
+        docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \
+            "UPDATE \"Room\" SET temperature=70, humidity=40, co2=10 WHERE id='$id';" \
+            >/dev/null
+        echo "  reset $id"
+        COUNT=$((COUNT + 1))
+    done
+    echo "Reset $COUNT room(s)."
 else
     echo "Resetting $ROOM_ID -> temperature=70 humidity=40 co2=10"
     docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \

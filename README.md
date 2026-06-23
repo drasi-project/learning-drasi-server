@@ -2,9 +2,6 @@
 
 Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-server).
 
-If you are looking for Drasi Platform (Kubernetes) tutorials, use
-[drasi-project/learning](https://github.com/drasi-project/learning).
-
 ## Tutorials
 
 | Tutorial | What you learn | How to trigger it |
@@ -36,7 +33,7 @@ After the Codespace starts, follow the getting-started guide in
 ## Documentation Site
 
 The tutorials also render as a [Docsy](https://www.docsy.dev/)/[Hugo](https://gohugo.io/)
-documentation site. Each tutorial is authored once in `tutorials/<name>/index.md`
+documentation site. Each tutorial is authored once in `tutorials/<name>/_index.md`
 (the single source of truth) and mounted into the Hugo content tree, so the doc
 site and the GitHub `README.md` files stay in sync.
 
@@ -70,7 +67,7 @@ Then open <http://localhost:1313>.
 
 ### Regenerate the GitHub READMEs
 
-After editing any `tutorials/<name>/index.md`, regenerate the plain-Markdown
+After editing any `tutorials/<name>/_index.md`, regenerate the plain-Markdown
 `README.md` files so they match:
 
 ```bash

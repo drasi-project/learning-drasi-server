@@ -75,6 +75,12 @@ defaultContentLanguageInSubdir = false
   [[module.mounts]]
     source = "tutorials/getting-started"
     target = "content/tutorials/getting-started"
+    # The viewer is a standalone HTML app served locally during the tutorial
+    # (not a docs page); exclude it so Hugo doesn't process it as content.
+    files = ['! viewer/**']
+  [[module.mounts]]
+    source = "tutorials/building-comfort"
+    target = "content/tutorials/building-comfort"
 
   # Keep default mounts for the remaining components.
   [[module.mounts]]

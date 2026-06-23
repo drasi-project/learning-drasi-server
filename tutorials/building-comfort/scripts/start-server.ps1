@@ -47,12 +47,21 @@ if (-not $pgRunning) {
     Write-Host ""
 }
 
+# Cache plugins in a user-owned directory outside the workspace. The default
+# location is next to the binary (bin\plugins), but on a bind-mounted workspace
+# that path may be owned by another user, so writing the plugin lock file fails
+# with "Permission denied". A path under the user profile is always writable and
+# persists the cache across runs.
+$pluginsDir = if ($env:DRASI_PLUGINS_DIR) { $env:DRASI_PLUGINS_DIR } else { Join-Path $HOME ".drasi\plugins" }
+New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
+
 $serverPort = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { "8380" }
 $dashboardPort = if ($env:DASHBOARD_PORT) { $env:DASHBOARD_PORT } else { "3000" }
 
 Write-Host "=== Drasi Server Building Comfort ==="
 Write-Host "  Binary: $bin"
 Write-Host "  Config: $ConfigFile"
+Write-Host "  Plugins: $pluginsDir"
 Write-Host "  API:       http://localhost:$serverPort"
 Write-Host "  Dashboard: http://localhost:$dashboardPort"
 Write-Host "  API docs:  http://localhost:$serverPort/api/v1/docs/"
@@ -61,4 +70,4 @@ Write-Host "Press Ctrl+C to stop the server."
 Write-Host "=============================================="
 Write-Host ""
 
-& $bin --config $ConfigFile
+& $bin --config $ConfigFile --plugins-dir $pluginsDir

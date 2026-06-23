@@ -55,6 +55,15 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
+# Plugins are cached outside the bind-mounted workspace, in a user-owned
+# directory. The default plugins location is next to the binary (bin/plugins),
+# but on a bind mount (dev container / Windows) that path can be owned by
+# another user, so writing the plugin lock file fails with "Permission denied".
+# A path under $HOME is always writable by the user running the server and
+# persists the cache across runs.
+PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$HOME/.drasi/plugins}"
+mkdir -p "$PLUGINS_DIR"
+
 if ! docker ps 2>/dev/null | grep -q building-comfort-postgres; then
     echo "Warning: the building-comfort-postgres container is not running."
     echo "Run ./scripts/setup-database.sh first."
@@ -64,6 +73,7 @@ fi
 echo "=== Drasi Server Building Comfort ==="
 echo "  Binary: $BIN"
 echo "  Config: $CONFIG_FILE"
+echo "  Plugins: $PLUGINS_DIR"
 echo "  API:       http://localhost:${SERVER_PORT:-8380}"
 echo "  Dashboard: http://localhost:${DASHBOARD_PORT:-3000}"
 echo "  API docs:  http://localhost:${SERVER_PORT:-8380}/api/v1/docs/"
@@ -72,4 +82,4 @@ echo "Press Ctrl+C to stop the server."
 echo "=============================================="
 echo
 
-exec "$BIN" --config "$CONFIG_FILE"
+exec "$BIN" --config "$CONFIG_FILE" --plugins-dir "$PLUGINS_DIR"
