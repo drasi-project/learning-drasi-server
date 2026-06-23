@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
+# Copyright 2026 The Drasi Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Render Docsy/Hugo tutorial sources into plain Markdown READMEs.
 
-Each tutorial is authored once in an ``index.md`` that may use Docsy/Hugo
+Each tutorial is authored once in an ``_index.md`` that may use Docsy/Hugo
 shortcodes (``{{< tabpane >}}``, ``{{% alert %}}``, ...). The doc site consumes
-``index.md`` directly so the tab widgets and styled alerts render. GitHub and
+``_index.md`` directly so the tab widgets and styled alerts render. GitHub and
 plain Markdown viewers cannot process shortcodes, so this script generates a
 sibling ``README.md`` with the shortcodes converted to equivalent plain
 Markdown.
 
-Source of truth:   tutorials/<name>/index.md   (shortcodes, used by doc site)
-Generated output:  tutorials/<name>/README.md  (plain Markdown, shown on GitHub)
+Source of truth:   tutorials/<name>/_index.md   (shortcodes, used by doc site)
+Generated output:  tutorials/<name>/README.md   (plain Markdown, shown on GitHub)
 
 Usage:
     python3 scripts/render-tutorials.py          # write README.md files
@@ -27,11 +41,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TUTORIALS_DIR = REPO_ROOT / "tutorials"
 
 GENERATED_BANNER = (
-    "<!-- DO NOT EDIT. Generated from index.md by scripts/render-tutorials.py. "
-    "Edit index.md and run `python3 scripts/render-tutorials.py`. -->\n\n"
+    "<!-- DO NOT EDIT. Generated from _index.md by scripts/render-tutorials.py. "
+    "Edit _index.md and run `python3 scripts/render-tutorials.py`. -->\n\n"
 )
 
 _ATTR_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
+
+_FRONT_MATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 
 _TABPANE_RE = re.compile(
     r"\{\{<\s*tabpane[^}]*>\}\}(?P<body>.*?)\{\{<\s*/\s*tabpane\s*>\}\}",
@@ -47,6 +63,25 @@ _MD_TAB_RE = re.compile(
 )
 _ALERT_RE = re.compile(
     r"\{\{%\s*alert\s+(?P<attrs>[^}]*?)%\}\}(?P<body>.*?)\{\{%\s*/\s*alert\s*%\}\}",
+    re.DOTALL,
+)
+_CARD_GRID_RE = re.compile(
+    r'^<div\s+class="card-grid">\n(?P<body>.*?)\n</div>[ \t]*$',
+    re.DOTALL | re.MULTILINE,
+)
+_CARD_RE = re.compile(
+    r'<a\s+href="(?P<href>[^"]+)">.*?'
+    r'unified-card-title">(?P<title>.*?)</h3>.*?'
+    r'unified-card-summary">(?P<summary>.*?)</p>.*?</a>',
+    re.DOTALL,
+)
+_FLOW_DIAGRAM_RE = re.compile(
+    r'^<div\s+class="flow-diagram">\n(?P<body>.*?)\n</div>[ \t]*$',
+    re.DOTALL | re.MULTILINE,
+)
+_FLOW_STEP_RE = re.compile(
+    r'flow-step__label">(?P<label>.*?)</div>.*?'
+    r'flow-step__description">(?P<description>.*?)</div>',
     re.DOTALL,
 )
 
@@ -93,6 +128,41 @@ def _render_alert(match: re.Match[str]) -> str:
     return "\n".join(lines)
 
 
+def _render_card_grid(match: re.Match[str]) -> str:
+    """Convert a Docsy ``card-grid`` of link cards into a Markdown list.
+
+    GitHub renders ``<a href><div>...</div></a>`` cards as empty links because
+    it hoists the block-level ``<div>`` out of the anchor. The doc site keeps
+    the cards; here we emit a plain bullet list of named links instead.
+    """
+    items: list[str] = []
+    for card in _CARD_RE.finditer(match.group("body")):
+        href = card.group("href").strip()
+        title = " ".join(card.group("title").split())
+        summary = " ".join(card.group("summary").split())
+        items.append(f"- **[{title}]({href})** — {summary}")
+    return "\n".join(items) if items else match.group(0)
+
+
+def _render_flow_diagram(match: re.Match[str]) -> str:
+    """Convert a Docsy ``flow-diagram`` into a Markdown arrow chain plus list.
+
+    GitHub renders the nested ``<div>`` steps as stray words, so we emit an
+    arrow chain of the step labels followed by a bullet list of each step's
+    description. The doc site keeps the styled diagram.
+    """
+    steps = [
+        (" ".join(m.group("label").split()), " ".join(m.group("description").split()))
+        for m in _FLOW_STEP_RE.finditer(match.group("body"))
+    ]
+    if not steps:
+        return match.group(0)
+
+    chain = " → ".join(f"**{label}**" for label, _ in steps)
+    bullets = "\n".join(f"- **{label}** — {desc}" for label, desc in steps)
+    return f"{chain}\n\n{bullets}"
+
+
 _HEADING_ID_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*\{#(?P<id>[\w-]+)\}\s*$", re.MULTILINE)
 
 
@@ -132,7 +202,10 @@ def _rewrite_heading_ids(source: str) -> str:
 
 
 def render(source: str) -> str:
-    out = _rewrite_heading_ids(source)
+    out = _FRONT_MATTER_RE.sub("", source)
+    out = _rewrite_heading_ids(out)
+    out = _CARD_GRID_RE.sub(_render_card_grid, out)
+    out = _FLOW_DIAGRAM_RE.sub(_render_flow_diagram, out)
     out = _TABPANE_RE.sub(_render_tabpane, out)
     out = _ALERT_RE.sub(_render_alert, out)
     # Collapse 3+ blank lines that conversions can introduce.
@@ -143,7 +216,7 @@ def render(source: str) -> str:
 def iter_sources() -> list[Path]:
     if not TUTORIALS_DIR.is_dir():
         return []
-    return sorted(TUTORIALS_DIR.glob("*/index.md"))
+    return sorted(TUTORIALS_DIR.glob("*/_index.md"))
 
 
 def main() -> int:
@@ -157,7 +230,7 @@ def main() -> int:
 
     sources = iter_sources()
     if not sources:
-        print("No tutorials/*/index.md sources found.", file=sys.stderr)
+        print("No tutorials/*/_index.md sources found.", file=sys.stderr)
         return 0
 
     stale: list[Path] = []

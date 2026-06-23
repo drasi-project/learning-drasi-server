@@ -1,4 +1,4 @@
-<!-- DO NOT EDIT. Generated from index.md by scripts/render-tutorials.py. Edit index.md and run `python3 scripts/render-tutorials.py`. -->
+<!-- DO NOT EDIT. Generated from _index.md by scripts/render-tutorials.py. Edit _index.md and run `python3 scripts/render-tutorials.py`. -->
 
 Imagine you want to react the instant data changes — a new row in a database, a value crossing a threshold, or something that *should* have changed but didn't. Maybe something more complex like cross-referencing the pods running on your Kubernetes cluster against a database of vulnerable and non-compliant images.
 
@@ -10,39 +10,11 @@ Building this kind of capability by hand usually means stitching together severa
 
 **What you'll build:** a running Drasi Server that connects to a live PostgreSQL database and reacts to its changes, assembled from Drasi's three core building blocks:
 
-<div class="flow-diagram">
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-database"></i>
-    </div>
-    <div class="flow-step__label">Sources</div>
-    <div class="flow-step__description">Connect to your data sources</div>
-  </div>
+**Sources** → **Continuous Queries** → **Reactions**
 
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-filter"></i>
-    </div>
-    <div class="flow-step__label">Continuous Queries</div>
-    <div class="flow-step__description">Define what changes matter</div>
-  </div>
-
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-bolt"></i>
-    </div>
-    <div class="flow-step__label">Reactions</div>
-    <div class="flow-step__description">Take action automatically</div>
-  </div>
-</div>
+- **Sources** — Connect to your data sources
+- **Continuous Queries** — Define what changes matter
+- **Reactions** — Take action automatically
 
 You'll configure each of these building blocks yourself as you work through the steps below.
 
@@ -67,44 +39,10 @@ You'll configure each of these building blocks yourself as you work through the 
 ## Step 1 of 6: Set Up Your Environment
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
-<div class="card-grid">
-  <a href="download-binary/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fas fa-download"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">Download Binary</h3>
-        <p class="unified-card-summary">Download a prebuilt binary. The fastest way to get started (recommended).</p>
-      </div>
-    </div>
-  </a>
-  <a href="github-codespace/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fab fa-github"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">GitHub Codespace</h3>
-        <p class="unified-card-summary">One-click cloud environment. No local installation needed.</p>
-      </div>
-    </div>
-  </a>
-  <a href="dev-container/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fas fa-cube"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">Dev Container</h3>
-        <p class="unified-card-summary">VS Code Dev Container with all dependencies preconfigured.</p>
-      </div>
-    </div>
-  </a>
-  <a href="build-from-source/">
-    <div class="unified-card unified-card--tutorials">
-      <div class="unified-card-icon"><i class="fas fa-hammer"></i></div>
-      <div class="unified-card-content">
-        <h3 class="unified-card-title">Build from Source</h3>
-        <p class="unified-card-summary">Clone and build Drasi Server yourself. Ideal for would-be contributors.</p>
-      </div>
-    </div>
-  </a>
-</div>
+- **[Download Binary](download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
+- **[GitHub Codespace](github-codespace/)** — One-click cloud environment. No local installation needed.
+- **[Dev Container](dev-container/)** — VS Code Dev Container with all dependencies preconfigured.
+- **[Build from Source](build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
 
 <div style="margin-top: 2rem;"></div>
 

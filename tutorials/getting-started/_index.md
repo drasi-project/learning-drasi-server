@@ -1,3 +1,11 @@
+---
+type: "docs"
+title: "Getting Started"
+linkTitle: "Getting Started"
+weight: 10
+description: >
+  Connect Drasi Server to a live PostgreSQL database and build Continuous Queries step by step.
+---
 
 Imagine you want to react the instant data changes — a new row in a database, a value crossing a threshold, or something that *should* have changed but didn't. Maybe something more complex like cross-referencing the pods running on your Kubernetes cluster against a database of vulnerable and non-compliant images.
 

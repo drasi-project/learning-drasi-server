@@ -1,0 +1,37 @@
+<!--
+ Copyright 2026 The Drasi Authors
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<!-- Default to light mode unless the visitor has explicitly chosen a theme.
+     Runs after Docsy's inline theme script (which falls back to the OS
+     preference) so the initial paint matches the light default and avoids a
+     flash of dark mode on OS-dark devices. -->
+<script>
+  (function () {
+    try {
+      if (!localStorage.getItem('td-color-theme')) {
+        document.documentElement.setAttribute('data-bs-theme', 'light');
+      }
+    } catch (e) { /* localStorage unavailable; leave default theme */ }
+  })();
+</script>
+
+<!-- Google Fonts - Inter for body, JetBrains Mono for code.
+     The SCSS in assets/scss/_variables_project.scss sets these as the
+     sans-serif / monospace families, so they must be loaded here to match
+     the main Drasi documentation site's typography. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
