@@ -7,9 +7,9 @@ If you are looking for Drasi Platform (Kubernetes) tutorials, use
 
 ## Tutorials
 
-| Tutorial | What you learn | How to trigger it |
-| --- | --- | --- |
-| [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Follow [drasi.io/drasi-server/getting-started](https://drasi.io/drasi-server/getting-started/) and run commands from `drasi-server/examples/getting-started` |
+| Tutorial | What you learn |
+| --- | --- |
+| [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) |
 
 See [tutorials](tutorials) for the full list of tutorials.
 
