@@ -213,7 +213,7 @@ Press **Ctrl+C** to stop the simulator, then `reset-room.sh` to return everythin
 
 ## How It Works {#how}
 
-Everything you just ran is described by the single `server-config.yaml`. Here's what each part does — no extra steps, just the one file.
+Everything you just ran is described by the single `server-config.yaml`. Here's what each part does.
 
 ### The Source
 
