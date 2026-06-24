@@ -258,7 +258,7 @@ sources:
       kind: postgres
 ```
 
-The PostgreSQL source connects with the credentials above (provided via environment variables, with sensible defaults) and uses **logical replication (CDC)** to stream changes from the `Building`, `Floor`, and `Room` tables. `tableKeys` tells Drasi the primary key of each table so it can track row identity across changes. The bootstrap provider loads the rows that already exist when the server starts; after that, every `UPDATE` you make (via the helper scripts) flows to Drasi as a change. The table names are quoted and PascalCase so the node labels Drasi sees match the queries exactly: `(r:Room)`, `(f:Floor)`, `(b:Building)`.
+The PostgreSQL source connects with the credentials above (provided via environment variables, with sensible defaults) and uses **logical replication (CDC)** to stream changes from the `Building`, `Floor`, and `Room` tables. `tableKeys` tells Drasi the primary key of each table so it can track row identity across changes. The bootstrap provider loads the rows that already exist when the server starts; after that, every `UPDATE` you make (via the helper scripts) flows to Drasi as a change. The table names are quoted and PascalCase so the node labels Drasi sees match the queries exactly: `(r:Room)`, `(f:Floor)`, `(b:Building)`. For every option the source accepts, see [Configure the PostgreSQL Source](https://drasi.io/drasi-server/how-to-guides/configuration/configure-sources/configure-postgresql-source/).
 
 ### The Continuous Queries
 
@@ -359,7 +359,7 @@ reactions:
           # ...
 ```
 
-The dashboard reaction subscribes to the queries and streams their changes to the browser over a WebSocket. A **predefined dashboard** is seeded on startup, so the layout is ready the first time you open it. Most of the panels are **Markdown widgets** that use the reaction's Handlebars helpers (`groupBy`, `each`, `gt`/`lt`) to lay out the building from the `building-comfort-ui` rows, plus a KPI and gauge for the overall level and Markdown widgets for the alert lists. Because the queries only emit *changes*, the dashboard updates the instant a room's comfort changes — no polling.
+The dashboard reaction subscribes to the queries and streams their changes to the browser over a WebSocket. A **predefined dashboard** is seeded on startup, so the layout is ready the first time you open it. Most of the panels are **Markdown widgets** that use the reaction's Handlebars helpers (`groupBy`, `each`, `gt`/`lt`) to lay out the building from the `building-comfort-ui` rows, plus a KPI and gauge for the overall level and Markdown widgets for the alert lists. Because the queries only emit *changes*, the dashboard updates the instant a room's comfort changes — no polling. The full set of widget types and configuration options is documented in [Configure the Dashboard Reaction](https://drasi.io/drasi-server/how-to-guides/configuration/configure-reactions/configure-dashboard-reaction/).
 
 For example, the centerpiece **Building Comfort** panel is a single Markdown widget. Its template groups the `building-comfort-ui` rows by floor with `groupBy`, loops the rooms with `each`, and uses the `gt`/`lt` helpers to pick a status emoji per comfort level. Here is the widget's `template`:
 
