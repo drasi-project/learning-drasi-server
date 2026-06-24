@@ -26,6 +26,20 @@ DB_USER="${POSTGRES_USER:-drasi_user}"
 
 ROOM_ID="${1:-}"
 
+# Fail fast if the database container isn't running.
+if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+    echo "Error: the ${CONTAINER} container is not running."
+    echo "Run ./scripts/setup-database.sh first."
+    exit 1
+fi
+
+# When a specific room is given, validate it (letters, digits, and underscores)
+# so a malformed value can't produce a confusing SQL error or inject SQL.
+if [ -n "$ROOM_ID" ] && ! printf '%s' "$ROOM_ID" | grep -Eq '^[A-Za-z0-9_]+$'; then
+    echo "Error: invalid room id '$ROOM_ID' (expected letters, digits, and underscores)."
+    exit 1
+fi
+
 if [ -z "$ROOM_ID" ]; then
     echo "Resetting ALL rooms -> temperature=70 humidity=40 co2=10"
     # Drasi's PostgreSQL source propagates one row-change per transaction, so a

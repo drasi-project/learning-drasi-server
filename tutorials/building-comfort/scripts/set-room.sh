@@ -39,6 +39,28 @@ if [ -z "$ROOM_ID" ] || [ -z "$TEMPERATURE" ] || [ -z "$HUMIDITY" ] || [ -z "$CO
     exit 1
 fi
 
+# Validate the room id (letters, digits, and underscores) so a malformed value
+# can't produce a confusing SQL error or be used to inject SQL.
+if ! printf '%s' "$ROOM_ID" | grep -Eq '^[A-Za-z0-9_]+$'; then
+    echo "Error: invalid room id '$ROOM_ID' (expected letters, digits, and underscores)."
+    exit 1
+fi
+
+# The temperature, humidity and co2 columns are integers.
+for value in "$TEMPERATURE" "$HUMIDITY" "$CO2"; do
+    if ! printf '%s' "$value" | grep -Eq '^-?[0-9]+$'; then
+        echo "Error: temperature, humidity and co2 must be integers (got '$value')."
+        exit 1
+    fi
+done
+
+# Fail fast if the database container isn't running.
+if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+    echo "Error: the ${CONTAINER} container is not running."
+    echo "Run ./scripts/setup-database.sh first."
+    exit 1
+fi
+
 echo "Setting $ROOM_ID -> temperature=$TEMPERATURE humidity=$HUMIDITY co2=$CO2"
 
 docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \
