@@ -74,14 +74,6 @@ The easiest way to follow this tutorial is the **dev container**, which installs
 
 That's it — skip ahead to [Step 2](#run).
 
-{{% alert title="Windows + WSL: container fails to start?" color="warning" %}}
-If **Reopen in Container** fails with `accessing specified distro mount service: stat /run/guest-services/distro-services/<distro>.sock: no such file or directory`, that's a known VS Code + Docker Desktop issue ([vscode-remote-release#9293](https://github.com/microsoft/vscode-remote-release/issues/9293)) where VS Code tries to mount the WSLg Wayland socket into the container but Docker Desktop can't reach it. It is unrelated to this tutorial. Fix it by turning off the Wayland mount in VS Code **User** settings:
-
-1. Open **Settings** (`Ctrl+,`), search for **Mount Wayland Socket**.
-2. Uncheck **Dev › Containers: Mount Wayland Socket** (the setting `dev.containers.mountWaylandSocket`). It is an application-scoped setting, so set it in User settings, not workspace settings.
-3. Run **Reopen in Container** again.
-{{% /alert %}}
-
 ### Option B: Run Locally
 
 You'll need **Docker** (for PostgreSQL) and **bash** (the helper scripts use it; on Windows use Git Bash or WSL). From the repository root, move into the tutorial directory and download the Drasi Server binary:
@@ -148,6 +140,10 @@ The dashboard updates the instant the data changes — no refreshing. Let's make
 ## Step 4 of 4: Drive Change {#drive}
 
 With Terminal 1 running the demo and the dashboard open, use **Terminal 2** to change room readings and watch Drasi react.
+
+{{% alert title="No middle tier — the scripts just write to the database" color="info" %}}
+The helper scripts below don't talk to Drasi Server at all. Each one runs a plain SQL `UPDATE` against PostgreSQL — exactly what an existing building-management app would already do. There's no API to call, no event to publish, and no application code in the loop. Drasi observes the row change through PostgreSQL's logical replication (CDC), re-evaluates the affected queries, and updates the dashboard on its own. The **PowerShell** tabs make this obvious — they're just raw `psql` `UPDATE` statements, and the **bash** scripts wrap the same SQL.
+{{% /alert %}}
 
 ### Break a room
 
@@ -225,14 +221,44 @@ Everything you just ran is described by the single `server-config.yaml`. Here's 
 sources:
   - kind: postgres
     id: building-facilities
-    tables: [Building, Floor, Room]
+    autoStart: true
+
+    # Connection (supplied via environment variables, with defaults)
+    host: "${POSTGRES_HOST:-localhost}"
+    port: ${POSTGRES_PORT:-5732}
+    database: "${POSTGRES_DATABASE:-building_comfort}"
+    user: "${POSTGRES_USER:-drasi_user}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
+    sslMode: prefer
+
+    # Tables to monitor (PascalCase so node labels match the queries)
+    tables:
+      - Building
+      - Floor
+      - Room
+
+    # Logical replication slot + publication
     slotName: drasi_building_comfort_slot
     publicationName: drasi_building_comfort_pub
+
+    # Primary key of each table, so Drasi can track row identity
+    tableKeys:
+      - table: Building
+        keyColumns:
+          - id
+      - table: Floor
+        keyColumns:
+          - id
+      - table: Room
+        keyColumns:
+          - id
+
+    # Load the rows that already exist when the server starts
     bootstrapProvider:
       kind: postgres
 ```
 
-The PostgreSQL source uses **logical replication (CDC)** to stream changes from the `Building`, `Floor`, and `Room` tables. The bootstrap provider loads the rows that already exist when the server starts; after that, every `UPDATE` you make (via the helper scripts) flows to Drasi as a change. The table names are quoted and PascalCase so the node labels Drasi sees match the queries exactly: `(r:Room)`, `(f:Floor)`, `(b:Building)`.
+The PostgreSQL source connects with the credentials above (provided via environment variables, with sensible defaults) and uses **logical replication (CDC)** to stream changes from the `Building`, `Floor`, and `Room` tables. `tableKeys` tells Drasi the primary key of each table so it can track row identity across changes. The bootstrap provider loads the rows that already exist when the server starts; after that, every `UPDATE` you make (via the helper scripts) flows to Drasi as a change. The table names are quoted and PascalCase so the node labels Drasi sees match the queries exactly: `(r:Room)`, `(f:Floor)`, `(b:Building)`.
 
 ### The Continuous Queries
 
@@ -261,16 +287,23 @@ PostgreSQL knows `Room.floor_id` references `Floor.id` through a foreign key, bu
 ```yaml
 sources:
   - sourceId: building-facilities
-    nodes: [Room, Floor, Building]
+    nodes:
+      - Room
+      - Floor
+      - Building
 joins:
   - id: PART_OF_FLOOR
     keys:
-      - { label: Room,  property: floor_id }
-      - { label: Floor, property: id }
+      - label: Room
+        property: floor_id
+      - label: Floor
+        property: id
   - id: PART_OF_BUILDING
     keys:
-      - { label: Floor,    property: building_id }
-      - { label: Building, property: id }
+      - label: Floor
+        property: building_id
+      - label: Building
+        property: id
 ```
 
 With those joins declared, a query can match the whole hierarchy:
@@ -279,21 +312,94 @@ With those joins declared, a query can match the whole hierarchy:
 MATCH (r:Room)-[:PART_OF_FLOOR]->(f:Floor)-[:PART_OF_BUILDING]->(b:Building)
 ```
 
+#### Aggregating up the hierarchy
+
+Half of the queries don't just read rooms — they **roll comfort levels up** the building. In a Continuous Query, an aggregate such as `avg()` inside a `WITH` groups by whatever non-aggregated values travel alongside it, exactly like SQL's `GROUP BY`.
+
+**One stage — average a floor's rooms.** `floor-comfort-level-calc` keeps the floor `f` in the `WITH`, so `avg()` produces one value per floor:
+
+```cypher
+WITH f, floor( 50 + (r.temperature - 72) + ... ) AS RoomComfortLevel
+WITH f, avg(RoomComfortLevel) AS ComfortLevel
+RETURN f.id AS FloorId, ComfortLevel
+```
+
+**Two stages — average the averages.** `building-alert` aggregates twice. Carrying `f, b` groups the first `avg()` by floor; dropping `f` from the next `WITH` widens the grouping so the second `avg()` rolls the floor averages up into a single building level:
+
+```cypher
+WITH f, b, avg(RoomComfortLevel) AS FloorComfortLevel   // rooms  -> floor
+WITH b,    avg(FloorComfortLevel) AS ComfortLevel        // floors -> building
+```
+
+**Filtering on an aggregate.** The `floor-alert` and `building-alert` queries place a `WHERE` *after* the aggregation — like SQL's `HAVING` — so a floor or the building only shows up while its average is outside the comfortable band:
+
+```cypher
+WITH f, avg(RoomComfortLevel) AS ComfortLevel
+WHERE ComfortLevel < 40 OR ComfortLevel > 50
+RETURN f.id AS FloorId, ComfortLevel
+```
+
+Because these are *continuous* queries, the aggregates are maintained **incrementally**: when one room's reading changes, Drasi recomputes only the affected floor and building averages and emits just that change — it never rescans every room.
+
 ### The Dashboard Reaction
 
 ```yaml
 reactions:
   - kind: dashboard
     id: building-comfort-dashboard
-    queries: [building-comfort-ui, building-comfort-level-calc, ...]
+    queries:
+      - building-comfort-ui
+      - building-comfort-level-calc
+      # ...
     port: 3000
     predefinedDashboards:
       - id: building-comfort
         name: Building Comfort
-        widgets: [ ... ]
+        widgets:
+          # ...
 ```
 
 The dashboard reaction subscribes to the queries and streams their changes to the browser over a WebSocket. A **predefined dashboard** is seeded on startup, so the layout is ready the first time you open it. Most of the panels are **Markdown widgets** that use the reaction's Handlebars helpers (`groupBy`, `each`, `gt`/`lt`) to lay out the building from the `building-comfort-ui` rows, plus a KPI and gauge for the overall level and Markdown widgets for the alert lists. Because the queries only emit *changes*, the dashboard updates the instant a room's comfort changes — no polling.
+
+For example, the centerpiece **Building Comfort** panel is a single Markdown widget. Its template groups the `building-comfort-ui` rows by floor with `groupBy`, loops the rooms with `each`, and uses the `gt`/`lt` helpers to pick a status emoji per comfort level. Here is the widget's `template`:
+
+```handlebars
+{{#groupBy rows "FloorName"}}
+### {{@key}}
+{{#each this}}
+- **{{this.RoomName}}** — comfort **{{this.ComfortLevel}}**
+    {{#if (gt this.ComfortLevel 50)}}
+      🔴 too hot
+    {{else}}
+      {{#if (lt this.ComfortLevel 40)}}
+        🔵 too cold
+      {{else}}
+        🟢 comfortable
+      {{/if}}
+    {{/if}}
+    · 🌡️ {{this.Temperature}}°F  💧 {{this.Humidity}}%  🫧 {{this.CO2}} ppm
+{{/each}}
+{{/groupBy}}
+```
+
+And the reaction renders it live:
+
+<img src="images/dashboard-building-view.png" width="820" alt="The Building Comfort widget: rooms grouped by floor, each tagged with a comfort level and a green, red, or blue status emoji">
+
+### Build a Custom UI with the SSE Reaction
+
+Prefer to build your own front end? The dashboard reaction is the fastest way to *see* a query, but Drasi Server can drive a fully custom UI just as easily through the **SSE reaction** (`kind: sse`). It streams the same query changes to the browser over [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events), so any web app can subscribe with a few lines of JavaScript and render the results however you like:
+
+```js
+const events = new EventSource("http://localhost:8081/events");
+events.onmessage = (e) => {
+  const { queryId, results } = JSON.parse(e.data);
+  // Each result carries `before` and `after`; update your UI from `after`.
+  for (const change of results) render(queryId, change.after);
+};
+```
+
+Because the reaction pushes only what *changed* — never the full result set — your UI stays live without polling, powered by the same engine behind this dashboard but with complete control over the markup. The [Getting Started tutorial](../getting-started/) wires up the SSE reaction step by step, and the [Configure the SSE Reaction](https://drasi.io/drasi-server/how-to-guides/configuration/configure-reactions/configure-sse-reaction/) guide documents its full configuration.
 
 {{% alert title="Inspect the queries directly (optional)" color="info" %}}
 You can also query Drasi Server's REST API while the demo runs — see `requests.http` for ready-made requests, for example:

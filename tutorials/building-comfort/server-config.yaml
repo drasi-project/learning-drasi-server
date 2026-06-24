@@ -15,16 +15,12 @@
 # =============================================================================
 # Drasi Server - Building Comfort Tutorial
 # =============================================================================
-# A refresh of the Drasi Platform "building-comfort" demo for Drasi Server.
+# A Building Comfort monitoring demo for Drasi Server.
 #
 # It models a smart building (Building -> Floor -> Room) stored in PostgreSQL.
 # Each Room has temperature, humidity and co2 readings. Six continuous queries
 # compute room/floor/building comfort levels and alerts, and the dashboard
 # reaction renders them live (no bespoke web UI required).
-#
-# The Cypher queries and their synthetic joins are copied verbatim from the
-# original Drasi Platform tutorial - Drasi Server runs the same drasi-core
-# query engine, so nothing about the queries needs to change.
 # =============================================================================
 
 apiVersion: drasi.io/v1
@@ -87,7 +83,7 @@ sources:
       kind: postgres
 
 # =============================================================================
-# Continuous Queries (copied verbatim from the Platform tutorial)
+# Continuous Queries
 # =============================================================================
 # Each query subscribes to the Room/Floor/Building node labels it needs and
 # declares the synthetic joins that connect them:
