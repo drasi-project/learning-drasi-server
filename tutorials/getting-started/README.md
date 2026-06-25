@@ -2,7 +2,7 @@
 
 Imagine you want to react the instant data changes — a new row in a database, a value crossing a threshold, or something that *should* have changed but didn't. Maybe something more complex like cross-referencing the pods running on your Kubernetes cluster against a database of vulnerable and non-compliant images.
 
-Drasi Server lets you express these as Continuous Queries that stay constantly up to date, with no polling. In this tutorial you'll connect Drasi Server to a live PostgreSQL server and, step by step, build four Continuous Queries that detect changes, filter them, aggregate them, and even detect the *absence* of change — watching each one react in real time. By the end of the tutorial you'll have a running Drasi Server reacting to live database changes and a solid understanding of how to use Drasi Server to build your own change-driven solutions.
+Drasi Server lets you express these as Continuous Queries that stay constantly up to date, with no polling. In this tutorial you'll connect Drasi Server to a live PostgreSQL server and, step by step, build five Continuous Queries that detect changes, filter them, aggregate them, detect the *absence* of change, and join data across multiple sources — watching each one react in real time. By the end of the tutorial you'll have a running Drasi Server reacting to live database changes and a solid understanding of how to use Drasi Server to build your own change-driven solutions.
 
 You'll work with a single PostgreSQL table of messages — imagine it as a simple live message feed — and build a monitor over it one query at a time. Throughout, you write only declarative queries and configuration; there's no application code to write.
 
@@ -19,16 +19,17 @@ Building this kind of capability by hand usually means stitching together severa
 You'll configure each of these building blocks yourself as you work through the steps below.
 
 **Steps 1–3** give you a working Drasi Server solution in under 20 minutes.  
-**Steps 4–6** explore progressively advanced capabilities of Drasi Server.
+**Steps 4–7** explore progressively advanced capabilities of Drasi Server.
 
 | Step | What You'll Learn | Time |
 | ---- | ----------------- | ---- |
-| **[Step 1: Set Up Your Environment](#step-1-of-6-set-up-your-environment)** | Install Drasi Server and set up your development environment | 5 min |
-| **[Step 2: Set Up the Tutorial Database](#step-2-of-6-set-up-the-tutorial-database)** | Start a PostgreSQL database and load sample data | 3 min |
-| **[Step 3: Create Your First Configuration](#step-3-of-6-run-your-first-drasi-server)** | Start from a provided config file with a Source, Continuous Query, and Log Reaction — see Drasi detect and react to change in real time | 3 min |
-| **[Step 4: Add a Continuous Query with Criteria](#step-4-of-6-add-a-continuous-query-with-criteria)** | Add a filtered query via the REST API — learn how `WHERE` clauses tell Drasi what changes you are interested in | 3 min |
-| **[Step 5: Add an Aggregation Query](#step-5-of-6-add-an-aggregation-query-and-the-sse-reaction)** | Add a query with `count()` — see aggregations update automatically as data changes and add a new Reaction that generates Server-Sent Events (SSE) when query results change | 5 min |
-| **[Step 6: Add Time-Based Detection](#step-6-of-6-add-time-based-detection)** | Detect the *absence of change* over time — a powerful capability for monitoring and alerting | 5 min |
+| **[Step 1: Set Up Your Environment](#step-1-of-7-set-up-your-environment)** | Install Drasi Server and set up your development environment | 5 min |
+| **[Step 2: Set Up the Tutorial Database](#step-2-of-7-set-up-the-tutorial-database)** | Start a PostgreSQL database and load sample data | 3 min |
+| **[Step 3: Create Your First Configuration](#step-3-of-7-run-your-first-drasi-server)** | Start from a provided config file with a Source, Continuous Query, and Log Reaction — see Drasi detect and react to change in real time | 3 min |
+| **[Step 4: Add a Continuous Query with Criteria](#step-4-of-7-add-a-continuous-query-with-criteria)** | Add a filtered query via the REST API — learn how `WHERE` clauses tell Drasi what changes you are interested in | 3 min |
+| **[Step 5: Add an Aggregation Query](#step-5-of-7-add-an-aggregation-query-and-the-sse-reaction)** | Add a query with `count()` — see aggregations update automatically as data changes and add a new Reaction that generates Server-Sent Events (SSE) when query results change | 5 min |
+| **[Step 6: Add Time-Based Detection](#step-6-of-7-add-time-based-detection)** | Detect the *absence of change* over time — a powerful capability for monitoring and alerting | 5 min |
+| **[Step 7: Add Cross-Source Joins](#step-7-of-7-add-cross-source-joins)** | Add a second Source and join its data with the PostgreSQL data using a virtual relationship — see Drasi resolve joins across Sources in real time | 5 min |
 
 > **Before you begin**
 >
@@ -36,7 +37,7 @@ You'll configure each of these building blocks yourself as you work through the 
 > - **Command tabs:** commands are shown in tabs (for example *bash / zsh* and *PowerShell*) — use the one for your shell.
 > - **Expected output** blocks are illustrative — exact versions, IDs, and timestamps will differ. Field ordering may also differ, as may whether ID fields are represented as numbers or strings, whether additional metadata fields are present (such as `row_signature` on aggregation events), and the relative ordering of notifications between different queries.
 
-## Step 1 of 6: Set Up Your Environment
+## Step 1 of 7: Set Up Your Environment
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
 - **[Download Binary](download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
@@ -50,7 +51,7 @@ After completing your preferred setup, return here to continue with the tutorial
 
 ---
 
-## Step 2 of 6: Set Up the Tutorial Database
+## Step 2 of 7: Set Up the Tutorial Database
 The tutorial uses a PostgreSQL database as a data source. Start the database container using Docker Compose:
 
 ```bash
@@ -153,7 +154,7 @@ You should see the 4 sample messages:
 
 ---
 
-## Step 3 of 6: Run Your First Drasi Server
+## Step 3 of 7: Run Your First Drasi Server
 Now you'll create your initial Drasi Server configuration. To keep this first step focused on getting Drasi Server running, you'll start from a pre-prepared config file included with the tutorial.
 
 The config file creates:
@@ -402,7 +403,7 @@ Try it with your own data: insert a few more messages with any text you like, an
 
 ---
 
-## Step 4 of 6: Add a Continuous Query with Criteria
+## Step 4 of 7: Add a Continuous Query with Criteria
 The `all-messages` Continuous Query is very simple and includes all messages written to the Message table. Now you'll add a second Continuous Query that answers the question "Who sent messages containing 'Hello World'?". You will add the new `hello-world-senders` Continuous Query using the Drasi Server REST API so you learn how to extend your configuration without restarting Drasi Server.
 
 ### The hello-world-senders Continuous Query
@@ -601,7 +602,7 @@ Doing this without Drasi would typically mean adding a filter stage to a stream-
 > The Drasi Server config file after the changes made in this step is available in `./examples/getting-started/configs/getting-started-step-4.yaml` if you want to compare it with your config file or use it as a reference for future use.
 ---
 
-## Step 5 of 6: Add an Aggregation Query and the SSE Reaction
+## Step 5 of 7: Add an Aggregation Query and the SSE Reaction
 Drasi maintains state across all the data it processes, enabling Continuous Queries that compute aggregations — like counts, sums, or averages — that update automatically as the underlying data changes. This is useful for dashboards, reporting, and any scenario where you need live summary statistics without polling or recalculating from scratch.
 
 In this step, you'll add a new `message-counts` Continuous Query that contains the count of how many times each unique message text has been sent. As you insert, update, or delete messages, you'll see the counts of each unique message update in real time.
@@ -816,7 +817,7 @@ Press `Ctrl+C` in the SSE CLI terminal to stop streaming and delete the SSE Reac
 
 ---
 
-## Step 6 of 6: Add Time-Based Detection
+## Step 6 of 7: Add Time-Based Detection
 Drasi can query patterns over time, including the **absence of change**. This is powerful for monitoring and alerting scenarios — for example queries that contain:
 
 - all sensors that have stopped reporting data for more than 5 minutes
@@ -991,14 +992,363 @@ Press `Ctrl+C` to stop the SSE CLI.
 
 ---
 
+## Step 7 of 7: Add Cross-Source Joins
+So far you've used a single PostgreSQL Source. In real systems, related data often lives in different places — a database of users, a stream of location updates from an IoT or badge system, an API serving live status. Drasi lets you join across Sources using **virtual relationships**, so a Continuous Query can traverse data from multiple Sources as if it were a single graph — and changes from any Source flow through the join in real time.
+
+In this step, you'll add a second Source — an HTTP Source that receives location updates — and a `messages-with-location` Continuous Query that joins messages from PostgreSQL with location data from the HTTP Source. As messages are added in PostgreSQL or location updates arrive over HTTP, you'll see the joined result update automatically.
+
+This is the cross-system case from the introduction — Drasi resolves the join continuously, without you writing or running a stream-processing job that fans-in two streams and maintains the join state.
+
+### The messages-with-location Continuous Query
+
+Here's the new `messages-with-location` query as it would appear in a Drasi Server config file:
+
+```yaml
+- id: messages-with-location
+  autoStart: true
+  sources:
+    - sourceId: my-postgres
+    - sourceId: location-tracker
+  query: |
+    MATCH (m:Message)-[:FROM_USER]->(u:UserLocation)
+    RETURN m.MessageId AS Id, m.Message AS Message, 
+           m.From AS Sender, u.location AS Location, u.status AS Status
+  queryLanguage: Cypher
+  joins:
+    - id: FROM_USER
+      keys:
+        - label: Message
+          property: From
+        - label: UserLocation
+          property: name
+```
+
+The `sources` section lists **two Sources** — the `my-postgres` Source used by previous queries, and a new `location-tracker` HTTP Source you'll add next. The `joins` section defines a virtual relationship `FROM_USER` that connects `Message.From` to `UserLocation.name`, so the `MATCH` clause can traverse between the two Sources as if the data were stored in a single graph. Drasi handles join state and propagates changes from either Source into the result set.
+
+### Installing the HTTP Source and ScriptFile Bootstrap Plugins
+
+So far you've only used the PostgreSQL Source, which was already installed in your Drasi Server. To add the new `location-tracker` HTTP Source, you first need to install two plugins from the Drasi plugin repository:
+
+- The **HTTP Source** plugin — provides the `http` source kind used to receive location update events.
+- The **ScriptFile Bootstrap** plugin — provides the `scriptfile` bootstrap kind used to load the initial location data from a JSONL (JSON Lines) file on startup (the first record must be a `Header`).
+
+In **Terminal 2**, install the HTTP Source plugin:
+
+**bash / zsh**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/plugins/install \
+  -H "Content-Type: application/json" \
+  -d '{
+     "ref": "source/http",
+     "registry": "ghcr.io/drasi-project"
+  }'
+```
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/plugins/install `
+  -ContentType "application/json" `
+  -Body '{
+    "ref": "source/http",
+    "registry": "ghcr.io/drasi-project"
+  }'
+```
+
+Then install the ScriptFile Bootstrap plugin:
+
+**bash / zsh**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/plugins/install \
+  -H "Content-Type: application/json" \
+  -d '{
+     "ref": "bootstrap/scriptfile",
+     "registry": "ghcr.io/drasi-project"
+  }'
+```
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/plugins/install `
+  -ContentType "application/json" `
+  -Body '{
+    "ref": "bootstrap/scriptfile",
+    "registry": "ghcr.io/drasi-project"
+  }'
+```
+
+In the Drasi Server console, you will see logs indicating that each plugin is being downloaded and installed.
+
+### Add the location-tracker HTTP Source using the REST API
+
+In **Terminal 2**, use the following curl command to create the `location-tracker` HTTP Source. It listens on port 9000 for location update events and loads initial location data from a JSONL (JSON Lines) file on startup using the `bootstrapProvider`:
+
+**bash / zsh**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/sources \
+  -H "Content-Type: application/json" \
+  -d '{
+    "kind": "http",
+    "id": "location-tracker",
+    "autoStart": true,
+    "host": "0.0.0.0",
+    "port": 9000,
+    "bootstrapProvider": {
+      "kind": "scriptfile",
+      "filePaths": ["examples/getting-started/locations.jsonl"]
+    }
+  }'
+```
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/sources `
+  -ContentType "application/json" `
+  -Body '{
+    "kind": "http",
+    "id": "location-tracker",
+    "autoStart": true,
+    "host": "0.0.0.0",
+    "port": 9000,
+    "bootstrapProvider": {
+      "kind": "scriptfile",
+      "filePaths": ["examples/getting-started/locations.jsonl"]
+    }
+  }'
+```
+
+In the Drasi Server console, you'll see logs indicating the `location-tracker` Source has started and that the bootstrap data has been loaded.
+
+### Add the messages-with-location Continuous Query using the REST API
+
+In **Terminal 2**, use the following curl command to create the `messages-with-location` Continuous Query:
+
+**bash / zsh**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/queries \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "messages-with-location",
+    "autoStart": true,
+    "sources": [{"sourceId": "my-postgres"}, {"sourceId": "location-tracker"}],
+    "query": "MATCH (m:Message)-[:FROM_USER]->(u:UserLocation) RETURN m.MessageId AS Id, m.Message AS Message, m.From AS Sender, u.location AS Location, u.status AS Status",
+    "queryLanguage": "Cypher",
+    "joins": [{
+      "id": "FROM_USER",
+      "keys": [
+        {"label": "Message", "property": "From"},
+        {"label": "UserLocation", "property": "name"}
+      ]
+    }]
+  }'
+```
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/queries `
+  -ContentType "application/json" `
+  -Body '{
+    "id": "messages-with-location",
+    "autoStart": true,
+    "sources": [{"sourceId": "my-postgres"}, {"sourceId": "location-tracker"}],
+    "query": "MATCH (m:Message)-[:FROM_USER]->(u:UserLocation) RETURN m.MessageId AS Id, m.Message AS Message, m.From AS Sender, u.location AS Location, u.status AS Status",
+    "queryLanguage": "Cypher",
+    "joins": [{
+      "id": "FROM_USER",
+      "keys": [
+        {"label": "Message", "property": "From"},
+        {"label": "UserLocation", "property": "name"}
+      ]
+    }]
+  }'
+```
+
+### Stream the messages-with-location Query
+
+In **Terminal 3**, start the SSE CLI to stream changes from the `messages-with-location` query:
+
+**bash / zsh**
+
+```bash
+./bin/drasi-sse-cli \
+  --server http://localhost:8080 \
+  --query messages-with-location
+```
+
+**PowerShell**
+
+```powershell
+./bin/drasi-sse-cli `
+  --server http://localhost:8080 `
+  --query messages-with-location
+```
+
+The bootstrap data includes locations for some of the existing senders, so you may see initial joined results appear in the SSE CLI output.
+
+### Test the messages-with-location Continuous Query
+
+First, simulate Brian moving to a new location by sending a location update to the HTTP Source. In **Terminal 2**, run:
+
+**bash / zsh**
+
+```bash
+curl -X POST http://localhost:9000/sources/location-tracker/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "update",
+    "element": {
+      "type": "node",
+      "id": "brian",
+      "labels": ["UserLocation"],
+      "properties": {"name": "Brian Kernighan", "location": "Conference Room B", "status": "away"}
+    }
+  }'
+```
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/sources/location-tracker/events `
+  -ContentType "application/json" `
+  -Body '{
+    "operation": "update",
+    "element": {
+      "type": "node",
+      "id": "brian",
+      "labels": ["UserLocation"],
+      "properties": {"name": "Brian Kernighan", "location": "Conference Room B", "status": "away"}
+    }
+  }'
+```
+
+Watch the SSE CLI terminal — Brian's messages now show the new location, with `before` and `after` reflecting the change propagated through the join:
+
+```json
+{
+  "queryId": "messages-with-location",
+  "results": [
+    {
+      "after": {
+        "Id": "2",
+        "Message": "Hello World",
+        "Sender": "Brian Kernighan",
+        "Location": "Conference Room B",
+        "Status": "away"
+      },
+      "before": {
+        "Id": "2",
+        "Message": "Hello World",
+        "Sender": "Brian Kernighan",
+        "Location": "Building A, Floor 3",
+        "Status": "online"
+      },
+      "data": {
+        "Id": 2,
+        "Location": "Conference Room B",
+        "Message": "Hello World",
+        "Sender": "Brian Kernighan",
+        "Status": "away"
+      },
+      "type": "UPDATE"
+    }
+  ],
+  "timestamp": 1771308120512
+}
+```
+
+Now test the other direction — add a message from a new sender, then add the matching location. In **Terminal 2**, insert a new message from Carol (a sender who has not appeared in the `Message` table or the bootstrap location data yet):
+
+**bash / zsh**
+
+```bash
+docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c \
+  "INSERT INTO \"Message\" (\"From\", \"Message\") VALUES ('Carol', 'Good morning!');"
+```
+
+**PowerShell**
+
+```powershell
+docker exec -it getting-started-postgres psql -U drasi_user -d getting_started -c "INSERT INTO \""Message\"" (\""From\"", \""Message\"") VALUES ('Carol', 'Good morning!');"
+```
+
+The SSE CLI does not yet show Carol's message in the `messages-with-location` result — there is no matching `UserLocation` node for Carol, so the join produces no row. Now send a location for Carol:
+
+**bash / zsh**
+
+```bash
+curl -X POST http://localhost:9000/sources/location-tracker/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "insert",
+    "element": {
+      "type": "node",
+      "id": "carol",
+      "labels": ["UserLocation"],
+      "properties": {"name": "Carol", "location": "Home Office", "status": "online"}
+    }
+  }'
+```
+
+**PowerShell**
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:9000/sources/location-tracker/events `
+  -ContentType "application/json" `
+  -Body '{
+    "operation": "insert",
+    "element": {
+      "type": "node",
+      "id": "carol",
+      "labels": ["UserLocation"],
+      "properties": {"name": "Carol", "location": "Home Office", "status": "online"}
+    }
+  }'
+```
+
+The SSE CLI now shows Carol's message joined with her newly added location as an `ADD` notification — the join is resolved in real time the moment data from both Sources becomes available:
+
+```json
+{
+  "queryId": "messages-with-location",
+  "results": [
+    {
+      "data": {
+        "Id": "11",
+        "Message": "Good morning!",
+        "Sender": "Carol",
+        "Location": "Home Office",
+        "Status": "online"
+      },
+      "type": "ADD"
+    }
+  ],
+  "timestamp": 1771308220719
+}
+```
+
+No change to PostgreSQL triggered this notification — it came entirely from a change in the HTTP Source. The join is symmetric: a change in either Source can complete (or invalidate) a match and update the result set.
+
+Press `Ctrl+C` to stop the SSE CLI.
+
+**✅ Checkpoint**: You understand how to join data across multiple Sources using virtual relationships. Changes from any of the joined Sources propagate through the join in real time, without any stream-processing or join-state code you have to write and operate.
+
+---
+
 ## What You've Learned
 That concludes the Drasi Server Getting Started tutorial. You have learned the core Drasi Server concepts that enable you to build change-driven solutions that react to data changes in real time:
 
 | Concept | What You Did |
 | ------- | ------------ |
 | **Configuration** | Started from a pre-prepared config file, then dynamically added components via the REST API |
-| **Sources** | Created a PostgreSQL source to connect Drasi to your database |
-| **Queries** | Wrote 4 Continuous Queries: simple change detection, criteria-based selection, aggregation, and time-based detection |
+| **Sources** | Created a PostgreSQL Source and an HTTP Source to connect Drasi to two different data systems |
+| **Queries** | Wrote 5 Continuous Queries: simple change detection, criteria-based selection, aggregation, time-based detection, and cross-source joins |
 | **Reactions** | Configured a Log Reaction for console output and used the SSE CLI to stream query result changes to your terminal |
 | **REST API** | Used the REST API to create, delete, and query Sources, Continuous Queries, and Reactions while the server is running |
 
