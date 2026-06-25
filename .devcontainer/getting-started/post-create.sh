@@ -30,5 +30,10 @@ sudo apt-get update && sudo apt-get install -y postgresql-client
 echo "⬇️  Downloading Drasi Server and SSE CLI binaries..."
 bash tutorials/getting-started/scripts/download.sh
 
+# Install tools used by the automated tutorial evaluation workflow.
+# This is a no-op unless DRASI_TUTORIAL_EVALUATION=true (set by CI), so it does
+# not affect the normal human tutorial experience.
+source "$(dirname "$0")/install-evaluation-tools.sh"
+
 echo ""
 echo "✅ Drasi Server Getting Started tutorial environment is ready!"
