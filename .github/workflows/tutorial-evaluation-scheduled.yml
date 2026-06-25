@@ -20,9 +20,6 @@ on:
   workflow_dispatch: {}   # Manual trigger for testing / re-runs
   pull_request_target:    # PR evaluation (requires approval)
     types: [opened, synchronize, reopened]
-  push:
-    branches:
-      - automate-getting-started  # TEMPORARY: test trigger; remove before merging
 
 jobs:
   evaluate:
