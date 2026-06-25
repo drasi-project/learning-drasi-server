@@ -18,6 +18,9 @@ on:
   schedule:
     - cron: '0 13 * * 5'  # Friday 5am PST / 6am PDT (13:00 UTC)
   workflow_dispatch: {}   # Manual trigger for testing / re-runs
+  push:
+    branches:
+      - automate-getting-started  # TEMPORARY: test trigger; remove before merging
 
 jobs:
   evaluate:
