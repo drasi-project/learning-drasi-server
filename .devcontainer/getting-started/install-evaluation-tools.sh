@@ -21,6 +21,7 @@
 # script is a no-op, so it adds no overhead to the regular tutorial experience.
 #
 # Tools installed:
+#   - Node.js 22 (from NodeSource): provides npm, required by the Copilot CLI
 #   - @github/copilot: GitHub Copilot CLI used to run the evaluation agent
 #
 # The getting-started tutorial is driven entirely through the terminal
@@ -33,8 +34,19 @@
 if [ "$DRASI_TUTORIAL_EVALUATION" = "true" ]; then
     echo "🤖 Installing tutorial evaluation tools..."
 
+    # The base devcontainer image does not include Node.js/npm, which the
+    # Copilot CLI requires. Install Node.js 22 from NodeSource. This is only
+    # done during evaluation runs, so the normal human tutorial build stays lean.
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "Installing Node.js 22 (required by the Copilot CLI)..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+    fi
+
     echo "Installing GitHub Copilot CLI..."
     npm install -g @github/copilot
 
     echo "✅ Evaluation tools installed successfully."
+    echo "    node: $(node --version 2>/dev/null || echo 'not found')"
+    echo "    copilot: $(command -v copilot || echo 'not found')"
 fi
