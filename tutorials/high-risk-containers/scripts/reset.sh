@@ -26,9 +26,10 @@ KUBECONFIG_FILE="${KUBECONFIG_PATH:-$TUTORIAL_DIR/bin/kubeconfig.yaml}"
 ID="${RISKY_IMAGE_ID:-101}"
 
 echo "Removing the added high risk image (Id=$ID)..."
-printf "DELETE FROM \"RiskyImage\" WHERE \"Id\" = %s;" "$ID" \
-    | docker exec -i high-risk-containers-postgres \
-        psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers
+docker exec -i high-risk-containers-postgres \
+    psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers -v id="$ID" <<'SQL'
+DELETE FROM "RiskyImage" WHERE "Id" = :'id'::int;
+SQL
 
 if [ -f "$KUBECONFIG_FILE" ]; then
     echo "Restoring Pod image tags (my-app-1 -> :0.1, my-app-2 -> :0.2)..."

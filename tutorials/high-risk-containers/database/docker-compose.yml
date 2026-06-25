@@ -35,7 +35,10 @@ services:
     volumes:
       - high_risk_containers_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d high_risk_containers"]
+      # Probe over TCP (-h localhost), not the Unix socket. On first init the
+      # postgres image runs a temporary socket-only server to create POSTGRES_DB;
+      # a socket probe can report "ready" before high_risk_containers exists.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres -d high_risk_containers"]
       interval: 5s
       timeout: 5s
       retries: 5

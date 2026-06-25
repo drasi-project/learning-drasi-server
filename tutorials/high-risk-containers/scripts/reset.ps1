@@ -26,8 +26,8 @@ $TutorialDir = Resolve-Path (Join-Path $ScriptDir "..")
 $KubeconfigFile = if ($env:KUBECONFIG_PATH) { $env:KUBECONFIG_PATH } else { Join-Path $TutorialDir "bin\kubeconfig.yaml" }
 
 Write-Host "Removing the added high risk image (Id=$Id)..."
-"DELETE FROM ""RiskyImage"" WHERE ""Id"" = $Id;" |
-    docker exec -i high-risk-containers-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers
+'DELETE FROM "RiskyImage" WHERE "Id" = :''id''::int;' |
+    docker exec -i high-risk-containers-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers -v "id=$Id"
 
 if (Test-Path $KubeconfigFile) {
     Write-Host "Restoring Pod image tags (my-app-1 -> :0.1, my-app-2 -> :0.2)..."

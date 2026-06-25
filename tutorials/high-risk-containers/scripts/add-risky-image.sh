@@ -33,10 +33,18 @@ echo "  Reason:     $REASON"
 echo "  Mitigation: $MITIGATION"
 echo
 
-printf "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (%s, '%s', '%s', '%s') ON CONFLICT (\"Id\") DO UPDATE SET \"Image\"=EXCLUDED.\"Image\", \"Reason\"=EXCLUDED.\"Reason\", \"Mitigation\"=EXCLUDED.\"Mitigation\";" \
-    "$ID" "$IMAGE" "$REASON" "$MITIGATION" \
-    | docker exec -i high-risk-containers-postgres \
-        psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers
+# Pass values as psql variables and reference them with :'var', so psql
+# SQL-quotes (and escapes) them safely instead of interpolating into the string.
+docker exec -i high-risk-containers-postgres \
+    psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers \
+    -v id="$ID" -v image="$IMAGE" -v reason="$REASON" -v mitigation="$MITIGATION" <<'SQL'
+INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation")
+VALUES (:'id'::int, :'image', :'reason', :'mitigation')
+ON CONFLICT ("Id") DO UPDATE SET
+    "Image"      = EXCLUDED."Image",
+    "Reason"     = EXCLUDED."Reason",
+    "Mitigation" = EXCLUDED."Mitigation";
+SQL
 
 echo
 echo "Done. Watch the dashboard at http://localhost:3000 - any running container"

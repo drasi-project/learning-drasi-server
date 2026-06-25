@@ -32,9 +32,18 @@ Write-Host "  Reason:     $Reason"
 Write-Host "  Mitigation: $Mitigation"
 Write-Host ""
 
-$sql = "INSERT INTO ""RiskyImage"" (""Id"", ""Image"", ""Reason"", ""Mitigation"") VALUES ($Id, '$Image', '$Reason', '$Mitigation') ON CONFLICT (""Id"") DO UPDATE SET ""Image""=EXCLUDED.""Image"", ""Reason""=EXCLUDED.""Reason"", ""Mitigation""=EXCLUDED.""Mitigation"";"
+# Pass values as psql variables and reference them with :'var', so psql
+# SQL-quotes (and escapes) them safely instead of interpolating into the string.
+$sql = @"
+INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation")
+VALUES (:'id'::int, :'image', :'reason', :'mitigation')
+ON CONFLICT ("Id") DO UPDATE SET
+    "Image"      = EXCLUDED."Image",
+    "Reason"     = EXCLUDED."Reason",
+    "Mitigation" = EXCLUDED."Mitigation";
+"@
 
-$sql | docker exec -i high-risk-containers-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers
+$sql | docker exec -i high-risk-containers-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d high_risk_containers -v "id=$Id" -v "image=$Image" -v "reason=$Reason" -v "mitigation=$Mitigation"
 
 Write-Host ""
 Write-Host "Done. Watch the dashboard at http://localhost:3000 - any running container"
