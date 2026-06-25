@@ -44,7 +44,10 @@ if [ "$DRASI_TUTORIAL_EVALUATION" = "true" ]; then
     fi
 
     echo "Installing GitHub Copilot CLI..."
-    npm install -g @github/copilot
+    # The npm global prefix (/usr/lib/node_modules) is root-owned, so install
+    # with sudo. The `copilot` binary is linked into /usr/bin, which is on PATH
+    # for the non-root user that runs the evaluation agent.
+    sudo npm install -g @github/copilot
 
     echo "✅ Evaluation tools installed successfully."
     echo "    node: $(node --version 2>/dev/null || echo 'not found')"
