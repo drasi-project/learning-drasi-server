@@ -18,6 +18,8 @@ on:
   schedule:
     - cron: '0 13 * * 5'  # Friday 5am PST / 6am PDT (13:00 UTC)
   workflow_dispatch: {}   # Manual trigger for testing / re-runs
+  pull_request_target:    # PR evaluation (requires approval)
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - automate-getting-started  # TEMPORARY: test trigger; remove before merging
@@ -37,6 +39,8 @@ jobs:
     steps:
       - name: Checkout this repo
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Prepare evaluation workspace
         run: |
