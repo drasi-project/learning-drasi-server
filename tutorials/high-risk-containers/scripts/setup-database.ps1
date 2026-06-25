@@ -55,7 +55,13 @@ try {
     $maxRetries = 30
     $ready = $false
     for ($i = 1; $i -le $maxRetries; $i++) {
-        docker exec high-risk-containers-postgres pg_isready -U postgres -d high_risk_containers 2>&1 | Out-Null
+        # Probe over TCP (-h localhost), not the Unix socket. On first init the
+        # postgres image runs a temporary internal server on the socket only
+        # (listen_addresses='') to create POSTGRES_DB, then restarts on TCP. A
+        # socket probe can report "ready" against that temporary server before
+        # the high_risk_containers database exists; a TCP probe only succeeds
+        # once the real server is up, by which point the database exists.
+        docker exec high-risk-containers-postgres pg_isready -h localhost -U postgres -d high_risk_containers 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Host "PostgreSQL is ready!"
             $ready = $true

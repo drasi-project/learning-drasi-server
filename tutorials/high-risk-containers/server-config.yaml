@@ -38,6 +38,8 @@ plugins:
   - ref: source/kubernetes
   - ref: bootstrap/kubernetes
   - ref: reaction/dashboard
+  # Optional (Discord alerts step): uncomment to enable the HTTP reaction below.
+  # - ref: reaction/http
 
 # =============================================================================
 # Sources
@@ -113,6 +115,27 @@ queries:
     autoStart: true
     queryLanguage: Cypher
 
+    # The sources this query subscribes to, and the labels it consumes from each.
+    sources:
+      - sourceId: k8s
+        nodes:
+          - Pod
+        # Run incoming Pod changes through the unwind middleware.
+        pipeline:
+          - extract-containers
+      - sourceId: devops
+        nodes:
+          - RiskyImage
+
+    # Declare the synthetic join the query walks with [:HAS_IMAGE].
+    joins:
+      - id: HAS_IMAGE
+        keys:
+          - label: Container
+            property: image
+          - label: RiskyImage
+            property: Image
+
     # Pre-process Pod changes: unwind $.containers[*] into Container nodes.
     middleware:
       - kind: unwind
@@ -134,26 +157,6 @@ queries:
         c.image AS image,
         i.Reason AS reason,
         i.Mitigation AS mitigation
-
-    sources:
-      - sourceId: k8s
-        nodes:
-          - Pod
-        # Run incoming Pod changes through the unwind middleware.
-        pipeline:
-          - extract-containers
-      - sourceId: devops
-        nodes:
-          - RiskyImage
-
-    # Declare the synthetic join the query walks with [:HAS_IMAGE].
-    joins:
-      - id: HAS_IMAGE
-        keys:
-          - label: Container
-            property: image
-          - label: RiskyImage
-            property: Image
 
 # =============================================================================
 # Reactions
@@ -214,8 +217,48 @@ reactions:
               template: |
                 {{#if count}}
                 {{#each rows}}
-                - 🚨 **{{this.pod}}** — `{{this.image}}` — {{this.reason}} _( {{this.mitigation}} )_
+                - 🚨 **{{this.pod}}** (`{{this.image}}`): {{this.reason}} _( {{this.mitigation}} )_
                 {{/each}}
                 {{else}}
                 ✅ No running containers match a high risk image.
                 {{/if}}
+
+  # ===========================================================================
+  # Optional: Discord alerts (HTTP reaction)
+  # ===========================================================================
+  # Posts a message to a Discord channel whenever a high risk container appears
+  # (added) or is resolved (deleted). To enable it:
+  #   1. Uncomment the `- ref: reaction/http` plugin near the top of this file.
+  #   2. Uncomment the reaction block below (remove the leading "# " on each line).
+  #   3. Set DISCORD_WEBHOOK_URL to your Discord webhook URL and restart the server.
+  # See the "Optional: Discord Alerts" step in the README for the full walkthrough.
+  #
+  # - kind: http
+  #   id: discord-alerts
+  #   autoStart: true
+  #   queries:
+  #     - high-risk-containers
+  #   # The Discord webhook URL, supplied via an environment variable.
+  #   baseUrl: "${DISCORD_WEBHOOK_URL}"
+  #   timeoutMs: 30000
+  #   outputTemplates:
+  #     routes:
+  #       high-risk-containers:
+  #         # A new high risk container started running.
+  #         added:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "🚨 **High risk container detected**\n• **Pod:** `{{after.pod}}` (namespace `{{after.namespace}}`)\n• **Container:** `{{after.container}}`\n• **Image:** `{{after.image}}`\n• **Reason:** {{after.reason}}\n• **Mitigation:** {{after.mitigation}}"
+  #             }
+  #         # A previously flagged container is no longer running / no longer risky.
+  #         deleted:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "✅ **High risk container resolved**\n• **Pod:** `{{before.pod}}`\n• **Image:** `{{before.image}}`"
+  #             }

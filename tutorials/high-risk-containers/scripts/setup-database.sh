@@ -61,7 +61,13 @@ echo "Waiting for PostgreSQL to be ready..."
 MAX_RETRIES=30
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker exec high-risk-containers-postgres pg_isready -U postgres -d high_risk_containers &> /dev/null; then
+    # Probe over TCP (-h localhost), not the Unix socket. On first init the
+    # postgres image runs a temporary internal server on the socket only
+    # (listen_addresses='') to create POSTGRES_DB, then restarts on TCP. A
+    # socket probe can report "ready" against that temporary server before the
+    # high_risk_containers database exists; a TCP probe only succeeds once the
+    # real server is up, by which point the database has been created.
+    if docker exec high-risk-containers-postgres pg_isready -h localhost -U postgres -d high_risk_containers &> /dev/null; then
         echo "PostgreSQL is ready!"
         break
     fi

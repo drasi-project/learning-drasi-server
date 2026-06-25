@@ -12,9 +12,9 @@ Building this kind of capability by hand usually means stitching together severa
 
 **Sources** → **Continuous Queries** → **Reactions**
 
-- **Sources** — Connect to your data sources
-- **Continuous Queries** — Define what changes matter
-- **Reactions** — Take action automatically
+- **Sources**: Connect to your data sources
+- **Continuous Queries**: Define what changes matter
+- **Reactions**: Take action automatically
 
 You'll configure each of these building blocks yourself as you work through the steps below.
 
@@ -39,10 +39,10 @@ You'll configure each of these building blocks yourself as you work through the 
 ## Step 1 of 6: Set Up Your Environment
 Choose your preferred environment for working through the Getting Started tutorial. Each approach gets you to the same starting point with Drasi Server installed and ready to work through the tutorial.
 
-- **[Download Binary](download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
-- **[GitHub Codespace](github-codespace/)** — One-click cloud environment. No local installation needed.
-- **[Dev Container](dev-container/)** — VS Code Dev Container with all dependencies preconfigured.
-- **[Build from Source](build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
+- **[Download Binary](download-binary/)**: Download a prebuilt binary. The fastest way to get started (recommended).
+- **[GitHub Codespace](github-codespace/)**: One-click cloud environment. No local installation needed.
+- **[Dev Container](dev-container/)**: VS Code Dev Container with all dependencies preconfigured.
+- **[Build from Source](build-from-source/)**: Clone and build Drasi Server yourself. Ideal for would-be contributors.
 
 <div style="margin-top: 2rem;"></div>
 
