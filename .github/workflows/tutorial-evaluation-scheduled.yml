@@ -18,9 +18,6 @@ on:
   schedule:
     - cron: '0 13 * * 5'  # Friday 5am PST / 6am PDT (13:00 UTC)
   workflow_dispatch: {}   # Manual trigger for testing / re-runs
-  push:
-    branches:
-      - automate-getting-started  # TEMPORARY: one-time test trigger; remove before merging
 
 jobs:
   evaluate:
@@ -193,6 +190,14 @@ jobs:
           sed -i '1s/^\xEF\xBB\xBF//' "$REPORT"
           sed -i 's/\r$//' "$REPORT"
 
+          # Publish the full report to the GitHub Actions job summary so it can be
+          # read directly from the run's Summary tab without downloading artifacts.
+          {
+            echo "## Tutorial Evaluation Report (${{ matrix.tutorial }})"
+            echo ""
+            cat "$REPORT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
           if grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
             echo "::notice::Tutorial evaluation PASSED"
             exit 0
@@ -207,7 +212,7 @@ jobs:
           fi
 
       - name: Upload evaluation results
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: evaluation-results-${{ matrix.tutorial }}-${{ github.run_id }}
