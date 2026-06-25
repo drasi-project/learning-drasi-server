@@ -1,0 +1,295 @@
+# Copyright 2026 The Drasi Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Scheduled Tutorial Evaluation
+
+on:
+  schedule:
+    - cron: '0 13 * * 5'  # Friday 5am PST / 6am PDT (13:00 UTC)
+  workflow_dispatch: {}   # Manual trigger for testing / re-runs
+  pull_request:           # PR evaluation
+    types: [opened, synchronize, reopened]
+
+jobs:
+  evaluate:
+    # PR evaluation needs repo secrets (COPILOT_PAT_TOKEN). Fork PRs run with no
+    # secrets under `pull_request`, so only run for same-repo (branch) PRs.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'schedule' && 'tutorial-evaluation-scheduled' || 'tutorial-evaluation' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tutorial: getting-started
+            devcontainer: .devcontainer/getting-started/devcontainer.json
+            tutorial_path: tutorials/getting-started
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Prepare evaluation workspace
+        run: |
+          # The tutorial docs reference paths under `examples/getting-started/...`,
+          # which is the layout of the published drasi-server repo. In this repo the
+          # tutorial assets live under `tutorials/getting-started/...`, so create an
+          # `examples/` shim at the repo root so those paths resolve during evaluation.
+          rm -rf examples/${{ matrix.tutorial }}
+          mkdir -p examples
+          cp -r ${{ matrix.tutorial_path }} examples/${{ matrix.tutorial }}
+
+          # Snapshot the rendered tutorial doc the agent will follow, and the prompt,
+          # at the repo root (the devcontainer's default working directory) so that
+          # the prompt's `@tutorial-docs/README.md` reference resolves.
+          mkdir -p tutorial-docs
+          cp ${{ matrix.tutorial_path }}/README.md tutorial-docs/README.md
+          cp .github/prompts/tutorial-evaluation.md prompt.md
+
+      - name: Run evaluation (attempt 1)
+        id: attempt1
+        continue-on-error: true
+        uses: devcontainers/ci@v0.3
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT_TOKEN }}
+          DRASI_TUTORIAL_EVALUATION: "true"
+        with:
+          configFile: ${{ matrix.devcontainer }}
+          push: never
+          runCmd: |
+            timeout 1200 copilot -p "$(cat prompt.md)" \
+              --allow-all-tools \
+              --allow-all-paths \
+              --deny-tool 'fetch' \
+              --deny-tool 'websearch' \
+              --deny-tool 'githubRepo' \
+              --deny-tool 'shell(wget *)' \
+              --deny-tool 'shell(nc *)' \
+              --deny-tool 'shell(ssh *)' \
+              --deny-tool 'shell(scp *)' \
+              --deny-tool 'shell(telnet *)' \
+              --deny-tool 'shell(ftp *)' \
+              --deny-tool 'shell(rm -rf /*)' \
+              --deny-tool 'shell(dd *)' \
+              --allow-url localhost \
+              --allow-url 127.0.0.1 \
+              --model claude-opus-4.7 || true
+            REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+            if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
+              exit 1
+            fi
+
+      - name: Clean up before retry (attempt 2)
+        if: steps.attempt1.outcome == 'failure'
+        run: |
+          echo "Attempt 1 failed. Removing all containers and images to force a fresh devcontainer build..."
+          docker rm -f $(docker ps -aq) 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
+          sleep 10
+
+      - name: Run evaluation (attempt 2)
+        id: attempt2
+        continue-on-error: true
+        if: steps.attempt1.outcome == 'failure'
+        uses: devcontainers/ci@v0.3
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT_TOKEN }}
+          DRASI_TUTORIAL_EVALUATION: "true"
+        with:
+          configFile: ${{ matrix.devcontainer }}
+          push: never
+          runCmd: |
+            timeout 1200 copilot -p "$(cat prompt.md)" \
+              --allow-all-tools \
+              --allow-all-paths \
+              --deny-tool 'fetch' \
+              --deny-tool 'websearch' \
+              --deny-tool 'githubRepo' \
+              --deny-tool 'shell(wget *)' \
+              --deny-tool 'shell(nc *)' \
+              --deny-tool 'shell(ssh *)' \
+              --deny-tool 'shell(scp *)' \
+              --deny-tool 'shell(telnet *)' \
+              --deny-tool 'shell(ftp *)' \
+              --deny-tool 'shell(rm -rf /*)' \
+              --deny-tool 'shell(dd *)' \
+              --allow-url localhost \
+              --allow-url 127.0.0.1 \
+              --model claude-opus-4.7 || true
+            REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+            if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
+              exit 1
+            fi
+
+      - name: Clean up before retry (attempt 3)
+        if: steps.attempt2.outcome == 'failure'
+        run: |
+          echo "Attempt 2 failed. Removing all containers and images to force a fresh devcontainer build..."
+          docker rm -f $(docker ps -aq) 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
+          sleep 10
+
+      - name: Run evaluation (attempt 3)
+        id: attempt3
+        if: steps.attempt2.outcome == 'failure'
+        uses: devcontainers/ci@v0.3
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT_TOKEN }}
+          DRASI_TUTORIAL_EVALUATION: "true"
+        with:
+          configFile: ${{ matrix.devcontainer }}
+          push: never
+          runCmd: |
+            timeout 1200 copilot -p "$(cat prompt.md)" \
+              --allow-all-tools \
+              --allow-all-paths \
+              --deny-tool 'fetch' \
+              --deny-tool 'websearch' \
+              --deny-tool 'githubRepo' \
+              --deny-tool 'shell(wget *)' \
+              --deny-tool 'shell(nc *)' \
+              --deny-tool 'shell(ssh *)' \
+              --deny-tool 'shell(scp *)' \
+              --deny-tool 'shell(telnet *)' \
+              --deny-tool 'shell(ftp *)' \
+              --deny-tool 'shell(rm -rf /*)' \
+              --deny-tool 'shell(dd *)' \
+              --allow-url localhost \
+              --allow-url 127.0.0.1 \
+              --model claude-opus-4.7 || true
+            REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+            if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
+              exit 1
+            fi
+
+      - name: Check evaluation status
+        if: always()
+        run: |
+          REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+
+          if [ -z "$REPORT" ]; then
+            echo "::error::No report.md found in evaluation directory"
+            exit 1
+          fi
+
+          echo "Found report: $REPORT"
+          echo "--- Report Contents ---"
+          cat "$REPORT"
+          echo "--- End Report ---"
+
+          # Remove potential BOM and normalize line endings
+          sed -i '1s/^\xEF\xBB\xBF//' "$REPORT"
+          sed -i 's/\r$//' "$REPORT"
+
+          # Publish the full report to the GitHub Actions job summary so it can be
+          # read directly from the run's Summary tab without downloading artifacts.
+          {
+            echo "## Tutorial Evaluation Report (${{ matrix.tutorial }})"
+            echo ""
+            cat "$REPORT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
+            echo "::notice::Tutorial evaluation PASSED"
+            exit 0
+          elif grep -qiE "^##\s*STATUS:\s*FAILURE" "$REPORT"; then
+            echo "::error::Tutorial evaluation FAILED"
+            exit 1
+          else
+            echo "::error::No STATUS found in report.md"
+            echo "First 5 lines of report:"
+            head -5 "$REPORT" | cat -A
+            exit 1
+          fi
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: evaluation-results-${{ matrix.tutorial }}-${{ github.run_id }}
+          path: |
+            evaluation-*/
+            tutorial-docs/
+            prompt.md
+
+  create-issue-on-failure:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      issues: write
+    steps:
+      - name: Create GitHub Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifactsUrl = `${runUrl}#artifacts`;
+
+            // Get all jobs for this run to analyze failures and retries
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+              filter: 'latest',
+            });
+
+            const evalJobs = jobs.data.jobs.filter(job => job.name.startsWith('evaluate'));
+            const failedJobs = evalJobs.filter(job => job.conclusion === 'failure');
+
+            if (failedJobs.length === 0) {
+              console.log("No failed 'evaluate' jobs found. Skipping issue creation.");
+              return;
+            }
+
+            let reportBody = `## Scheduled Tutorial Evaluation Failed\n\n**Run ID**: [${context.runId}](${runUrl})\n**Date**: ${new Date().toISOString().split('T')[0]}\n\n`;
+
+            for (const job of failedJobs) {
+               const nameMatch = job.name.match(/\(([^,)]+)/);
+               const tutorialName = nameMatch ? nameMatch[1].trim() : "getting-started";
+
+               reportBody += `### ❌ Tutorial: ${tutorialName}\n`;
+
+               const attempt1 = job.steps.find(s => s.name.includes('Run evaluation (attempt 1)'));
+               const attempt2 = job.steps.find(s => s.name.includes('Run evaluation (attempt 2)'));
+               const attempt3 = job.steps.find(s => s.name.includes('Run evaluation (attempt 3)'));
+
+               let attemptsCount = 0;
+               if (attempt1 && attempt1.conclusion !== 'skipped') attemptsCount = 1;
+               if (attempt2 && attempt2.conclusion !== 'skipped') attemptsCount = 2;
+               if (attempt3 && attempt3.conclusion !== 'skipped') attemptsCount = 3;
+
+               reportBody += `**Status**: Failed after ${attemptsCount} attempt(s).\n`;
+               reportBody += `**Artifacts**: [Download Results](${artifactsUrl})\n\n`;
+
+               reportBody += `<details><summary>Attempt Details</summary>\n\n`;
+               if (attempt1 && attempt1.conclusion !== 'skipped') reportBody += `- **Attempt 1**: ${attempt1.outcome ? attempt1.outcome.toUpperCase() : 'UNKNOWN'}\n`;
+               if (attempt2 && attempt2.conclusion !== 'skipped') reportBody += `- **Attempt 2**: ${attempt2.outcome ? attempt2.outcome.toUpperCase() : 'UNKNOWN'}\n`;
+               if (attempt3 && attempt3.conclusion !== 'skipped') reportBody += `- **Attempt 3**: ${attempt3.outcome ? attempt3.outcome.toUpperCase() : 'UNKNOWN'}\n`;
+               reportBody += `</details>\n\n---\n`;
+            }
+
+            reportBody += `\n*This issue was automatically created by the scheduled tutorial evaluation workflow.*`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Scheduled tutorial evaluation failed - ${new Date().toISOString().split('T')[0]}`,
+              body: reportBody,
+              labels: ['tutorial-failure', 'automated']
+            });

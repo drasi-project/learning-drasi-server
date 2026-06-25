@@ -49,6 +49,10 @@
         "SERVER_PORT": "8180",
         "SSE_PORT": "8181",
         "POSTGRES_PORT": "5532",
-        "POSTGRES_HOST_PORT": "5532"
+        "POSTGRES_HOST_PORT": "5532",
+        "DRASI_TUTORIAL_EVALUATION": "${localEnv:DRASI_TUTORIAL_EVALUATION}"
+    },
+    "remoteEnv": {
+        "COPILOT_GITHUB_TOKEN": "${localEnv:COPILOT_GITHUB_TOKEN}"
     }
 }
