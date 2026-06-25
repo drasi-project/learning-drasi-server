@@ -140,7 +140,7 @@ def _render_card_grid(match: re.Match[str]) -> str:
         href = card.group("href").strip()
         title = " ".join(card.group("title").split())
         summary = " ".join(card.group("summary").split())
-        items.append(f"- **[{title}]({href})** — {summary}")
+        items.append(f"- **[{title}]({href})**: {summary}")
     return "\n".join(items) if items else match.group(0)
 
 
@@ -159,7 +159,7 @@ def _render_flow_diagram(match: re.Match[str]) -> str:
         return match.group(0)
 
     chain = " → ".join(f"**{label}**" for label, _ in steps)
-    bullets = "\n".join(f"- **{label}** — {desc}" for label, desc in steps)
+    bullets = "\n".join(f"- **{label}**: {desc}" for label, desc in steps)
     return f"{chain}\n\n{bullets}"
 
 

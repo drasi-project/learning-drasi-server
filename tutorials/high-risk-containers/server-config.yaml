@@ -1,0 +1,264 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Drasi Server - High Risk Containers Tutorial
+# =============================================================================
+# Builds a real-time dashboard of running containers whose image is flagged as
+# high risk. A PostgreSQL table ("RiskyImage") lists risky image tags; a
+# Kubernetes source watches the live Pods in a cluster. A single continuous
+# query unwinds each Pod's containers and synthetic-joins them to the RiskyImage
+# table, and the dashboard reaction renders the result live.
+# =============================================================================
+
+apiVersion: drasi.io/v1
+id: high-risk-containers-server
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8380}
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
+
+# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
+# startup. No manual build step is required.
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: source/kubernetes
+  - ref: bootstrap/kubernetes
+  - ref: reaction/dashboard
+  # Optional (Discord alerts step): uncomment to enable the HTTP reaction below.
+  # - ref: reaction/http
+
+# =============================================================================
+# Sources
+# =============================================================================
+sources:
+  # PostgreSQL source: the list of high risk image tags.
+  - kind: postgres
+    id: devops
+    autoStart: true
+
+    # Connection settings.
+    host: "${POSTGRES_HOST:-localhost}"
+    port: ${POSTGRES_PORT:-5732}
+    database: "${POSTGRES_DATABASE:-high_risk_containers}"
+    user: "${POSTGRES_USER:-drasi_user}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
+    sslMode: prefer
+
+    # Table to monitor. Quoted/PascalCase so the node label matches (i:RiskyImage).
+    tables:
+      - RiskyImage
+
+    # Logical replication slot + publication (created by database/init.sql).
+    slotName: drasi_high_risk_containers_slot
+    publicationName: drasi_high_risk_containers_pub
+
+    # Primary key, so Drasi can track row identity across changes.
+    tableKeys:
+      - table: RiskyImage
+        keyColumns:
+          - Id
+
+    # Bootstrap provider loads existing rows on startup.
+    bootstrapProvider:
+      kind: postgres
+
+  # Kubernetes source: the live Pods running in the cluster. Drasi Server runs
+  # outside the cluster and connects with the kubeconfig written by
+  # scripts/setup-cluster.sh (KUBECONFIG_PATH). The source flattens each Pod's
+  # spec into top-level properties, including a `containers` list of
+  # { name, image, ... } objects that the query unwinds below.
+  - kind: kubernetes
+    id: k8s
+    autoStart: true
+    resources:
+      - apiVersion: v1
+        kind: Pod
+    namespaces:
+      - default
+    authMode: kubeconfig
+    # Path to the kubeconfig written by scripts/setup-cluster.sh, relative to the
+    # tutorial directory (start-server.sh/.ps1 launch the server from there).
+    # The Kubernetes plugin reads this path literally, so it is not templated.
+    kubeconfigPath: bin/kubeconfig.yaml
+
+    # Bootstrap provider loads the Pods that already exist on startup. It reuses
+    # the source connection settings above, so no extra configuration is needed.
+    bootstrapProvider:
+      kind: kubernetes
+
+# =============================================================================
+# Continuous Query
+# =============================================================================
+queries:
+  # high-risk-containers: join running containers to the RiskyImage table.
+  #
+  # The Kubernetes source emits Pod nodes whose `containers` property is a list
+  # of { name, image, ... } objects. The unwind middleware promotes each entry
+  # to its own `Container` node (keyed by the container name) linked to its Pod
+  # by an `OWNS` relation. The synthetic `HAS_IMAGE` join then connects each
+  # Container to a RiskyImage row by matching Container.image to RiskyImage.Image.
+  - id: high-risk-containers
+    autoStart: true
+    queryLanguage: Cypher
+
+    # The sources this query subscribes to, and the labels it consumes from each.
+    sources:
+      - sourceId: k8s
+        nodes:
+          - Pod
+        # Run incoming Pod changes through the unwind middleware.
+        pipeline:
+          - extract-containers
+      - sourceId: devops
+        nodes:
+          - RiskyImage
+
+    # Declare the synthetic join the query walks with [:HAS_IMAGE].
+    joins:
+      - id: HAS_IMAGE
+        keys:
+          - label: Container
+            property: image
+          - label: RiskyImage
+            property: Image
+
+    # Pre-process Pod changes: unwind $.containers[*] into Container nodes.
+    middleware:
+      - kind: unwind
+        name: extract-containers
+        config:
+          Pod:
+            - selector: $.containers[*]
+              label: Container
+              key: $.name
+              relation: OWNS
+
+    query: |
+      MATCH
+        (p:Pod)-[:OWNS]->(c:Container)-[:HAS_IMAGE]->(i:RiskyImage)
+      RETURN
+        p.name AS pod,
+        p.namespace AS namespace,
+        c.name AS container,
+        c.image AS image,
+        i.Reason AS reason,
+        i.Mitigation AS mitigation
+
+# =============================================================================
+# Reactions
+# =============================================================================
+reactions:
+  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+  # The "High Risk Containers" dashboard is seeded on first startup: a count
+  # KPI, the live table of risky containers, and a Markdown detail panel.
+  - kind: dashboard
+    id: high-risk-containers-dashboard
+    autoStart: true
+    queries:
+      - high-risk-containers
+    host: "${DASHBOARD_HOST:-0.0.0.0}"
+    port: ${DASHBOARD_PORT:-3000}
+    heartbeatIntervalMs: 15000
+    predefinedDashboards:
+      - id: high-risk-containers
+        name: High Risk Containers
+        gridOptions:
+          columns: 12
+          rowHeight: 60
+          margin: 10
+        widgets:
+          # How many running containers are currently flagged.
+          - id: risky-count
+            type: kpi
+            title: High Risk Containers
+            grid: { x: 0, y: 0, w: 4, h: 2 }
+            config:
+              queryId: high-risk-containers
+              valueField: image
+              aggregation: count
+              label: Running & Risky
+
+          # The live list of running containers with a high risk image.
+          - id: risky-table
+            type: table
+            title: Running High Risk Containers
+            grid: { x: 0, y: 2, w: 12, h: 8 }
+            config:
+              queryId: high-risk-containers
+              columns:
+                - pod
+                - namespace
+                - container
+                - image
+                - reason
+                - mitigation
+
+          # A human-friendly detail panel (and an all-clear message when empty).
+          - id: risky-detail
+            type: text
+            title: Detail
+            grid: { x: 4, y: 0, w: 8, h: 2 }
+            config:
+              queryId: high-risk-containers
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 🚨 **{{this.pod}}** (`{{this.image}}`): {{this.reason}} _( {{this.mitigation}} )_
+                {{/each}}
+                {{else}}
+                ✅ No running containers match a high risk image.
+                {{/if}}
+
+  # ===========================================================================
+  # Optional: Discord alerts (HTTP reaction)
+  # ===========================================================================
+  # Posts a message to a Discord channel whenever a high risk container appears
+  # (added) or is resolved (deleted). To enable it:
+  #   1. Uncomment the `- ref: reaction/http` plugin near the top of this file.
+  #   2. Uncomment the reaction block below (remove the leading "# " on each line).
+  #   3. Set DISCORD_WEBHOOK_URL to your Discord webhook URL and restart the server.
+  # See the "Optional: Discord Alerts" step in the README for the full walkthrough.
+  #
+  # - kind: http
+  #   id: discord-alerts
+  #   autoStart: true
+  #   queries:
+  #     - high-risk-containers
+  #   # The Discord webhook URL, supplied via an environment variable.
+  #   baseUrl: "${DISCORD_WEBHOOK_URL}"
+  #   timeoutMs: 30000
+  #   outputTemplates:
+  #     routes:
+  #       high-risk-containers:
+  #         # A new high risk container started running.
+  #         added:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "🚨 **High risk container detected**\n• **Pod:** `{{after.pod}}` (namespace `{{after.namespace}}`)\n• **Container:** `{{after.container}}`\n• **Image:** `{{after.image}}`\n• **Reason:** {{after.reason}}\n• **Mitigation:** {{after.mitigation}}"
+  #             }
+  #         # A previously flagged container is no longer running / no longer risky.
+  #         deleted:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "✅ **High risk container resolved**\n• **Pod:** `{{before.pod}}`\n• **Image:** `{{before.image}}`"
+  #             }

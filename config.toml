@@ -75,6 +75,14 @@ defaultContentLanguageInSubdir = false
   [[module.mounts]]
     source = "tutorials/getting-started"
     target = "content/tutorials/getting-started"
+    # The interactive viewer is a runtime helper served by scripts/open-viewer.sh
+    # on its own port, not Hugo content. Exclude it so Hugo does not try to render
+    # its raw index.html as a page (denied by Hugo's text/html content policy).
+    excludeFiles = "viewer/**"
+
+  [[module.mounts]]
+    source = "tutorials/high-risk-containers"
+    target = "content/tutorials/high-risk-containers"
 
   # Keep default mounts for the remaining components.
   [[module.mounts]]
