@@ -23,6 +23,11 @@ on:
 
 jobs:
   evaluate:
+    # PR evaluation needs repo secrets (COPILOT_PAT_TOKEN). Fork PRs run with no
+    # secrets under `pull_request`, so only run for same-repo (branch) PRs.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'schedule' && 'tutorial-evaluation-scheduled' || 'tutorial-evaluation' }}
     strategy:
@@ -73,7 +78,6 @@ jobs:
               --deny-tool 'fetch' \
               --deny-tool 'websearch' \
               --deny-tool 'githubRepo' \
-              --deny-tool 'shell(curl http*)' \
               --deny-tool 'shell(wget *)' \
               --deny-tool 'shell(nc *)' \
               --deny-tool 'shell(ssh *)' \
@@ -116,7 +120,6 @@ jobs:
               --deny-tool 'fetch' \
               --deny-tool 'websearch' \
               --deny-tool 'githubRepo' \
-              --deny-tool 'shell(curl http*)' \
               --deny-tool 'shell(wget *)' \
               --deny-tool 'shell(nc *)' \
               --deny-tool 'shell(ssh *)' \
@@ -158,7 +161,6 @@ jobs:
               --deny-tool 'fetch' \
               --deny-tool 'websearch' \
               --deny-tool 'githubRepo' \
-              --deny-tool 'shell(curl http*)' \
               --deny-tool 'shell(wget *)' \
               --deny-tool 'shell(nc *)' \
               --deny-tool 'shell(ssh *)' \

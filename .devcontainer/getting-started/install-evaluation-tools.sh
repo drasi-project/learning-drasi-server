@@ -37,17 +37,24 @@ if [ "$DRASI_TUTORIAL_EVALUATION" = "true" ]; then
     # The base devcontainer image does not include Node.js/npm, which the
     # Copilot CLI requires. Install Node.js 22 from NodeSource. This is only
     # done during evaluation runs, so the normal human tutorial build stays lean.
+    if ! command -v curl >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install -y curl ca-certificates
+    fi
+
     if ! command -v npm >/dev/null 2>&1; then
         echo "Installing Node.js 22 (required by the Copilot CLI)..."
         curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
         sudo apt-get install -y nodejs
     fi
 
-    echo "Installing GitHub Copilot CLI..."
-    # The npm global prefix (/usr/lib/node_modules) is root-owned, so install
-    # with sudo. The `copilot` binary is linked into /usr/bin, which is on PATH
-    # for the non-root user that runs the evaluation agent.
-    sudo npm install -g @github/copilot
+    if ! command -v copilot >/dev/null 2>&1; then
+        echo "Installing GitHub Copilot CLI..."
+        # The npm global prefix (/usr/lib/node_modules) is root-owned, so install
+        # with sudo. The `copilot` binary is linked into /usr/bin, which is on PATH
+        # for the non-root user that runs the evaluation agent.
+        sudo npm install -g @github/copilot
+    fi
 
     echo "✅ Evaluation tools installed successfully."
     echo "    node: $(node --version 2>/dev/null || echo 'not found')"

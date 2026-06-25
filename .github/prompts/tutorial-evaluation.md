@@ -27,7 +27,7 @@ Goal:
 
 Where to start:
     - Step 1 of the tutorial ("Set Up Your Environment") has already been completed by the devcontainer, so you do NOT need to choose or perform a setup option (Download Binary / Codespace / Dev Container / Build from Source). Treat the environment as the "Dev Container" path already done.
-    - Begin your evaluation at "Step 2 of 6: Set Up the Tutorial Database" and continue through the end of the tutorial.
+    - Begin your evaluation at "Step 2 of 7: Set Up the Tutorial Database" and continue through the end of the tutorial.
     - As a quick sanity check before Step 2, you may run `./bin/drasi-server --version` and `./bin/drasi-sse-cli --version` and capture the output. If either binary is missing, terminate the evaluation immediately and mark it as failed.
 
 Running long-lived processes (IMPORTANT):

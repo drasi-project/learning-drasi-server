@@ -88,7 +88,6 @@ jobs:
               --deny-tool 'fetch' \
               --deny-tool 'websearch' \
               --deny-tool 'githubRepo' \
-              --deny-tool 'shell(curl http*)' \
               --deny-tool 'shell(wget *)' \
               --deny-tool 'shell(nc *)' \
               --deny-tool 'shell(ssh *)' \
