@@ -2,14 +2,12 @@
 
 Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-server).
 
-If you are looking for Drasi Platform (Kubernetes) tutorials, use
-[drasi-project/learning](https://github.com/drasi-project/learning).
-
 ## Tutorials
 
-| Tutorial | What you learn |
-| --- | --- |
-| [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) |
+| Tutorial | What you learn | How to trigger it |
+| --- | --- | --- |
+| [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Open the **Drasi Server - Getting Started Tutorial** dev container (or a Codespace) and follow [tutorials/getting-started](tutorials/getting-started) |
+| [building-comfort](tutorials/building-comfort) | Smart-building comfort monitoring (PostgreSQL CDC, six comfort/alert queries with synthetic joins, the dashboard reaction) | Open the **Drasi Server - Building Comfort Tutorial** dev container and follow [tutorials/building-comfort](tutorials/building-comfort) |
 
 See [tutorials](tutorials) for the full list of tutorials.
 
@@ -19,9 +17,11 @@ From the repository root:
 
 1. Open in VS Code.
 2. Run Reopen in Container.
-3. The dev container opens directly in [tutorials/getting-started](tutorials/getting-started).
-4. Follow [tutorials/getting-started](tutorials/getting-started), which points to the upstream
-	`drasi-server/examples/getting-started` steps.
+3. When prompted, choose a configuration:
+	- **Drasi Server - Getting Started Tutorial** — opens [tutorials/getting-started](tutorials/getting-started).
+	- **Drasi Server - Building Comfort Tutorial** — installs everything for
+	  [tutorials/building-comfort](tutorials/building-comfort) (PostgreSQL client + Drasi Server binary).
+4. Follow the README in the matching tutorial folder.
 
 ## Run in Codespaces
 
@@ -33,7 +33,7 @@ After the Codespace starts, follow the getting-started guide in
 ## Documentation Site
 
 The tutorials also render as a [Docsy](https://www.docsy.dev/)/[Hugo](https://gohugo.io/)
-documentation site. Each tutorial is authored once in `tutorials/<name>/index.md`
+documentation site. Each tutorial is authored once in `tutorials/<name>/_index.md`
 (the single source of truth) and mounted into the Hugo content tree, so the doc
 site and the GitHub `README.md` files stay in sync.
 
@@ -67,7 +67,7 @@ Then open <http://localhost:1313>.
 
 ### Regenerate the GitHub READMEs
 
-After editing any `tutorials/<name>/index.md`, regenerate the plain-Markdown
+After editing any `tutorials/<name>/_index.md`, regenerate the plain-Markdown
 `README.md` files so they match:
 
 ```bash

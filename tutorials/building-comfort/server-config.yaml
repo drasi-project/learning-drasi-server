@@ -1,0 +1,425 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Drasi Server - Building Comfort Tutorial
+# =============================================================================
+# A Building Comfort monitoring demo for Drasi Server.
+#
+# It models a smart building (Building -> Floor -> Room) stored in PostgreSQL.
+# Each Room has temperature, humidity and co2 readings. Six continuous queries
+# compute room/floor/building comfort levels and alerts, and the dashboard
+# reaction renders them live (no bespoke web UI required).
+# =============================================================================
+
+apiVersion: drasi.io/v1
+id: building-comfort-server
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8380}
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
+
+# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
+# startup. No manual build step is required.
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: reaction/dashboard
+  - ref: reaction/log
+
+# =============================================================================
+# Sources
+# =============================================================================
+sources:
+  - kind: postgres
+    id: building-facilities
+    autoStart: true
+
+    # Connection settings.
+    host: "${POSTGRES_HOST:-localhost}"
+    port: ${POSTGRES_PORT:-5732}
+    database: "${POSTGRES_DATABASE:-building_comfort}"
+    user: "${POSTGRES_USER:-drasi_user}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
+    sslMode: prefer
+
+    # Tables to monitor. The names are case-sensitive and PascalCase so the
+    # node labels match the Cypher queries ((r:Room), (f:Floor), (b:Building)).
+    tables:
+      - Building
+      - Floor
+      - Room
+
+    # Replication settings.
+    slotName: drasi_building_comfort_slot
+    publicationName: drasi_building_comfort_pub
+
+    # Primary key configuration for change tracking.
+    tableKeys:
+      - table: Building
+        keyColumns:
+          - id
+      - table: Floor
+        keyColumns:
+          - id
+      - table: Room
+        keyColumns:
+          - id
+
+    # Bootstrap provider loads existing rows on startup.
+    bootstrapProvider:
+      kind: postgres
+
+# =============================================================================
+# Continuous Queries
+# =============================================================================
+# Each query subscribes to the Room/Floor/Building node labels it needs and
+# declares the synthetic joins that connect them:
+#   PART_OF_FLOOR    : Room.floor_id    -> Floor.id
+#   PART_OF_BUILDING : Floor.building_id -> Building.id
+queries:
+  # Query 1: per-room comfort level (drives the building dashboard view).
+  - id: building-comfort-ui
+    autoStart: true
+    queryLanguage: Cypher
+    query: |
+      MATCH
+        (r:Room)-[:PART_OF_FLOOR]->(f:Floor)-[:PART_OF_BUILDING]->(b:Building)
+      WITH
+        r, f, b,
+        floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS ComfortLevel
+      RETURN
+        r.id AS RoomId,
+        r.name AS RoomName,
+        f.id AS FloorId,
+        f.name AS FloorName,
+        b.id AS BuildingId,
+        b.name AS BuildingName,
+        r.temperature AS Temperature,
+        r.humidity AS Humidity,
+        r.co2 AS CO2,
+        ComfortLevel
+    sources:
+      - sourceId: building-facilities
+        nodes:
+          - Room
+          - Floor
+          - Building
+    joins:
+      - id: PART_OF_FLOOR
+        keys:
+          - label: Room
+            property: floor_id
+          - label: Floor
+            property: id
+      - id: PART_OF_BUILDING
+        keys:
+          - label: Floor
+            property: building_id
+          - label: Building
+            property: id
+
+  # Query 2: overall building comfort (avg of floor averages).
+  - id: building-comfort-level-calc
+    autoStart: true
+    queryLanguage: Cypher
+    query: |
+      MATCH
+        (r:Room)-[:PART_OF_FLOOR]->(f:Floor)-[:PART_OF_BUILDING]->(b:Building)
+      WITH
+        b,
+        floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS RoomComfortLevel
+      WITH
+        b,
+        avg(RoomComfortLevel) AS FloorComfortLevel
+      WITH
+        b,
+        avg(FloorComfortLevel) AS ComfortLevel
+      RETURN
+        b.id AS BuildingId,
+        ComfortLevel
+    sources:
+      - sourceId: building-facilities
+        nodes:
+          - Room
+          - Floor
+          - Building
+    joins:
+      - id: PART_OF_FLOOR
+        keys:
+          - label: Room
+            property: floor_id
+          - label: Floor
+            property: id
+      - id: PART_OF_BUILDING
+        keys:
+          - label: Floor
+            property: building_id
+          - label: Building
+            property: id
+
+  # Query 3: per-floor comfort (avg of the floor's rooms).
+  - id: floor-comfort-level-calc
+    autoStart: true
+    queryLanguage: Cypher
+    query: |
+      MATCH
+        (r:Room)-[:PART_OF_FLOOR]->(f:Floor)
+      WITH
+        f,
+        floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS RoomComfortLevel
+      WITH
+        f,
+        avg(RoomComfortLevel) AS ComfortLevel
+      RETURN
+        f.id AS FloorId,
+        ComfortLevel
+    sources:
+      - sourceId: building-facilities
+        nodes:
+          - Room
+          - Floor
+    joins:
+      - id: PART_OF_FLOOR
+        keys:
+          - label: Room
+            property: floor_id
+          - label: Floor
+            property: id
+
+  # Query 4: rooms outside the comfortable band (40-50).
+  - id: room-alert
+    autoStart: true
+    queryLanguage: Cypher
+    query: |
+      MATCH
+        (r:Room)
+      WITH
+        r.id AS RoomId,
+        r.name AS RoomName,
+        floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS ComfortLevel
+      WHERE ComfortLevel < 40 OR ComfortLevel > 50
+      RETURN
+        RoomId, RoomName, ComfortLevel
+    sources:
+      - sourceId: building-facilities
+        nodes:
+          - Room
+
+  # Query 5: floors whose average comfort is outside 40-50.
+  - id: floor-alert
+    autoStart: true
+    queryLanguage: Cypher
+    query: |
+      MATCH
+        (r:Room)-[:PART_OF_FLOOR]->(f:Floor)
+      WITH
+        f,
+        floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS RoomComfortLevel
+      WITH
+        f,
+        avg(RoomComfortLevel) AS ComfortLevel
+      WHERE
+        ComfortLevel < 40 OR ComfortLevel > 50
+      RETURN
+        f.id AS FloorId,
+        f.name AS FloorName,
+        ComfortLevel
+    sources:
+      - sourceId: building-facilities
+        nodes:
+          - Room
+          - Floor
+    joins:
+      - id: PART_OF_FLOOR
+        keys:
+          - label: Room
+            property: floor_id
+          - label: Floor
+            property: id
+
+  # Query 6: the building when its overall comfort is outside 40-50.
+  - id: building-alert
+    autoStart: true
+    queryLanguage: Cypher
+    query: |
+      MATCH
+        (r:Room)-[:PART_OF_FLOOR]->(f:Floor)-[:PART_OF_BUILDING]->(b:Building)
+      WITH
+        f, b,
+        floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS RoomComfortLevel
+      WITH
+        f, b,
+        avg(RoomComfortLevel) AS FloorComfortLevel
+      WITH
+        b,
+        avg(FloorComfortLevel) AS ComfortLevel
+      WHERE
+        ComfortLevel < 40 OR ComfortLevel > 50
+      RETURN
+        b.id AS BuildingId,
+        b.name AS BuildingName,
+        ComfortLevel
+    sources:
+      - sourceId: building-facilities
+        nodes:
+          - Room
+          - Floor
+          - Building
+    joins:
+      - id: PART_OF_FLOOR
+        keys:
+          - label: Room
+            property: floor_id
+          - label: Floor
+            property: id
+      - id: PART_OF_BUILDING
+        keys:
+          - label: Floor
+            property: building_id
+          - label: Building
+            property: id
+
+# =============================================================================
+# Reactions
+# =============================================================================
+reactions:
+  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+  # The "Building Comfort" dashboard is seeded on first startup. It is built
+  # mostly from markdown (text) widgets that use the reaction's Handlebars
+  # helpers to recreate the Building -> Floor -> Room comfort view.
+  - kind: dashboard
+    id: building-comfort-dashboard
+    autoStart: true
+    queries:
+      - building-comfort-ui
+      - building-comfort-level-calc
+      - floor-comfort-level-calc
+      - room-alert
+      - floor-alert
+      - building-alert
+    host: "${DASHBOARD_HOST:-0.0.0.0}"
+    port: ${DASHBOARD_PORT:-3000}
+    heartbeatIntervalMs: 15000
+    predefinedDashboards:
+      - id: building-comfort
+        name: Building Comfort
+        gridOptions:
+          columns: 12
+          rowHeight: 60
+          margin: 10
+        widgets:
+          # Centerpiece: the live building view, grouped by floor.
+          - id: building-view
+            type: text
+            title: Building Comfort
+            grid: { x: 0, y: 0, w: 8, h: 10 }
+            config:
+              queryId: building-comfort-ui
+              template: |
+                # {{#if count}}{{rows.0.BuildingName}}{{else}}Waiting for data...{{/if}}
+
+                {{#groupBy rows "FloorName"}}
+                ### {{@key}}
+                {{#each this}}
+                - **{{this.RoomName}}** — comfort **{{this.ComfortLevel}}** {{#if (gt this.ComfortLevel 50)}}🔴 too hot{{else}}{{#if (lt this.ComfortLevel 40)}}🔵 too cold{{else}}🟢 comfortable{{/if}}{{/if}}  ·  🌡️ {{this.Temperature}}°F  💧 {{this.Humidity}}%  🫧 {{this.CO2}} ppm
+                {{/each}}
+
+                {{/groupBy}}
+
+          # Overall building comfort as a single number. Computed as the
+          # average of every room's comfort level (mathematically the same as
+          # the building-comfort-level-calc rollup, but read from the clean
+          # per-room query so the KPI is a single stable value).
+          - id: building-kpi
+            type: kpi
+            title: Building Comfort
+            grid: { x: 8, y: 0, w: 4, h: 2 }
+            config:
+              queryId: building-comfort-ui
+              valueField: ComfortLevel
+              aggregation: avg
+              label: Comfort Level
+
+          # Overall building comfort on a gauge (good band is 40-50).
+          - id: building-gauge
+            type: gauge
+            title: Building Comfort Gauge
+            grid: { x: 8, y: 2, w: 4, h: 4 }
+            config:
+              queryId: building-comfort-ui
+              valueField: ComfortLevel
+              aggregation: avg
+              min: 0
+              max: 100
+
+          # Active comfort alerts (only firing rooms appear here).
+          - id: comfort-alerts
+            type: text
+            title: Comfort Alerts
+            grid: { x: 8, y: 6, w: 4, h: 4 }
+            config:
+              queryId: room-alert
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - ⚠️ **{{this.RoomName}}** (`{{this.RoomId}}`) — comfort **{{this.ComfortLevel}}**
+                {{/each}}
+                {{else}}
+                ✅ All rooms are comfortable.
+                {{/if}}
+
+          # Per-floor comfort levels.
+          - id: floor-comfort-table
+            type: table
+            title: Floor Comfort
+            grid: { x: 0, y: 10, w: 6, h: 4 }
+            config:
+              queryId: floor-comfort-level-calc
+              columns:
+                - FloorId
+                - ComfortLevel
+
+          # Floors whose average comfort is outside the band.
+          - id: floor-alerts
+            type: text
+            title: Floor Alerts
+            grid: { x: 6, y: 10, w: 6, h: 4 }
+            config:
+              queryId: floor-alert
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - ⚠️ **{{this.FloorName}}** (`{{this.FloorId}}`) — comfort **{{this.ComfortLevel}}**
+                {{/each}}
+                {{else}}
+                ✅ All floors are comfortable.
+                {{/if}}
+
+  # Log reaction - prints alert activity to the server console.
+  - kind: log
+    id: console-log
+    autoStart: true
+    queries:
+      - room-alert
+      - floor-alert
+      - building-alert
+    defaultTemplate:
+      added:
+        template: "[{{query_name}}] + {{after}}"
+      updated:
+        template: "[{{query_name}}] ~ {{before}} -> {{after}}"
+      deleted:
+        template: "[{{query_name}}] - {{before}}"
