@@ -1,0 +1,74 @@
+{
+    "name": "Drasi Server - Curbside Pickup Tutorial",
+    // Ubuntu 24.04 (glibc 2.39) to be safe for all published plugin binaries.
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "latest",
+            "moby": false
+        },
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "20"
+        }
+    },
+    "postCreateCommand": "bash ../../.devcontainer/curbside-pickup/post-create.sh",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/tutorials/curbside-pickup",
+    "runArgs": [
+        "--privileged",
+        "--init",
+        "--ipc=host"
+    ],
+    "forwardPorts": [
+        8480,
+        3000,
+        5742,
+        1435
+    ],
+    "portsAttributes": {
+        "8480": {
+            "label": "Drasi Server API",
+            "onAutoForward": "notify"
+        },
+        "3000": {
+            "label": "Curbside Pickup Dashboards",
+            "onAutoForward": "notify"
+        },
+        "5742": {
+            "label": "PostgreSQL (Retail Operations)",
+            "onAutoForward": "silent"
+        },
+        "1435": {
+            "label": "SQL Server (Physical Operations)",
+            "onAutoForward": "silent"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "humao.rest-client"
+            ],
+            "settings": {
+                "editor.formatOnSave": true
+            }
+        }
+    },
+    "remoteUser": "vscode",
+    "remoteEnv": {
+        "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+    },
+    "containerEnv": {
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5742",
+        "POSTGRES_HOST_PORT": "5742",
+        "MSSQL_HOST": "localhost",
+        "MSSQL_PORT": "1435",
+        "MSSQL_HOST_PORT": "1435",
+        "SERVER_PORT": "8480",
+        "DASHBOARD_PORT": "3000"
+    }
+}

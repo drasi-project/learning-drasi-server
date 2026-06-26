@@ -1,0 +1,351 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Drasi Server - Curbside Pickup Tutorial
+# =============================================================================
+# Powers a single real-time dashboard over two independent databases:
+#   - retail-ops   : a PostgreSQL "orders" table (Retail Operations)
+#   - physical-ops : a SQL Server "vehicles" table (Physical Operations)
+#
+# Four continuous queries feed the dashboard. Two are simple lists (all-orders,
+# all-vehicles); two join the orders to the vehicles by license plate:
+#   - delivery : an order is 'ready' AND its driver's vehicle is at 'Curbside'
+#   - delay    : a driver has waited at 'Curbside' for over 10s while the order
+#                is still being prepared (uses the temporal drasi.trueLater)
+#
+# The dashboard reaction renders all four, live, in one "Curbside Pickup"
+# dashboard at http://localhost:3000 - no bespoke web UI, no SignalR backend.
+# =============================================================================
+
+apiVersion: drasi.io/v1
+id: curbside-pickup-server
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8480}
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
+
+# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
+# startup. No manual build step is required.
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: source/mssql
+  - ref: bootstrap/mssql
+  - ref: reaction/dashboard
+
+# =============================================================================
+# Sources
+# =============================================================================
+sources:
+  # Retail Operations - PostgreSQL source: the customer orders.
+  - kind: postgres
+    id: retail-ops
+    autoStart: true
+
+    host: "${POSTGRES_HOST:-localhost}"
+    port: ${POSTGRES_PORT:-5742}
+    database: "${POSTGRES_DATABASE:-RetailOperations}"
+    user: "${POSTGRES_USER:-drasi_user}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
+    sslMode: prefer
+
+    # Table to monitor. Lower-case/unquoted so the node label matches (o:orders).
+    tables:
+      - orders
+
+    # The publication is created by database/postgres-init.sql; the slot is
+    # created automatically by the source on startup (with a consistent
+    # snapshot), so the seeded rows are bootstrapped once and not double-counted.
+    slotName: drasi_curbside_slot
+    publicationName: drasi_curbside_pub
+
+    # Primary key, so Drasi can track row identity across changes.
+    tableKeys:
+      - table: orders
+        keyColumns:
+          - id
+
+    # Bootstrap provider loads the existing orders on startup.
+    bootstrapProvider:
+      kind: postgres
+
+  # Physical Operations - Microsoft SQL Server source: the pickup vehicles.
+  # The MS SQL source captures changes via SQL Server CDC (it polls the CDC
+  # change tables), so database/mssql-init.sql enables CDC on the database and
+  # the `dbo.vehicles` table.
+  - kind: mssql
+    id: physical-ops
+    autoStart: true
+
+    host: "${MSSQL_HOST:-localhost}"
+    port: ${MSSQL_PORT:-1435}
+    database: "${MSSQL_DATABASE:-PhysicalOperations}"
+    user: "${MSSQL_USER:-drasi_user}"
+    password: "${MSSQL_PASSWORD:-Drasi_Passw0rd!}"
+    authMode: sqlserver
+    # The container uses a self-signed certificate; trust it and connect without
+    # requiring an encrypted channel. ("off" is quoted so YAML treats it as a
+    # string, not the boolean false.)
+    encryption: "off"
+    trustServerCertificate: true
+
+    # Table to monitor, schema-qualified. The CDC capture instance is
+    # `dbo_vehicles`; the node label is the table name `vehicles`, matching
+    # (v:vehicles) in the queries.
+    tables:
+      - dbo.vehicles
+
+    # Primary key, so Drasi can track row identity across CDC changes.
+    tableKeys:
+      - table: dbo.vehicles
+        keyColumns:
+          - plate
+
+    # Bootstrap provider loads the existing vehicles on startup. Unlike the
+    # PostgreSQL bootstrap provider (which reuses the source connection), the
+    # MS SQL bootstrap provider takes its own connection settings.
+    bootstrapProvider:
+      kind: mssql
+      host: "${MSSQL_HOST:-localhost}"
+      port: ${MSSQL_PORT:-1435}
+      database: "${MSSQL_DATABASE:-PhysicalOperations}"
+      user: "${MSSQL_USER:-drasi_user}"
+      password: "${MSSQL_PASSWORD:-Drasi_Passw0rd!}"
+      authMode: sqlserver
+      encryption: "off"
+      trustServerCertificate: true
+      tables:
+        - dbo.vehicles
+      tableKeys:
+        - table: dbo.vehicles
+          keyColumns:
+            - plate
+
+# =============================================================================
+# Continuous Queries
+# =============================================================================
+# Four queries feed the dashboard:
+#   - orders   : every order (the "Orders" list)
+#   - vehicles : every vehicle (the "Vehicles" list)
+#   - delivery : matched orders - ready AND at the curbside
+#   - delay    : delayed orders - at the curbside too long while not ready
+# delivery and delay declare the synthetic PICKUP_BY join, matching a vehicle to
+# an order by license plate (vehicles.plate == orders.plate).
+queries:
+  # all-orders: every order, for the "Orders" list.
+  - id: all-orders
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    query: |
+      MATCH (o:orders)
+      RETURN
+        o.id AS id,
+        o.id AS orderId,
+        o.customer_name AS customerName,
+        o.driver_name AS driverName,
+        o.plate AS plate,
+        o.status AS status
+
+  # all-vehicles: every vehicle, for the "Vehicles" list.
+  - id: all-vehicles
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+    query: |
+      MATCH (v:vehicles)
+      RETURN
+        v.plate AS id,
+        v.plate AS plate,
+        v.make AS make,
+        v.model AS model,
+        v.color AS color,
+        v.location AS location
+
+  # delivery: orders that are READY whose driver has ARRIVED at the curbside.
+  - id: delivery
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    joins:
+      - id: PICKUP_BY
+        keys:
+          - label: vehicles
+            property: plate
+          - label: orders
+            property: plate
+    # The dashboard starts empty because, after bootstrap, no order is 'ready'
+    # and no vehicle is at 'Curbside' - it fills in as the TUI drives changes.
+    # (The original Kubernetes tutorial used drasi.changeDateTime() guards to
+    # ignore bootstrap rows; the MS SQL source does not populate changeDateTime,
+    # so we match on state directly and read the TUI-maintained `updated_at`
+    # column for the "when" timestamp.)
+    query: |
+      MATCH (o:orders)-[:PICKUP_BY]->(v:vehicles)
+      WHERE o.status = 'ready'
+        AND v.location = 'Curbside'
+      RETURN
+        o.id AS id,
+        o.id AS orderId,
+        o.status AS orderStatus,
+        o.driver_name AS driverName,
+        o.plate as vehicleId,
+        v.make as vehicleMake,
+        v.model as vehicleModel,
+        v.color as vehicleColor,
+        v.location as vehicleLocation,
+        datetime({ epochMillis: v.updated_at }) as readyTimestamp
+
+  # delay: a driver is at the curbside but the order is NOT yet ready, and they
+  # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
+  # re-evaluation so the row appears the instant the threshold is crossed.
+  - id: delay
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    joins:
+      - id: PICKUP_BY
+        keys:
+          - label: vehicles
+            property: plate
+          - label: orders
+            property: plate
+    # drasi.trueFor anchors its timer to the change's effective_from, which the
+    # MS SQL source does not populate (it is always epoch 0). drasi.trueLater
+    # instead fires at an absolute wall-clock time, so we anchor it to the
+    # TUI-maintained `updated_at` (epoch milliseconds) plus the threshold: the
+    # order appears the instant 10s have elapsed since the driver reached the
+    # curbside.
+    query: |
+      MATCH (o:orders)-[:PICKUP_BY]->(v:vehicles)
+      WHERE o.status <> 'ready'
+        AND drasi.trueLater(
+              v.location = 'Curbside',
+              datetime({ epochMillis: v.updated_at + 10000 })
+            )
+      RETURN
+        o.id AS id,
+        o.id AS orderId,
+        o.customer_name as customerName,
+        datetime({ epochMillis: v.updated_at }) as waitingSinceTimestamp
+
+# =============================================================================
+# Reactions
+# =============================================================================
+reactions:
+  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+  # A single "Curbside Pickup" dashboard is seeded with four Markdown (text)
+  # widgets: all orders, all vehicles, matched orders, and delayed orders.
+  - kind: dashboard
+    id: curbside-dashboard
+    autoStart: true
+    queries:
+      - all-orders
+      - all-vehicles
+      - delivery
+      - delay
+    host: "${DASHBOARD_HOST:-0.0.0.0}"
+    port: ${DASHBOARD_PORT:-3000}
+    heartbeatIntervalMs: 15000
+    predefinedDashboards:
+      - id: curbside-pickup
+        name: Curbside Pickup
+        gridOptions:
+          columns: 12
+          rowHeight: 60
+          margin: 10
+        widgets:
+          # All orders (Retail Operations / PostgreSQL).
+          - id: all-orders
+            type: text
+            title: Orders (Retail Operations · PostgreSQL)
+            grid: { x: 0, y: 0, w: 6, h: 5 }
+            config:
+              queryId: all-orders
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}` — _{{this.status}}_
+                {{/each}}
+                {{else}}
+                _No orders._
+                {{/if}}
+
+          # All vehicles (Physical Operations / SQL Server).
+          - id: all-vehicles
+            type: text
+            title: Vehicles (Physical Operations · SQL Server)
+            grid: { x: 6, y: 0, w: 6, h: 5 }
+            config:
+              queryId: all-vehicles
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - `{{this.plate}}` — {{this.color}} {{this.make}} {{this.model}} — _{{this.location}}_
+                {{/each}}
+                {{else}}
+                _No vehicles._
+                {{/if}}
+
+          # Matched orders (delivery query): ready AND at the curbside.
+          - id: matched-orders
+            type: text
+            title: Matched Orders (ready + at curbside)
+            grid: { x: 0, y: 5, w: 6, h: 5 }
+            config:
+              queryId: delivery
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 📦 Order **{{this.orderId}}** — driver **{{this.driverName}}** — {{this.vehicleColor}} {{this.vehicleMake}} {{this.vehicleModel}} (`{{this.vehicleId}}`) at the **Curbside**
+                {{/each}}
+                {{else}}
+                ⏳ _No orders ready with a driver at the curbside._
+                {{/if}}
+
+          # Delayed orders (delay query): waiting at the curbside for over 10s.
+          - id: delayed-orders
+            type: text
+            title: Delayed Orders (waiting > 10s, not ready)
+            grid: { x: 6, y: 5, w: 6, h: 5 }
+            config:
+              queryId: delay
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - ⚠️ Order **{{this.orderId}}** — **{{this.customerName}}** — waiting since {{this.waitingSinceTimestamp}}
+                {{/each}}
+                {{else}}
+                ✅ _No delayed orders._
+                {{/if}}

@@ -1,0 +1,13 @@
+# Downloaded Drasi Server binary
+bin/
+
+# Local environment overrides
+.env
+
+# Server runtime artifacts
+server.log
+data/
+
+# TUI dependencies and build output
+tui/node_modules/
+tui/dist/

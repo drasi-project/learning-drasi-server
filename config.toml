@@ -75,6 +75,18 @@ defaultContentLanguageInSubdir = false
   [[module.mounts]]
     source = "tutorials/getting-started"
     target = "content/tutorials/getting-started"
+    # The interactive viewer is a runtime helper (served by scripts/open-viewer.sh),
+    # not documentation; keep its raw index.html out of the content mount so Hugo's
+    # text/html content policy doesn't reject it.
+    excludeFiles = "viewer/**"
+
+  [[module.mounts]]
+    source = "tutorials/curbside-pickup"
+    target = "content/tutorials/curbside-pickup"
+    # The Node.js operations console (tui/) is application code, not docs; its
+    # node_modules can contain raw .html that Hugo's text/html content policy
+    # rejects, so keep the whole directory out of the content mount.
+    excludeFiles = "tui/**"
 
   # Keep default mounts for the remaining components.
   [[module.mounts]]

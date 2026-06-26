@@ -1,0 +1,86 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Two independent databases for the Curbside Pickup tutorial:
+#   - postgres : the Retail Operations store (orders)
+#   - mssql    : the Physical Operations store (vehicles)
+# Both are configured for change data capture (CDC) so Drasi Server can stream
+# their changes in real time.
+
+name: curbside-pickup
+
+services:
+  # ---------------------------------------------------------------------------
+  # Retail Operations - PostgreSQL (orders)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: curbside-pickup-postgres
+    environment:
+      POSTGRES_DB: RetailOperations
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_admin
+    command:
+      # wal_level=logical is required for logical replication (CDC).
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+    ports:
+      - "${POSTGRES_HOST_PORT:-5742}:5432"
+    volumes:
+      - curbside_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Probe over TCP (-h localhost), not the Unix socket. On first init the
+      # postgres image runs a temporary socket-only server to create POSTGRES_DB;
+      # a socket probe can report "ready" before RetailOperations exists.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres -d RetailOperations"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Physical Operations - Microsoft SQL Server (vehicles)
+  # ---------------------------------------------------------------------------
+  # SQL Server Change Data Capture requires SQL Server Agent, which is enabled
+  # with MSSQL_AGENT_ENABLED. The Developer edition is free for non-production
+  # use. database/mssql-init.sql enables CDC on the database and the vehicles
+  # table after startup.
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: curbside-pickup-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Drasi_Passw0rd!}"
+      MSSQL_PID: "Developer"
+      MSSQL_AGENT_ENABLED: "true"
+    ports:
+      - "${MSSQL_HOST_PORT:-1435}:1433"
+    volumes:
+      - curbside_mssql_data:/var/opt/mssql
+    healthcheck:
+      # sqlcmd from the mssql-tools18 image needs -C to trust the self-signed
+      # server certificate.
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  curbside_postgres_data:
+  curbside_mssql_data:
