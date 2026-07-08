@@ -68,7 +68,7 @@ The easiest way to follow this tutorial is the **dev container**, which installs
 
 ### Option A: Dev Container or GitHub Codespaces (recommended)
 
-1. Open this repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
+1. Open the [`learning-drasi-server`](https://github.com/drasi-project/learning-drasi-server) repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
 2. When prompted for a configuration, choose **Drasi Server - Building Comfort Tutorial**.
 3. Wait for the container to finish. Its setup script downloads the Drasi Server binary and installs the PostgreSQL client.
 
