@@ -14,8 +14,9 @@
 
 # Start Demo Script (Windows)
 # One command to run the whole Curbside Pickup demo: start (and seed) both
-# databases, then run Drasi Server in the foreground. Open http://localhost:3000
-# once it is running, and use .\scripts\start-tui.ps1 from a second terminal.
+# databases, then run Drasi Server in the foreground with the browser-based
+# operations console alongside it. Open the dashboard at http://localhost:3000
+# and drive changes from the console at http://localhost:3001.
 
 $ErrorActionPreference = "Stop"
 

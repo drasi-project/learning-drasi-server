@@ -18,6 +18,14 @@
     },
     "postCreateCommand": "bash ../../.devcontainer/curbside-pickup/post-create.sh",
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/tutorials/curbside-pickup",
+    "mounts": [
+        // Keep the web console's node_modules on a container-local volume instead
+        // of the (Windows/macOS) bind-mounted workspace. Reading its thousands of
+        // small files over Docker Desktop's filesystem bridge makes `node` spend
+        // ~10s importing dependencies before the console even starts listening;
+        // on a local volume that drops to <1s.
+        "source=curbside-webui-node-modules,target=/workspaces/${localWorkspaceFolderBasename}/tutorials/curbside-pickup/webui/node_modules,type=volume"
+    ],
     "runArgs": [
         "--privileged",
         "--init",

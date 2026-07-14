@@ -18,17 +18,18 @@ echo "⬇️  Downloading Drasi Server binary..."
 cd "$TUTORIAL_DIR"
 bash scripts/download.sh
 
-# Install the console dependencies ahead of time so the first run is fast. The
-# terminal UI (tui/) and the browser console (webui/) share tui/src/db.js, so
-# both directories get their dependencies installed.
+# Install the web console dependencies ahead of time so the first run is fast.
 if command -v npm &> /dev/null; then
-    echo "📦 Installing operations console dependencies (tui + webui)..."
-    (cd "$TUTORIAL_DIR/tui" && npm install --no-fund --no-audit)
+    echo "📦 Installing web console dependencies (webui/)..."
+    # node_modules is a container-local volume (see devcontainer.json), so its
+    # many small files aren't read over the slow bind mount. The volume is
+    # created owned by root, so hand it to the dev user before installing.
+    sudo chown "$(id -u):$(id -g)" "$TUTORIAL_DIR/webui/node_modules" 2>/dev/null || true
     (cd "$TUTORIAL_DIR/webui" && npm install --no-fund --no-audit)
 fi
 
 echo ""
 echo "✅ Drasi Server Curbside Pickup tutorial environment is ready!"
 echo "   Next: follow README.md (you are already in tutorials/curbside-pickup)"
-echo "   - Terminal 1: ./scripts/start-demo.sh"
-echo "   - Terminal 2: ./scripts/start-tui.sh   (or ./scripts/start-webui.sh for the browser console)"
+echo "   - Run ./scripts/start-demo.sh, then open the dashboard (http://localhost:3000)"
+echo "     and the operations console (http://localhost:3001)."

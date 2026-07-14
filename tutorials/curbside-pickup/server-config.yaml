@@ -154,7 +154,8 @@ queries:
         nodes:
           - orders
     query: |
-      MATCH (o:orders)
+      MATCH
+        (o:orders)
       WHERE o.status <> 'ready'
       RETURN
         o.id AS id,
@@ -173,7 +174,8 @@ queries:
         nodes:
           - orders
     query: |
-      MATCH (o:orders)
+      MATCH
+        (o:orders)
       WHERE o.status = 'ready'
       RETURN
         o.id AS id,
@@ -194,7 +196,8 @@ queries:
         nodes:
           - vehicles
     query: |
-      MATCH (v:vehicles)
+      MATCH
+        (v:vehicles)
       WHERE v.location = 'Parking'
       RETURN
         v.plate AS id,
@@ -213,7 +216,8 @@ queries:
         nodes:
           - vehicles
     query: |
-      MATCH (v:vehicles)
+      MATCH
+        (v:vehicles)
       WHERE v.location = 'Curbside'
       RETURN
         v.plate AS id,
@@ -241,16 +245,11 @@ queries:
             property: plate
           - label: orders
             property: plate
-    # The dashboard starts empty because bootstrap rows are ignored (their
-    # drasi.changeDateTime() is epoch 0); it fills in as the TUI drives changes.
-    # Both the PostgreSQL and MySQL sources populate the change timestamp, so the
-    # query is the one from the original Kubernetes tutorial, unchanged.
     query: |
-      MATCH (o:orders)-[:PICKUP_BY]->(v:vehicles)
+      MATCH
+        (o:orders)-[:PICKUP_BY]->(v:vehicles)
       WHERE o.status = 'ready'
-        AND v.location = 'Curbside'
-        AND drasi.changeDateTime(v) != datetime({epochMillis: 0})
-        AND drasi.changeDateTime(o) != datetime({epochMillis: 0})
+      AND v.location = 'Curbside'
       RETURN
         o.id AS id,
         o.id AS orderId,
@@ -286,22 +285,16 @@ queries:
     # drasi.trueFor anchors its timer to the change's effective_from, which both
     # the PostgreSQL and MySQL sources populate with the wall-clock time of the
     # change. The row appears the instant the vehicle has been at 'Curbside' for
-    # 10 seconds while the order is still not ready. This is the query from the
-    # original Kubernetes tutorial, unchanged.
+    # 10 seconds while the order is still not ready.
     query: |
-      MATCH (o:orders)-[:PICKUP_BY]->(v:vehicles)
+      MATCH
+        (o:orders)-[:PICKUP_BY]->(v:vehicles)
       WHERE o.status <> 'ready'
-      WITH
-        o, v,
-        drasi.changeDateTime(v) AS waitingSinceTimestamp
-      WHERE
-        waitingSinceTimestamp != datetime({epochMillis: 0}) AND
-        drasi.trueFor(v.location = 'Curbside', duration({ seconds: 10 }))
+      AND drasi.trueFor(v.location = 'Curbside', duration({ seconds: 10 }))
       RETURN
-        o.id AS id,
         o.id AS orderId,
-        o.customer_name as customerName,
-        waitingSinceTimestamp
+        o.customer_name AS customerName,
+        drasi.changeDateTime(v) AS waitingSinceTimestamp
 
 # =============================================================================
 # Reactions

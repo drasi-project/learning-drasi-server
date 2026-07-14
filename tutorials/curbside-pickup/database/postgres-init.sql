@@ -48,7 +48,7 @@ CREATE TABLE orders (
     status        VARCHAR(50)  NOT NULL DEFAULT 'preparing'
 );
 
--- Enforce the order status enum (matches the original tutorial).
+-- Enforce the order status enum.
 ALTER TABLE orders ADD CONSTRAINT chk_status CHECK (status IN ('preparing', 'ready'));
 
 -- Set REPLICA IDENTITY to FULL so change events include every column.

@@ -8,6 +8,6 @@ bin/
 server.log
 data/
 
-# TUI dependencies and build output
-tui/node_modules/
-tui/dist/
+# Operations console dependencies and build output
+webui/node_modules/
+webui/dist/

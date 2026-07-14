@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Database access for the Curbside Pickup TUI.
+// Database access for the Curbside Pickup web console.
 //
 // Connects directly to the two tutorial databases - PostgreSQL (Retail
 // Operations / orders) and MySQL (Physical Operations / vehicles) - and exposes
@@ -61,6 +61,10 @@ export class Db {
   }
 
   async connect() {
+    // Safe to call repeatedly (the server retries): drop any pools from a
+    // previous failed attempt before creating fresh ones.
+    await this.close();
+
     this.pgPool = new pg.Pool({
       host: this.config.postgres.host,
       port: this.config.postgres.port,
@@ -68,9 +72,8 @@ export class Db {
       user: this.config.postgres.user,
       password: this.config.postgres.password,
       max: 4,
+      connectionTimeoutMillis: 5000,
     });
-    // Probe the connection so failures surface immediately.
-    await this.pgPool.query('SELECT 1');
 
     this.mysqlPool = mysql.createPool({
       host: this.config.mysql.host,
@@ -79,8 +82,15 @@ export class Db {
       user: this.config.mysql.user,
       password: this.config.mysql.password,
       connectionLimit: 4,
+      connectTimeout: 5000,
     });
-    await this.mysqlPool.query('SELECT 1');
+
+    // Probe both connections in parallel so failures surface immediately and a
+    // slow database doesn't add to a fast one's connect time.
+    await Promise.all([
+      this.pgPool.query('SELECT 1'),
+      this.mysqlPool.query('SELECT 1'),
+    ]);
   }
 
   async close() {

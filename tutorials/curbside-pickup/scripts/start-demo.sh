@@ -16,9 +16,9 @@
 # Start Demo Script
 # One command to run the whole Curbside Pickup demo: start (and seed) both
 # databases, then run Drasi Server with the full configuration in the
-# foreground. Open http://localhost:3000 once it is running, and use
-# ./scripts/start-tui.sh from a second terminal to drive changes. Press Ctrl+C
-# to stop the server, then run ./scripts/cleanup.sh.
+# foreground, together with the browser-based operations console. Open the
+# dashboard at http://localhost:3000 and drive changes from the console at
+# http://localhost:3001. Press Ctrl+C to stop, then run ./scripts/cleanup.sh.
 
 set -e
 

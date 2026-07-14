@@ -83,11 +83,10 @@ defaultContentLanguageInSubdir = false
   [[module.mounts]]
     source = "tutorials/curbside-pickup"
     target = "content/tutorials/curbside-pickup"
-    # The Node.js operations console (tui/ and webui/) is application code, not
-    # docs; its node_modules and static assets can contain raw .html that Hugo's
-    # text/html content policy rejects, so keep those directories out of the
-    # content mount.
-    excludeFiles = ["tui/**", "webui/**"]
+    # The Node.js operations console (webui/) is application code, not docs; its
+    # node_modules and static assets can contain raw .html that Hugo's text/html
+    # content policy rejects, so keep that directory out of the content mount.
+    excludeFiles = "webui/**"
 
   # Keep default mounts for the remaining components.
   [[module.mounts]]

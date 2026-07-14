@@ -15,11 +15,13 @@
 // Curbside Pickup web console (server)
 //
 // A tiny Express server that drives change against the two tutorial databases.
-// It is the browser-based sibling of the terminal UI (tui/) and deliberately
-// reuses the *exact same* data-access layer - ../../tui/src/db.js - so both
-// front-ends run the identical SQL and report the same "which database did this
-// hit" log. The browser polls /api/state; toggling a row POSTs to the server,
-// which runs a real UPDATE and returns the refreshed state plus the SQL log.
+// It connects directly to both - PostgreSQL (Retail Operations / orders) and
+// MySQL (Physical Operations / vehicles) - and serves a static page that lets
+// you toggle rows. Every action runs a real SQL UPDATE and is reported with the
+// database it hit. The browser polls /api/state; toggling a row POSTs to the
+// server, which runs the UPDATE and returns the refreshed state plus the SQL
+// log. It is started automatically alongside Drasi Server (see
+// scripts/start-server.sh); open http://localhost:3001 once it is running.
 
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -30,7 +32,7 @@ import {
   loadConfig,
   nextOrderStatus,
   nextVehicleLocation,
-} from '../../tui/src/db.js';
+} from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +51,10 @@ function pushLog(db, text) {
 
 const db = new Db(loadConfig(), pushLog);
 
+// Track database readiness so the HTTP server can come up instantly and report
+// a friendly "connecting" state until both pools are live.
+let dbReady = false;
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -62,6 +68,7 @@ async function currentState() {
 }
 
 app.get('/api/state', async (_req, res) => {
+  if (!dbReady) return res.json({ connecting: true, log: sqlLog });
   try {
     res.json(await currentState());
   } catch (e) {
@@ -70,6 +77,7 @@ app.get('/api/state', async (_req, res) => {
 });
 
 app.post('/api/orders/:id/toggle', async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'connecting to databases' });
   try {
     const orders = await db.fetchOrders();
     const row = orders.find((o) => String(o.id) === String(req.params.id));
@@ -83,6 +91,7 @@ app.post('/api/orders/:id/toggle', async (req, res) => {
 });
 
 app.post('/api/vehicles/:plate/toggle', async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'connecting to databases' });
   try {
     const vehicles = await db.fetchVehicles();
     const row = vehicles.find((v) => v.plate === req.params.plate);
@@ -96,20 +105,38 @@ app.post('/api/vehicles/:plate/toggle', async (req, res) => {
 });
 
 const port = parseInt(process.env.WEBUI_PORT || '3001', 10);
-const host = process.env.WEBUI_HOST || '0.0.0.0';
+// Bind host: default to undefined so Node listens on the dual-stack wildcard
+// (::), which accepts both IPv6 (::1) and IPv4 (127.0.0.1) loopback. Binding
+// explicitly to 0.0.0.0 is IPv4-only, and on Windows "localhost" resolves to
+// ::1 first - so the browser stalls retrying IPv6 before falling back, making
+// the console appear to "take forever to load". Set WEBUI_HOST to override.
+const host = process.env.WEBUI_HOST || undefined;
 
-try {
-  await db.connect();
-} catch (e) {
-  console.error('Could not connect to the databases:', e.message || String(e));
-  console.error('Make sure the setup script has run and the containers are healthy.');
-  process.exit(1);
-}
-
+// Start the HTTP server right away so the page is reachable immediately, even
+// while the databases are still coming up.
 const server = app.listen(port, host, () => {
   console.log(`Curbside Pickup web console running at http://localhost:${port}`);
   console.log('Drive changes here and watch the Drasi dashboard react in real time.');
 });
+
+// Connect to the databases in the background, retrying until they are ready.
+// The two databases and Drasi Server all start together, so a few early
+// attempts may fail while the containers finish initializing.
+(async function connectWithRetry() {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await db.connect();
+      dbReady = true;
+      console.log('Connected to PostgreSQL and MySQL.');
+      return;
+    } catch (e) {
+      if (attempt === 1 || attempt % 5 === 0) {
+        console.log(`Waiting for the databases... (${e.message || e})`);
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+})();
 
 async function shutdown() {
   server.close();

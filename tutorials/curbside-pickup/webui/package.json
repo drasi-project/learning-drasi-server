@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Browser UI for driving the Curbside Pickup tutorial: edit orders (PostgreSQL) and vehicles (MySQL), showing every SQL statement and which database it hits. Reuses the exact same db.js data-access layer as the terminal UI (tui/).",
+  "description": "Browser-based operations console for the Curbside Pickup tutorial: edit orders (PostgreSQL) and vehicles (MySQL), showing every SQL statement and which database it hits. Started automatically alongside Drasi Server.",
   "scripts": {
     "start": "node src/server.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0",
+    "pg": "^8.12.0"
   }
 }

@@ -14,7 +14,10 @@
 # limitations under the License.
 
 # Start Server Script
-# Runs the downloaded Drasi Server binary with the Curbside Pickup config.
+# Runs the downloaded Drasi Server binary with the Curbside Pickup config, and
+# starts the browser-based operations console (webui/) alongside it so one
+# command brings up everything. Open the dashboard at http://localhost:3000 and
+# the console at http://localhost:3001.
 
 set -e
 
@@ -67,16 +70,64 @@ if ! docker ps 2>/dev/null | grep -q curbside-pickup-postgres; then
     echo
 fi
 
+# Start the browser-based operations console in the background so a single
+# command brings up everything you need. It shares this shell's environment
+# (the .env values loaded above), so it points at the same databases.
+WEBUI_DIR="$TUTORIAL_DIR/webui"
+WEBUI_PID=""
+WEBUI_PORT="${WEBUI_PORT:-3001}"
+if command -v node &> /dev/null; then
+    if [ ! -d "$WEBUI_DIR/node_modules" ]; then
+        echo "Installing web console dependencies (first run)..."
+        (cd "$WEBUI_DIR" && npm install)
+        echo
+    fi
+    (cd "$WEBUI_DIR" && node src/server.js) &
+    WEBUI_PID=$!
+    # Stop the console when the server exits (Ctrl+C or otherwise).
+    trap 'if [ -n "$WEBUI_PID" ]; then kill "$WEBUI_PID" 2>/dev/null; fi' EXIT INT TERM
+
+    # Wait until the console is actually serving before printing the banner, so
+    # you get clear feedback that it is up (and can open it right away) instead
+    # of guessing whether it is still starting.
+    printf "Starting the operations console"
+    WEBUI_READY=""
+    for _ in $(seq 1 30); do
+        if ! kill -0 "$WEBUI_PID" 2>/dev/null; then break; fi
+        if curl -fsS -o /dev/null --max-time 2 "http://localhost:${WEBUI_PORT}/api/state" 2>/dev/null; then
+            WEBUI_READY="1"
+            break
+        fi
+        printf "."
+        sleep 0.5
+    done
+    if [ -n "$WEBUI_READY" ]; then
+        echo " ready."
+    else
+        echo
+        echo "Warning: the operations console did not start (check for errors above)."
+    fi
+    echo
+else
+    echo "Note: Node.js not found, so the web console was not started."
+    echo "Install Node.js 18+ to drive changes from http://localhost:${WEBUI_PORT}."
+    echo
+fi
+
 echo "=== Drasi Server Curbside Pickup ==="
-echo "  Binary:    $BIN"
-echo "  Config:    $CONFIG_FILE"
-echo "  Plugins:   $PLUGINS_DIR"
-echo "  API:       http://localhost:${SERVER_PORT:-8480}"
-echo "  Dashboard: http://localhost:${DASHBOARD_PORT:-3000}"
-echo "  API docs:  http://localhost:${SERVER_PORT:-8480}/api/v1/docs/"
+echo "  Binary:      $BIN"
+echo "  Config:      $CONFIG_FILE"
+echo "  Plugins:     $PLUGINS_DIR"
+echo "  API:         http://localhost:${SERVER_PORT:-8480}"
+echo "  Dashboard:   http://localhost:${DASHBOARD_PORT:-3000}"
+if [ -n "$WEBUI_PID" ]; then
+    echo "  Web console: http://localhost:${WEBUI_PORT}"
+fi
+echo "  API docs:    http://localhost:${SERVER_PORT:-8480}/api/v1/docs/"
 echo
-echo "Press Ctrl+C to stop the server."
+echo "Press Ctrl+C to stop the server (and the web console)."
 echo "==================================="
 echo
 
-exec "$BIN" --config "$CONFIG_FILE" --plugins-dir "$PLUGINS_DIR"
+# Run in the foreground (not exec) so the trap above can stop the web console.
+"$BIN" --config "$CONFIG_FILE" --plugins-dir "$PLUGINS_DIR"
