@@ -18,14 +18,17 @@ echo "⬇️  Downloading Drasi Server binary..."
 cd "$TUTORIAL_DIR"
 bash scripts/download.sh
 
-# Install the TUI dependencies ahead of time so the first run is fast.
+# Install the console dependencies ahead of time so the first run is fast. The
+# terminal UI (tui/) and the browser console (webui/) share tui/src/db.js, so
+# both directories get their dependencies installed.
 if command -v npm &> /dev/null; then
-    echo "📦 Installing TUI dependencies..."
+    echo "📦 Installing operations console dependencies (tui + webui)..."
     (cd "$TUTORIAL_DIR/tui" && npm install --no-fund --no-audit)
+    (cd "$TUTORIAL_DIR/webui" && npm install --no-fund --no-audit)
 fi
 
 echo ""
 echo "✅ Drasi Server Curbside Pickup tutorial environment is ready!"
 echo "   Next: follow README.md (you are already in tutorials/curbside-pickup)"
 echo "   - Terminal 1: ./scripts/start-demo.sh"
-echo "   - Terminal 2: ./scripts/start-tui.sh"
+echo "   - Terminal 2: ./scripts/start-tui.sh   (or ./scripts/start-webui.sh for the browser console)"

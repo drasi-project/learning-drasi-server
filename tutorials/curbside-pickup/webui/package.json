@@ -1,0 +1,14 @@
+{
+  "name": "curbside-pickup-webui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser UI for driving the Curbside Pickup tutorial: edit orders (PostgreSQL) and vehicles (MySQL), showing every SQL statement and which database it hits. Reuses the exact same db.js data-access layer as the terminal UI (tui/).",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

@@ -14,15 +14,10 @@
 # limitations under the License.
 
 # Setup Database Script
-# Starts PostgreSQL (Retail Operations / orders) and SQL Server (Physical
+# Starts PostgreSQL (Retail Operations / orders) and MySQL (Physical
 # Operations / vehicles), both with change data capture enabled, and seeds them.
 
 set -e
-
-# Stop Git Bash (MSYS) from rewriting container-absolute paths like
-# /opt/mssql-tools18/bin/sqlcmd when they are passed to `docker exec`. This is a
-# harmless no-op on Linux/macOS.
-export MSYS_NO_PATHCONV=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUTORIAL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -36,8 +31,8 @@ if [ -f "$TUTORIAL_DIR/.env" ]; then
     set +a
 fi
 
-SA_PASSWORD="${MSSQL_SA_PASSWORD:-Drasi_Passw0rd!}"
-SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
+MYSQL_ROOT_PW="${MYSQL_ROOT_PASSWORD:-root_admin}"
+MYSQL_DB="${MYSQL_DATABASE:-PhysicalOperations}"
 
 echo "=== Drasi Server Curbside Pickup - Database Setup ==="
 echo
@@ -71,7 +66,7 @@ echo "Stopping any existing database containers..."
 cd "$DATABASE_DIR"
 $COMPOSE_CMD down -v 2>/dev/null || true
 
-echo "Starting PostgreSQL and SQL Server..."
+echo "Starting PostgreSQL and MySQL..."
 $COMPOSE_CMD up -d
 
 # --- PostgreSQL ------------------------------------------------------------
@@ -100,14 +95,19 @@ echo "Applying Retail Operations schema and seed data..."
 docker exec -i curbside-pickup-postgres \
     psql -v ON_ERROR_STOP=1 -U postgres -d RetailOperations < "$DATABASE_DIR/postgres-init.sql"
 
-# --- SQL Server ------------------------------------------------------------
+# --- MySQL -----------------------------------------------------------------
 echo
-echo "Waiting for SQL Server to be ready..."
+echo "Waiting for MySQL to be ready..."
 MAX_RETRIES=40
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker exec curbside-pickup-mssql "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" &> /dev/null; then
-        echo "SQL Server is ready!"
+    # Authenticate over TCP against the target database. MySQL's first-init
+    # temporary server runs with --skip-networking (socket only), so a TCP
+    # connection only succeeds once the real server is up with the configured
+    # root password and MYSQL_DATABASE created - avoiding a cold-init race that
+    # a plain `mysqladmin ping` (which passes even on auth failure) would miss.
+    if docker exec -e MYSQL_PWD="$MYSQL_ROOT_PW" curbside-pickup-mysql mysql -h 127.0.0.1 -uroot -e "USE ${MYSQL_DB}" &> /dev/null; then
+        echo "MySQL is ready!"
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -115,14 +115,13 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     sleep 3
 done
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    echo "Error: SQL Server failed to start within the timeout"
-    echo "Check logs with: docker logs curbside-pickup-mssql"
+    echo "Error: MySQL failed to start within the timeout"
+    echo "Check logs with: docker logs curbside-pickup-mysql"
     exit 1
 fi
 
-echo "Applying Physical Operations schema, seed data, and enabling CDC..."
-# Pipe the script over stdin so this works under docker-outside-of-docker.
-docker exec -i curbside-pickup-mssql "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -b < "$DATABASE_DIR/mssql-init.sql"
+echo "Applying Physical Operations schema, seed data, and replication grants..."
+docker exec -i -e MYSQL_PWD="$MYSQL_ROOT_PW" curbside-pickup-mysql mysql -uroot < "$DATABASE_DIR/mysql-init.sql"
 
 # --- Verify ----------------------------------------------------------------
 echo
@@ -131,14 +130,14 @@ docker exec curbside-pickup-postgres psql -U drasi_user -d RetailOperations -c \
     "SELECT id, customer_name, plate, status FROM orders ORDER BY id;"
 
 echo
-echo "Seeded vehicles (SQL Server):"
-docker exec curbside-pickup-mssql "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -Q \
-    "SET NOCOUNT ON; SELECT plate, customer_name, location FROM PhysicalOperations.dbo.vehicles ORDER BY plate;"
+echo "Seeded vehicles (MySQL):"
+docker exec -e MYSQL_PWD="$MYSQL_ROOT_PW" curbside-pickup-mysql mysql -uroot -e \
+    "SELECT plate, customer_name, location FROM ${MYSQL_DB}.vehicles ORDER BY plate;"
 
 echo
 echo "=== Database setup complete! ==="
 echo
 echo "  PostgreSQL: localhost:${POSTGRES_HOST_PORT:-5742}  (db RetailOperations)"
-echo "  SQL Server: localhost:${MSSQL_HOST_PORT:-1435}  (db PhysicalOperations)"
+echo "  MySQL:      localhost:${MYSQL_HOST_PORT:-3309}  (db PhysicalOperations)"
 echo
 echo "Next step: run ./scripts/start-server.sh to start Drasi Server"

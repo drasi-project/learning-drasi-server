@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # Cleanup Script
-# Stops Drasi Server and removes the PostgreSQL and SQL Server containers.
+# Stops Drasi Server and removes the PostgreSQL and MySQL containers.
 
 set -e
 

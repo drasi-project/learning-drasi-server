@@ -18,10 +18,10 @@
 
 set -e
 
-# TEMPORARY: pinned to the 0.2.0-preview pre-release (plugin-sdk 0.9.0) so the
-# reaction/dashboard plugin loads on Linux. Revert to
-# ".../releases/latest/download" once a stable sdk-0.9.0 drasi-server is released.
-REPO_URL="https://github.com/drasi-project/drasi-server/releases/download/0.2.0-preview"
+# TEMPORARY: pinned to the 0.2.3-preview pre-release (plugin-sdk 0.10.0) so the
+# reaction/dashboard and MySQL plugins load on Linux. Revert to
+# ".../releases/latest/download" once a matching stable drasi-server is released.
+REPO_URL="https://github.com/drasi-project/drasi-server/releases/download/0.2.3-preview"
 INSTALL_DIR="bin"
 
 OS="$(uname -s)"

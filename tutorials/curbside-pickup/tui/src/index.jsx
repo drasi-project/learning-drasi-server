@@ -16,7 +16,7 @@
 //
 // A single full-screen terminal app with two panels:
 //   - Retail Operations  (PostgreSQL): toggle an order's status preparing<->ready
-//   - Physical Operations (SQL Server): toggle a vehicle's location Parking<->Curbside
+//   - Physical Operations (MySQL): toggle a vehicle's location Parking<->Curbside
 // Every change runs a real SQL UPDATE; the bottom pane logs each statement and
 // the database it hit. Drive changes here and watch the Drasi dashboards at
 // http://localhost:3000 react in real time.
@@ -188,7 +188,7 @@ function App() {
   if (!ready) {
     return (
       <Box padding={1}>
-        <Text color="cyan">Connecting to PostgreSQL and SQL Server…</Text>
+        <Text color="cyan">Connecting to PostgreSQL and MySQL…</Text>
       </Box>
     );
   }
@@ -206,7 +206,7 @@ function App() {
     { text: v.location, color: v.location === 'Curbside' ? 'green' : 'gray' },
   ]);
 
-  const dbColor = (db) => (db === 'PostgreSQL' ? 'blue' : db === 'SQL Server' ? 'magenta' : 'red');
+  const dbColor = (db) => (db === 'PostgreSQL' ? 'blue' : db === 'MySQL' ? 'magenta' : 'red');
 
   return (
     <Box flexDirection="column">
@@ -225,7 +225,7 @@ function App() {
         />
         <Panel
           title="Physical Operations"
-          subtitle="SQL Server · vehicles"
+          subtitle="MySQL · vehicles"
           focused={focus === 'vehicles'}
           headers={['Plate', 'Vehicle', 'Color', 'Location']}
           widths={[6, 16, 7, 10]}

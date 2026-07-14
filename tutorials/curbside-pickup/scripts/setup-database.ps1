@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Setup Database Script (Windows)
-# Starts PostgreSQL (orders) and SQL Server (vehicles), both with CDC, and seeds.
+# Starts PostgreSQL (orders) and MySQL (vehicles), both with CDC, and seeds.
 
 $ErrorActionPreference = "Stop"
 
@@ -31,8 +31,8 @@ if (Test-Path $EnvFile) {
     }
 }
 
-$SaPassword = if ($env:MSSQL_SA_PASSWORD) { $env:MSSQL_SA_PASSWORD } else { "Drasi_Passw0rd!" }
-$Sqlcmd = "/opt/mssql-tools18/bin/sqlcmd"
+$MysqlRootPw = if ($env:MYSQL_ROOT_PASSWORD) { $env:MYSQL_ROOT_PASSWORD } else { "root_admin" }
+$MysqlDb = if ($env:MYSQL_DATABASE) { $env:MYSQL_DATABASE } else { "PhysicalOperations" }
 
 Write-Host "=== Drasi Server Curbside Pickup - Database Setup ==="
 Write-Host ""
@@ -53,7 +53,7 @@ try {
     Write-Host "Stopping any existing database containers..."
     Invoke-Expression "$ComposeCmd down -v" 2>$null
 
-    Write-Host "Starting PostgreSQL and SQL Server..."
+    Write-Host "Starting PostgreSQL and MySQL..."
     Invoke-Expression "$ComposeCmd up -d"
 
     # --- PostgreSQL --------------------------------------------------------
@@ -71,20 +71,25 @@ try {
     Write-Host "Applying Retail Operations schema and seed data..."
     Get-Content (Join-Path $DatabaseDir "postgres-init.sql") -Raw | docker exec -i curbside-pickup-postgres psql -v ON_ERROR_STOP=1 -U postgres -d RetailOperations
 
-    # --- SQL Server --------------------------------------------------------
+    # --- MySQL -------------------------------------------------------------
     Write-Host ""
-    Write-Host "Waiting for SQL Server to be ready..."
+    Write-Host "Waiting for MySQL to be ready..."
     $ok = $false
     for ($i = 1; $i -le 40; $i++) {
-        docker exec curbside-pickup-mssql $Sqlcmd -S localhost -U sa -P $SaPassword -C -Q "SELECT 1" *> $null
-        if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Host "SQL Server is ready!"; break }
+        # Authenticate over TCP against the target database. MySQL's first-init
+        # temporary server runs with --skip-networking (socket only), so a TCP
+        # connection only succeeds once the real server is up with the configured
+        # root password and MYSQL_DATABASE created - avoiding a cold-init race that
+        # a plain `mysqladmin ping` (which passes even on auth failure) would miss.
+        docker exec -e MYSQL_PWD=$MysqlRootPw curbside-pickup-mysql mysql -h 127.0.0.1 -uroot -e "USE $MysqlDb" *> $null
+        if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Host "MySQL is ready!"; break }
         Write-Host "  Waiting... ($i/40)"
         Start-Sleep -Seconds 3
     }
-    if (-not $ok) { Write-Host "Error: SQL Server failed to start in time."; exit 1 }
+    if (-not $ok) { Write-Host "Error: MySQL failed to start in time."; exit 1 }
 
-    Write-Host "Applying Physical Operations schema, seed data, and enabling CDC..."
-    Get-Content (Join-Path $DatabaseDir "mssql-init.sql") -Raw | docker exec -i curbside-pickup-mssql $Sqlcmd -S localhost -U sa -P $SaPassword -C -b
+    Write-Host "Applying Physical Operations schema, seed data, and replication grants..."
+    Get-Content (Join-Path $DatabaseDir "mysql-init.sql") -Raw | docker exec -i -e MYSQL_PWD=$MysqlRootPw curbside-pickup-mysql mysql -uroot
 
     # --- Verify ------------------------------------------------------------
     Write-Host ""
@@ -92,8 +97,8 @@ try {
     docker exec curbside-pickup-postgres psql -U drasi_user -d RetailOperations -c "SELECT id, customer_name, plate, status FROM orders ORDER BY id;"
 
     Write-Host ""
-    Write-Host "Seeded vehicles (SQL Server):"
-    docker exec curbside-pickup-mssql $Sqlcmd -S localhost -U sa -P $SaPassword -C -Q "SET NOCOUNT ON; SELECT plate, customer_name, location FROM PhysicalOperations.dbo.vehicles ORDER BY plate;"
+    Write-Host "Seeded vehicles (MySQL):"
+    docker exec -e MYSQL_PWD=$MysqlRootPw curbside-pickup-mysql mysql -uroot -e "SELECT plate, customer_name, location FROM $MysqlDb.vehicles ORDER BY plate;"
 
     Write-Host ""
     Write-Host "=== Database setup complete! ==="

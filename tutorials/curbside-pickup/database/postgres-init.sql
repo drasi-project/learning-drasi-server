@@ -45,12 +45,7 @@ CREATE TABLE orders (
     customer_name VARCHAR(255) NOT NULL,
     driver_name   VARCHAR(255) NOT NULL,
     plate         VARCHAR(50)  NOT NULL,
-    status        VARCHAR(50)  NOT NULL DEFAULT 'preparing',
-    -- Epoch milliseconds, set by the TUI (JavaScript Date.now()) on every change,
-    -- so both databases expose a change time the queries can do datetime
-    -- arithmetic on (via datetime({epochMillis: ...})), consistent with the MS
-    -- SQL vehicles table.
-    updated_at    BIGINT       NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT
+    status        VARCHAR(50)  NOT NULL DEFAULT 'preparing'
 );
 
 -- Enforce the order status enum (matches the original tutorial).
@@ -82,7 +77,7 @@ END
 $$;
 
 -- Seed three orders, all 'preparing'. The plates match the seeded vehicles in the
--- SQL Server database so the PICKUP_BY join lines up.
+-- MySQL database so the PICKUP_BY join lines up.
 INSERT INTO orders (customer_name, driver_name, plate, status)
 SELECT * FROM (VALUES
     ('Sophia Carter', 'Elijah Brooks',  'A1234', 'preparing'),

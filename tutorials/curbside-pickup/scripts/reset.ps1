@@ -30,15 +30,14 @@ if (Test-Path $EnvFile) {
     }
 }
 
-$SaPassword = if ($env:MSSQL_SA_PASSWORD) { $env:MSSQL_SA_PASSWORD } else { "Drasi_Passw0rd!" }
-$Sqlcmd = "/opt/mssql-tools18/bin/sqlcmd"
-$NowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$MysqlRootPw = if ($env:MYSQL_ROOT_PASSWORD) { $env:MYSQL_ROOT_PASSWORD } else { "root_admin" }
+$MysqlDb = if ($env:MYSQL_DATABASE) { $env:MYSQL_DATABASE } else { "PhysicalOperations" }
 
 Write-Host "Resetting orders to 'preparing' (PostgreSQL)..."
-docker exec curbside-pickup-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d RetailOperations -c "UPDATE orders SET status='preparing', updated_at=$NowMs;"
+docker exec curbside-pickup-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d RetailOperations -c "UPDATE orders SET status='preparing';"
 
-Write-Host "Resetting vehicles to 'Parking' (SQL Server)..."
-docker exec curbside-pickup-mssql $Sqlcmd -S localhost -U sa -P $SaPassword -C -b -Q "UPDATE PhysicalOperations.dbo.vehicles SET location='Parking', updated_at=$NowMs;"
+Write-Host "Resetting vehicles to 'Parking' (MySQL)..."
+docker exec -e MYSQL_PWD=$MysqlRootPw curbside-pickup-mysql mysql -uroot -e "UPDATE $MysqlDb.vehicles SET location='Parking';"
 
 Write-Host ""
 Write-Host "Reset complete. Both dashboards should now be empty."

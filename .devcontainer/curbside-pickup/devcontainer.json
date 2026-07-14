@@ -26,8 +26,9 @@
     "forwardPorts": [
         8480,
         3000,
+        3001,
         5742,
-        1435
+        3309
     ],
     "portsAttributes": {
         "8480": {
@@ -38,12 +39,16 @@
             "label": "Curbside Pickup Dashboards",
             "onAutoForward": "notify"
         },
+        "3001": {
+            "label": "Curbside Pickup Web Console",
+            "onAutoForward": "notify"
+        },
         "5742": {
             "label": "PostgreSQL (Retail Operations)",
             "onAutoForward": "silent"
         },
-        "1435": {
-            "label": "SQL Server (Physical Operations)",
+        "3309": {
+            "label": "MySQL (Physical Operations)",
             "onAutoForward": "silent"
         }
     },
@@ -65,10 +70,11 @@
         "POSTGRES_HOST": "localhost",
         "POSTGRES_PORT": "5742",
         "POSTGRES_HOST_PORT": "5742",
-        "MSSQL_HOST": "localhost",
-        "MSSQL_PORT": "1435",
-        "MSSQL_HOST_PORT": "1435",
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "3309",
+        "MYSQL_HOST_PORT": "3309",
         "SERVER_PORT": "8480",
-        "DASHBOARD_PORT": "3000"
+        "DASHBOARD_PORT": "3000",
+        "WEBUI_PORT": "3001"
     }
 }

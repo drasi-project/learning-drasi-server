@@ -15,15 +15,13 @@
 // Database access for the Curbside Pickup TUI.
 //
 // Connects directly to the two tutorial databases - PostgreSQL (Retail
-// Operations / orders) and SQL Server (Physical Operations / vehicles) - and
-// exposes read + write helpers. Every write also bumps an `updated_at` column to
-// the current epoch-millisecond time (Date.now()); the Drasi MS SQL source does
-// not populate change timestamps itself, so the continuous queries read this
-// column instead. A log callback is invoked with the human-readable SQL and the
-// database it ran against, so the UI can show exactly what happened where.
+// Operations / orders) and MySQL (Physical Operations / vehicles) - and exposes
+// read + write helpers. A log callback is invoked with the human-readable SQL
+// and the database it ran against, so the UI can show exactly what happened
+// where.
 
 import pg from 'pg';
-import sql from 'mssql';
+import mysql from 'mysql2/promise';
 
 const ORDER_STATUSES = ['preparing', 'ready'];
 const VEHICLE_LOCATIONS = ['Parking', 'Curbside'];
@@ -38,12 +36,12 @@ export function loadConfig() {
       user: env.POSTGRES_USER || 'drasi_user',
       password: env.POSTGRES_PASSWORD || 'drasi_password',
     },
-    mssql: {
-      host: env.MSSQL_HOST || 'localhost',
-      port: parseInt(env.MSSQL_PORT || '1435', 10),
-      database: env.MSSQL_DATABASE || 'PhysicalOperations',
-      user: env.MSSQL_USER || 'drasi_user',
-      password: env.MSSQL_PASSWORD || 'Drasi_Passw0rd!',
+    mysql: {
+      host: env.MYSQL_HOST || 'localhost',
+      port: parseInt(env.MYSQL_PORT || '3309', 10),
+      database: env.MYSQL_DATABASE || 'PhysicalOperations',
+      user: env.MYSQL_USER || 'drasi_user',
+      password: env.MYSQL_PASSWORD || 'drasi_password',
     },
   };
 }
@@ -59,7 +57,7 @@ export class Db {
     this.config = config;
     this.onSql = onSql || (() => {});
     this.pgPool = null;
-    this.mssqlPool = null;
+    this.mysqlPool = null;
   }
 
   async connect() {
@@ -74,20 +72,20 @@ export class Db {
     // Probe the connection so failures surface immediately.
     await this.pgPool.query('SELECT 1');
 
-    this.mssqlPool = await new sql.ConnectionPool({
-      server: this.config.mssql.host,
-      port: this.config.mssql.port,
-      database: this.config.mssql.database,
-      user: this.config.mssql.user,
-      password: this.config.mssql.password,
-      options: { encrypt: false, trustServerCertificate: true },
-      pool: { max: 4 },
-    }).connect();
+    this.mysqlPool = mysql.createPool({
+      host: this.config.mysql.host,
+      port: this.config.mysql.port,
+      database: this.config.mysql.database,
+      user: this.config.mysql.user,
+      password: this.config.mysql.password,
+      connectionLimit: 4,
+    });
+    await this.mysqlPool.query('SELECT 1');
   }
 
   async close() {
     try { if (this.pgPool) await this.pgPool.end(); } catch { /* ignore */ }
-    try { if (this.mssqlPool) await this.mssqlPool.close(); } catch { /* ignore */ }
+    try { if (this.mysqlPool) await this.mysqlPool.end(); } catch { /* ignore */ }
   }
 
   // ---- Reads -------------------------------------------------------------
@@ -100,34 +98,30 @@ export class Db {
   }
 
   async fetchVehicles() {
-    const res = await this.mssqlPool.request().query(
-      'SELECT plate, driver_name, customer_name, make, model, color, location FROM dbo.vehicles ORDER BY plate',
+    const [rows] = await this.mysqlPool.query(
+      'SELECT plate, driver_name, customer_name, make, model, color, location FROM vehicles ORDER BY plate',
     );
-    return res.recordset;
+    return rows;
   }
 
   // ---- Writes ------------------------------------------------------------
 
   async setOrderStatus(id, status) {
-    const ts = Date.now();
-    const display = `UPDATE orders SET status=${lit(status)}, updated_at=${ts} WHERE id=${id};`;
+    const display = `UPDATE orders SET status=${lit(status)} WHERE id=${id};`;
     this.onSql('PostgreSQL', display);
     await this.pgPool.query(
-      'UPDATE orders SET status = $1, updated_at = $2 WHERE id = $3',
-      [status, ts, id],
+      'UPDATE orders SET status = $1 WHERE id = $2',
+      [status, id],
     );
   }
 
   async setVehicleLocation(plate, location) {
-    const ts = Date.now();
-    const display = `UPDATE dbo.vehicles SET location=${lit(location)}, updated_at=${ts} WHERE plate=${lit(plate)};`;
-    this.onSql('SQL Server', display);
-    await this.mssqlPool
-      .request()
-      .input('loc', sql.VarChar(20), location)
-      .input('ts', sql.BigInt, ts)
-      .input('plate', sql.VarChar(10), plate)
-      .query('UPDATE dbo.vehicles SET location = @loc, updated_at = @ts WHERE plate = @plate');
+    const display = `UPDATE vehicles SET location=${lit(location)} WHERE plate=${lit(plate)};`;
+    this.onSql('MySQL', display);
+    await this.mysqlPool.query(
+      'UPDATE vehicles SET location = ? WHERE plate = ?',
+      [location, plate],
+    );
   }
 }
 

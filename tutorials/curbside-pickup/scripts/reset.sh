@@ -20,10 +20,6 @@
 
 set -e
 
-# Stop Git Bash (MSYS) from rewriting container-absolute paths passed to
-# `docker exec`. Harmless on Linux/macOS.
-export MSYS_NO_PATHCONV=1
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUTORIAL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -34,18 +30,17 @@ if [ -f "$TUTORIAL_DIR/.env" ]; then
     set +a
 fi
 
-SA_PASSWORD="${MSSQL_SA_PASSWORD:-Drasi_Passw0rd!}"
-SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
-NOW_MS="$(($(date +%s) * 1000))"
+MYSQL_ROOT_PW="${MYSQL_ROOT_PASSWORD:-root_admin}"
+MYSQL_DB="${MYSQL_DATABASE:-PhysicalOperations}"
 
 echo "Resetting orders to 'preparing' (PostgreSQL)..."
 docker exec curbside-pickup-postgres \
     psql -v ON_ERROR_STOP=1 -U drasi_user -d RetailOperations \
-    -c "UPDATE orders SET status='preparing', updated_at=$NOW_MS;"
+    -c "UPDATE orders SET status='preparing';"
 
-echo "Resetting vehicles to 'Parking' (SQL Server)..."
-docker exec curbside-pickup-mssql "$SQLCMD" -S localhost -U sa -P "$SA_PASSWORD" -C -b \
-    -Q "UPDATE PhysicalOperations.dbo.vehicles SET location='Parking', updated_at=$NOW_MS;"
+echo "Resetting vehicles to 'Parking' (MySQL)..."
+docker exec -e MYSQL_PWD="$MYSQL_ROOT_PW" curbside-pickup-mysql mysql -uroot -e \
+    "UPDATE ${MYSQL_DB}.vehicles SET location='Parking';"
 
 echo
 echo "Reset complete. Both dashboards should now be empty."

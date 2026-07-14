@@ -14,7 +14,7 @@
 
 # Two independent databases for the Curbside Pickup tutorial:
 #   - postgres : the Retail Operations store (orders)
-#   - mssql    : the Physical Operations store (vehicles)
+#   - mysql    : the Physical Operations store (vehicles)
 # Both are configured for change data capture (CDC) so Drasi Server can stream
 # their changes in real time.
 
@@ -54,33 +54,40 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # Physical Operations - Microsoft SQL Server (vehicles)
+  # Physical Operations - MySQL (vehicles)
   # ---------------------------------------------------------------------------
-  # SQL Server Change Data Capture requires SQL Server Agent, which is enabled
-  # with MSSQL_AGENT_ENABLED. The Developer edition is free for non-production
-  # use. database/mssql-init.sql enables CDC on the database and the vehicles
-  # table after startup.
-  mssql:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: curbside-pickup-mssql
+  # The Drasi MySQL source captures changes from the binary log (binlog), so the
+  # server is started with ROW-based binary logging, full row images, full row
+  # metadata (column names) and GTID mode - all required by the source. The
+  # drasi_user is granted REPLICATION SLAVE / REPLICATION CLIENT in
+  # database/mysql-init.sql so it can stream the binlog.
+  mysql:
+    image: mysql:8.0
+    container_name: curbside-pickup-mysql
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Drasi_Passw0rd!}"
-      MSSQL_PID: "Developer"
-      MSSQL_AGENT_ENABLED: "true"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-root_admin}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-PhysicalOperations}"
+      MYSQL_USER: "${MYSQL_USER:-drasi_user}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-drasi_password}"
+    command:
+      - "--server-id=1"
+      - "--log-bin=mysql-bin"
+      - "--binlog-format=ROW"
+      - "--binlog-row-image=FULL"
+      - "--binlog-row-metadata=FULL"
+      - "--gtid-mode=ON"
+      - "--enforce-gtid-consistency=ON"
     ports:
-      - "${MSSQL_HOST_PORT:-1435}:1433"
+      - "${MYSQL_HOST_PORT:-3309}:3306"
     volumes:
-      - curbside_mssql_data:/var/opt/mssql
+      - curbside_mysql_data:/var/lib/mysql
     healthcheck:
-      # sqlcmd from the mssql-tools18 image needs -C to trust the self-signed
-      # server certificate.
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 5s
       timeout: 5s
       retries: 12
-      start_period: 30s
+      start_period: 20s
 
 volumes:
   curbside_postgres_data:
-  curbside_mssql_data:
+  curbside_mysql_data:

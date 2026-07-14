@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Cleanup Script (Windows)
-# Stops Drasi Server and removes the PostgreSQL and SQL Server containers.
+# Stops Drasi Server and removes the PostgreSQL and MySQL containers.
 
 $ErrorActionPreference = "SilentlyContinue"
 
