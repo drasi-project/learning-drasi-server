@@ -28,7 +28,7 @@
 #                is still being prepared (uses the temporal drasi.trueFor)
 #
 # The dashboard reaction renders all six, live, in one "Curbside Pickup"
-# dashboard at http://localhost:3000 - no bespoke web UI, no SignalR backend.
+# dashboard at http://localhost:3000 - no application code to write.
 # =============================================================================
 
 apiVersion: drasi.io/v1
