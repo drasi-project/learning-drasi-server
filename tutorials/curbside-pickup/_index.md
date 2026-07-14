@@ -344,7 +344,7 @@ Both the PostgreSQL and MySQL sources stamp every change with the wall-clock tim
 
 ### The Dashboard Reaction
 
-A single dashboard reaction subscribes to all six queries and seeds one **Curbside Pickup** dashboard on first start. It uses six Markdown (`text`) widgets, each rendering its query's rows with a Handlebars template - no KPIs or tables to configure, just a list:
+A single dashboard reaction subscribes to all six queries and seeds one **Curbside Pickup** dashboard on first start. It lays out six Markdown (`text`) widgets on a 12-column grid; each widget names one query and renders that query's rows with a Handlebars template - no KPIs or tables to configure, just a list. Here's the reaction envelope plus one representative widget (the other five follow the same shape):
 
 ```yaml
 reactions:
@@ -361,16 +361,33 @@ reactions:
     predefinedDashboards:
       - id: curbside-pickup
         name: Curbside Pickup
+        gridOptions:
+          columns: 12
+          rowHeight: 60
+          margin: 10
         widgets:
-          - { type: text, title: "🍕 Orders · Preparing",  config: { queryId: orders-preparing } }
-          - { type: text, title: "🍕 Orders · Ready",      config: { queryId: orders-ready } }
-          - { type: text, title: "🚗 Vehicles · Parking",  config: { queryId: vehicles-parking } }
-          - { type: text, title: "🚗 Vehicles · Curbside", config: { queryId: vehicles-curbside } }
-          - { type: text, title: "📦 Matched Orders",      config: { queryId: delivery } }
-          - { type: text, title: "⚠️ Delayed Orders",      config: { queryId: delay } }
+          # The four list panels sit side by side on the top row (w: 3 each);
+          # the two join panels (delivery, delay) span the row below (w: 6).
+          - id: orders-preparing
+            type: text
+            title: 🍕 Orders · Preparing
+            grid: { x: 0, y: 0, w: 3, h: 4 }
+            config:
+              queryId: orders-preparing
+              # Handlebars: loop the query's `rows` into a Markdown list.
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 🍕 Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}`
+                {{/each}}
+                {{else}}
+                _No orders being prepared._
+                {{/if}}
+          # - orders-ready, vehicles-parking, vehicles-curbside (top row) ...
+          # - delivery, delay (bottom row, w: 6 each) ...
 ```
 
-Each `text` widget's template loops over `rows` and prints a Markdown bullet per result; when a query's result set changes, the reaction pushes the update to the browser. That's the whole UI - no front-end code to write or host.
+Each `text` widget's `template` loops over its query's `rows` and prints a Markdown bullet per result (or the `{{else}}` placeholder when empty); when a query's result set changes, the reaction pushes the update to the browser. That's the whole UI - no front-end code to write or host.
 
 ### Driving Change
 
