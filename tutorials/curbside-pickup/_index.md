@@ -374,6 +374,428 @@ Each `text` widget's `template` loops over its query's `rows` and prints a Markd
 
 The operations console (`webui/`) is a small Node.js app - a tiny [Express](https://expressjs.com/) server serving a static page - that connects straight to PostgreSQL and MySQL and runs ordinary `UPDATE` statements, the same kind your real retail and physical-operations apps would run. `start-demo` launches it alongside Drasi Server and stops it again on Ctrl+C. It's a convenience for the tutorial, not part of Drasi: Drasi reacts to the database changes however they're made.
 
+## Putting It All Together
+
+The sections above walked through the configuration one piece at a time. Here
+is the complete `server-config.yaml` that `start-demo` actually runs - both
+sources, all six continuous queries, and the full dashboard reaction in a
+single file:
+
+```yaml
+# =============================================================================
+# Drasi Server - Curbside Pickup Tutorial
+# =============================================================================
+# Powers a single real-time dashboard over two independent databases:
+#   - retail-ops   : a PostgreSQL "orders" table (Retail Operations)
+#   - physical-ops : a MySQL "vehicles" table (Physical Operations)
+#
+# Six continuous queries feed the dashboard. Four are simple filtered lists
+# (orders-preparing, orders-ready, vehicles-parking, vehicles-curbside) that
+# split the orders and vehicles by state so a row moves between panels as it
+# changes; two join the orders to the vehicles by license plate:
+#   - delivery : an order is 'ready' AND its driver's vehicle is at 'Curbside'
+#   - delay    : a driver has waited at 'Curbside' for over 10s while the order
+#                is still being prepared (uses the temporal drasi.trueFor)
+#
+# The dashboard reaction renders all six, live, in one "Curbside Pickup"
+# dashboard at http://localhost:3000 - no bespoke web UI, no SignalR backend.
+# =============================================================================
+
+apiVersion: drasi.io/v1
+id: curbside-pickup-server
+host: "${SERVER_HOST:-0.0.0.0}"
+port: ${SERVER_PORT:-8480}
+logLevel: "${LOG_LEVEL:-info}"
+persistConfig: false
+
+# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
+# startup. No manual build step is required.
+autoInstallPlugins: true
+plugins:
+  - ref: source/postgres
+  - ref: bootstrap/postgres
+  - ref: source/mysql
+  - ref: bootstrap/mysql
+  - ref: reaction/dashboard
+
+# =============================================================================
+# Sources
+# =============================================================================
+sources:
+  # Retail Operations - PostgreSQL source: the customer orders.
+  - kind: postgres
+    id: retail-ops
+    autoStart: true
+
+    host: "${POSTGRES_HOST:-localhost}"
+    port: ${POSTGRES_PORT:-5742}
+    database: "${POSTGRES_DATABASE:-RetailOperations}"
+    user: "${POSTGRES_USER:-drasi_user}"
+    password: "${POSTGRES_PASSWORD:-drasi_password}"
+    sslMode: prefer
+
+    # Table to monitor. Lower-case/unquoted so the node label matches (o:orders).
+    tables:
+      - orders
+
+    # The publication is created by database/postgres-init.sql; the slot is
+    # created automatically by the source on startup (with a consistent
+    # snapshot), so the seeded rows are bootstrapped once and not double-counted.
+    slotName: drasi_curbside_slot
+    publicationName: drasi_curbside_pub
+
+    # Primary key, so Drasi can track row identity across changes.
+    tableKeys:
+      - table: orders
+        keyColumns:
+          - id
+
+    # Bootstrap provider loads the existing orders on startup.
+    bootstrapProvider:
+      kind: postgres
+
+  # Physical Operations - MySQL source: the pickup vehicles.
+  # The MySQL source captures changes by streaming the binary log (binlog), so
+  # database/docker-compose.yml starts MySQL with ROW-based logging, full row
+  # images/metadata and GTID mode.
+  - kind: mysql
+    id: physical-ops
+    autoStart: true
+
+    host: "${MYSQL_HOST:-localhost}"
+    port: ${MYSQL_PORT:-3309}
+    database: "${MYSQL_DATABASE:-PhysicalOperations}"
+    user: "${MYSQL_USER:-drasi_user}"
+    password: "${MYSQL_PASSWORD:-drasi_password}"
+    # The tutorial MySQL container does not enable TLS; disable it so the source
+    # connects in plaintext (the client otherwise negotiates TLS and fails).
+    sslMode: disabled
+
+    # Table to monitor. The node label is the table name `vehicles`, matching
+    # (v:vehicles) in the queries.
+    tables:
+      - vehicles
+
+    # Primary key, so Drasi can track row identity across changes.
+    tableKeys:
+      - table: vehicles
+        keyColumns:
+          - plate
+
+    # Bootstrap provider loads the existing vehicles on startup. Unlike the
+    # PostgreSQL bootstrap provider (which reuses the source connection), the
+    # MySQL bootstrap provider takes its own connection settings. Note it does
+    # not accept an sslMode field.
+    bootstrapProvider:
+      kind: mysql
+      host: "${MYSQL_HOST:-localhost}"
+      port: ${MYSQL_PORT:-3309}
+      database: "${MYSQL_DATABASE:-PhysicalOperations}"
+      user: "${MYSQL_USER:-drasi_user}"
+      password: "${MYSQL_PASSWORD:-drasi_password}"
+      tables:
+        - vehicles
+      tableKeys:
+        - table: vehicles
+          keyColumns:
+            - plate
+
+# =============================================================================
+# Continuous Queries
+# =============================================================================
+# Six queries feed the dashboard:
+#   - orders-preparing  : orders not yet ready (the "Preparing" panel)
+#   - orders-ready      : orders ready for pickup (the "Ready" panel)
+#   - vehicles-parking  : vehicles in the lot (the "Parking" panel)
+#   - vehicles-curbside : vehicles at the curb (the "Curbside" panel)
+#   - delivery          : matched orders - ready AND at the curbside
+#   - delay             : delayed orders - at the curbside too long while not ready
+# delivery and delay declare the synthetic PICKUP_BY join, matching a vehicle to
+# an order by license plate (vehicles.plate == orders.plate).
+queries:
+  # orders-preparing: orders still being prepared (status != 'ready'). As soon as
+  # an order becomes 'ready' it drops out of this result and appears in
+  # orders-ready - so the order visibly moves between the two dashboard panels.
+  - id: orders-preparing
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    query: |
+      MATCH
+        (o:orders)
+      WHERE o.status <> 'ready'
+      RETURN
+        o.id AS id,
+        o.id AS orderId,
+        o.customer_name AS customerName,
+        o.driver_name AS driverName,
+        o.plate AS plate,
+        o.status AS status
+
+  # orders-ready: orders that are ready for pickup (status = 'ready').
+  - id: orders-ready
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    query: |
+      MATCH
+        (o:orders)
+      WHERE o.status = 'ready'
+      RETURN
+        o.id AS id,
+        o.id AS orderId,
+        o.customer_name AS customerName,
+        o.driver_name AS driverName,
+        o.plate AS plate,
+        o.status AS status
+
+  # vehicles-parking: vehicles still in the parking lot (location = 'Parking').
+  # When a driver pulls up to the curb the vehicle drops out of this result and
+  # appears in vehicles-curbside - so the car visibly moves between the panels.
+  - id: vehicles-parking
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+    query: |
+      MATCH
+        (v:vehicles)
+      WHERE v.location = 'Parking'
+      RETURN
+        v.plate AS id,
+        v.plate AS plate,
+        v.make AS make,
+        v.model AS model,
+        v.color AS color,
+        v.location AS location
+
+  # vehicles-curbside: vehicles waiting at the curb (location = 'Curbside').
+  - id: vehicles-curbside
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+    query: |
+      MATCH
+        (v:vehicles)
+      WHERE v.location = 'Curbside'
+      RETURN
+        v.plate AS id,
+        v.plate AS plate,
+        v.make AS make,
+        v.model AS model,
+        v.color AS color,
+        v.location AS location
+
+  # delivery: orders that are READY whose driver has ARRIVED at the curbside.
+  - id: delivery
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    joins:
+      - id: PICKUP_BY
+        keys:
+          - label: vehicles
+            property: plate
+          - label: orders
+            property: plate
+    query: |
+      MATCH
+        (o:orders)-[:PICKUP_BY]->(v:vehicles)
+      WHERE o.status = 'ready'
+      AND v.location = 'Curbside'
+      RETURN
+        o.id AS id,
+        o.id AS orderId,
+        o.status AS orderStatus,
+        o.driver_name AS driverName,
+        o.plate as vehicleId,
+        v.make as vehicleMake,
+        v.model as vehicleModel,
+        v.color as vehicleColor,
+        v.location as vehicleLocation,
+        drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) as readyTimestamp
+
+  # delay: a driver is at the curbside but the order is NOT yet ready, and they
+  # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
+  # re-evaluation so the row appears the instant the threshold is crossed.
+  - id: delay
+    autoStart: true
+    queryLanguage: Cypher
+    sources:
+      - sourceId: physical-ops
+        nodes:
+          - vehicles
+      - sourceId: retail-ops
+        nodes:
+          - orders
+    joins:
+      - id: PICKUP_BY
+        keys:
+          - label: vehicles
+            property: plate
+          - label: orders
+            property: plate
+    # drasi.trueFor anchors its timer to the change's effective_from, which both
+    # the PostgreSQL and MySQL sources populate with the wall-clock time of the
+    # change. The row appears the instant the vehicle has been at 'Curbside' for
+    # 10 seconds while the order is still not ready.
+    query: |
+      MATCH
+        (o:orders)-[:PICKUP_BY]->(v:vehicles)
+      WHERE o.status <> 'ready'
+      AND drasi.trueFor(v.location = 'Curbside', duration({ seconds: 10 }))
+      RETURN
+        o.id AS orderId,
+        o.customer_name AS customerName,
+        drasi.changeDateTime(v) AS waitingSinceTimestamp
+
+# =============================================================================
+# Reactions
+# =============================================================================
+reactions:
+  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+  # A single "Curbside Pickup" dashboard is seeded with six Markdown (text)
+  # widgets arranged in two rows:
+  #   🍕 Orders Preparing | 🍕 Orders Ready | 🚗 Vehicles Parking | 🚗 Vehicles Curbside
+  #   📦 Matched Orders                     | ⚠️  Delayed Orders
+  # Because the "preparing/ready" and "parking/curbside" panels are driven by
+  # filtered continuous queries, an order or vehicle disappears from one panel
+  # and appears in the other the instant its status/location changes.
+  - kind: dashboard
+    id: curbside-dashboard
+    autoStart: true
+    queries:
+      - orders-preparing
+      - orders-ready
+      - vehicles-parking
+      - vehicles-curbside
+      - delivery
+      - delay
+    host: "${DASHBOARD_HOST:-0.0.0.0}"
+    port: ${DASHBOARD_PORT:-3000}
+    heartbeatIntervalMs: 15000
+    predefinedDashboards:
+      - id: curbside-pickup
+        name: Curbside Pickup
+        gridOptions:
+          columns: 12
+          rowHeight: 60
+          margin: 10
+        widgets:
+          # Orders being prepared (Retail Operations / PostgreSQL).
+          - id: orders-preparing
+            type: text
+            title: 🍕 Orders · Preparing
+            grid: { x: 0, y: 0, w: 3, h: 4 }
+            config:
+              queryId: orders-preparing
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 🍕 Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}`
+                {{/each}}
+                {{else}}
+                _No orders being prepared._
+                {{/if}}
+
+          # Orders ready for pickup (Retail Operations / PostgreSQL).
+          - id: orders-ready
+            type: text
+            title: 🍕 Orders · Ready
+            grid: { x: 3, y: 0, w: 3, h: 4 }
+            config:
+              queryId: orders-ready
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - ✅ Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}`
+                {{/each}}
+                {{else}}
+                _No orders ready for pickup._
+                {{/if}}
+
+          # Vehicles in the parking lot (Physical Operations / MySQL).
+          - id: vehicles-parking
+            type: text
+            title: 🚗 Vehicles · Parking
+            grid: { x: 6, y: 0, w: 3, h: 4 }
+            config:
+              queryId: vehicles-parking
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 🚗 `{{this.plate}}` — {{this.color}} {{this.make}} {{this.model}}
+                {{/each}}
+                {{else}}
+                _No vehicles in the parking lot._
+                {{/if}}
+
+          # Vehicles waiting at the curb (Physical Operations / MySQL).
+          - id: vehicles-curbside
+            type: text
+            title: 🚗 Vehicles · Curbside
+            grid: { x: 9, y: 0, w: 3, h: 4 }
+            config:
+              queryId: vehicles-curbside
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 🚙 `{{this.plate}}` — {{this.color}} {{this.make}} {{this.model}}
+                {{/each}}
+                {{else}}
+                _No vehicles at the curb._
+                {{/if}}
+
+          # Matched orders (delivery query): ready AND at the curbside.
+          - id: matched-orders
+            type: text
+            title: 📦 Matched Orders (ready + at curbside)
+            grid: { x: 0, y: 4, w: 6, h: 4 }
+            config:
+              queryId: delivery
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - 📦 Order **{{this.orderId}}** — driver **{{this.driverName}}** — {{this.vehicleColor}} {{this.vehicleMake}} {{this.vehicleModel}} (`{{this.vehicleId}}`) at the **Curbside**
+                {{/each}}
+                {{else}}
+                ⏳ _No orders ready with a driver at the curbside._
+                {{/if}}
+
+          # Delayed orders (delay query): waiting at the curbside for over 10s.
+          - id: delayed-orders
+            type: text
+            title: ⚠️ Delayed Orders (waiting > 10s, not ready)
+            grid: { x: 6, y: 4, w: 6, h: 4 }
+            config:
+              queryId: delay
+              template: |
+                {{#if count}}
+                {{#each rows}}
+                - ⚠️ Order **{{this.orderId}}** — **{{this.customerName}}** — waiting since {{this.waitingSinceTimestamp}}
+                {{/each}}
+                {{else}}
+                ✅ _No delayed orders._
+                {{/if}}
+```
+
 ## Clean Up
 
 When you're done, stop Drasi Server and the operations console with **Ctrl+C** in the terminal, then remove the database containers:
