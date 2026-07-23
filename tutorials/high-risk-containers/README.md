@@ -127,7 +127,7 @@ docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_con
 **PowerShell**
 
 ```powershell
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
+docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c 'INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation") VALUES (101, ''ghcr.io/drasi-project/my-app:0.2'', ''Critical Bug'', ''Update to latest version'');'
 ```
 
 Within about a second the dashboard reacts: **my-app-2** appears in the table with reason *Critical Bug*, and the KPI ticks up to **2**. Nothing restarted, and Drasi never polled; it saw the new database row through PostgreSQL's logical replication and re-evaluated the join. (The `add-risky-image.sh` / `.ps1` helper scripts run exactly this `INSERT` with sensible defaults if you prefer.)
@@ -475,7 +475,7 @@ kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/dras
 
 ```powershell
 # A high risk container appears -> 🚨 message in Discord
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
+docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c 'INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation") VALUES (101, ''ghcr.io/drasi-project/my-app:0.2'', ''Critical Bug'', ''Update to latest version'');'
 
 # Resolve it by upgrading the pod -> ✅ message in Discord
 kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3
