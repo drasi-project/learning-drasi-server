@@ -17,6 +17,23 @@
 
 $ErrorActionPreference = "Stop"
 
+# Run a native readiness probe quietly and report success via its exit code.
+# The databases are still starting when these probes first run, so a probe is
+# EXPECTED to fail (and print to stderr) for the first few attempts. Under
+# $ErrorActionPreference = "Stop", Windows PowerShell 5.1 turns any native
+# command's stderr output into a terminating error - which even `*> $null` does
+# not suppress - so a normal "not ready yet" message would abort the whole
+# script (e.g. MySQL's "ERROR 2003 ... Can't connect"). Lower the preference for
+# the duration of the probe and rely on the exit code instead. Works the same on
+# PowerShell 5.1 and 7+.
+function Test-Ready {
+    param([Parameter(Mandatory = $true)][scriptblock]$Probe)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try { & $Probe 2>$null | Out-Null } finally { $ErrorActionPreference = $prev }
+    return ($LASTEXITCODE -eq 0)
+}
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TutorialDir = Split-Path -Parent $ScriptDir
 $DatabaseDir = Join-Path $TutorialDir "database"
@@ -61,8 +78,9 @@ try {
     Write-Host "Waiting for PostgreSQL to be ready..."
     $ok = $false
     for ($i = 1; $i -le 30; $i++) {
-        docker exec curbside-pickup-postgres pg_isready -h localhost -U postgres -d RetailOperations *> $null
-        if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Host "PostgreSQL is ready!"; break }
+        if (Test-Ready { docker exec curbside-pickup-postgres pg_isready -h localhost -U postgres -d RetailOperations }) {
+            $ok = $true; Write-Host "PostgreSQL is ready!"; break
+        }
         Write-Host "  Waiting... ($i/30)"
         Start-Sleep -Seconds 2
     }
@@ -81,8 +99,9 @@ try {
         # connection only succeeds once the real server is up with the configured
         # root password and MYSQL_DATABASE created - avoiding a cold-init race that
         # a plain `mysqladmin ping` (which passes even on auth failure) would miss.
-        docker exec -e MYSQL_PWD=$MysqlRootPw curbside-pickup-mysql mysql -h 127.0.0.1 -uroot -e "USE $MysqlDb" *> $null
-        if ($LASTEXITCODE -eq 0) { $ok = $true; Write-Host "MySQL is ready!"; break }
+        if (Test-Ready { docker exec -e MYSQL_PWD=$MysqlRootPw curbside-pickup-mysql mysql -h 127.0.0.1 -uroot -e "USE $MysqlDb" }) {
+            $ok = $true; Write-Host "MySQL is ready!"; break
+        }
         Write-Host "  Waiting... ($i/40)"
         Start-Sleep -Seconds 3
     }
