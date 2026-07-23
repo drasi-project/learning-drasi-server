@@ -156,7 +156,7 @@ With Terminal 1 running the demo and the dashboard open, use **Terminal 2** to c
 docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
+docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c 'INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation") VALUES (101, ''ghcr.io/drasi-project/my-app:0.2'', ''Critical Bug'', ''Update to latest version'');'
 {{< /tab >}}
 {{< /tabpane >}}
 
@@ -494,7 +494,7 @@ kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/dras
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
 # A high risk container appears -> 🚨 message in Discord
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
+docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c 'INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation") VALUES (101, ''ghcr.io/drasi-project/my-app:0.2'', ''Critical Bug'', ''Update to latest version'');'
 
 # Resolve it by upgrading the pod -> ✅ message in Discord
 kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3
