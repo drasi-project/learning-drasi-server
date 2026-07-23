@@ -65,13 +65,13 @@ if [ ! -f "$TUTORIAL_DIR/bin/kubeconfig.yaml" ]; then
     echo
 fi
 
-# Plugins are cached outside the bind-mounted workspace, in a user-owned
-# directory. The default plugins location is next to the binary (bin/plugins),
-# but on a bind mount (dev container / Windows) that path can be owned by
-# another user, so writing the plugin lock file fails with "Permission denied".
-# A path under $HOME is always writable by the user running the server and
-# persists the cache across runs.
-PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$HOME/.drasi/plugins}"
+# Cache plugins inside this tutorial's own bin/plugins directory. Keeping the
+# cache local to the tutorial (rather than a shared ~/.drasi/plugins) means a
+# different tutorial or a different Drasi Server version can never poison this
+# tutorial's plugins with an incompatible plugin-SDK build. The download script
+# already writes the server binary into bin/, so this path is writable. Override
+# with DRASI_PLUGINS_DIR if you need the cache somewhere else.
+PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$TUTORIAL_DIR/bin/plugins}"
 mkdir -p "$PLUGINS_DIR"
 
 if ! docker ps 2>/dev/null | grep -q high-risk-containers-postgres; then

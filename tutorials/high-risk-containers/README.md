@@ -79,7 +79,7 @@ The `start-demo` script does three things:
 2. **Starts PostgreSQL** and seeds the `RiskyImage` table (it flags `my-app:0.1` as a *Security Risk* and `redis:6.2.3-alpine` as a *Compliance Issue*).
 3. **Runs Drasi Server** in the foreground with the full configuration.
 
-On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `reaction/dashboard`) from `ghcr.io/drasi-project` and caches them under `~/.drasi/plugins`, connects to both sources, bootstraps the existing rows and Pods, starts the continuous query, and starts the dashboard. When you see a line like the following, it's ready:
+On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `reaction/dashboard`) from `ghcr.io/drasi-project` and caches them under this tutorial's `bin/plugins` directory, connects to both sources, bootstraps the existing rows and Pods, starts the continuous query, and starts the dashboard. When you see a line like the following, it's ready:
 
 ```text
 Drasi Server started successfully with API on port 8380

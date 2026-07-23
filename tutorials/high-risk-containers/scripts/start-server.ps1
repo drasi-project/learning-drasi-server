@@ -58,12 +58,13 @@ if (-not $pgRunning) {
     Write-Host ""
 }
 
-# Cache plugins in a user-owned directory outside the workspace. The default
-# location is next to the binary (bin\plugins), but on a bind-mounted workspace
-# that path may be owned by another user, so writing the plugin lock file fails
-# with "Permission denied". A path under the user profile is always writable and
-# persists the cache across runs.
-$pluginsDir = if ($env:DRASI_PLUGINS_DIR) { $env:DRASI_PLUGINS_DIR } else { Join-Path $HOME ".drasi\plugins" }
+# Cache plugins inside this tutorial's own bin\plugins directory. Keeping the
+# cache local to the tutorial (rather than a shared ~/.drasi/plugins) means a
+# different tutorial or a different Drasi Server version can never poison this
+# tutorial's plugins with an incompatible plugin-SDK build. The download script
+# already writes the server binary into bin\, so this path is writable. Override
+# with DRASI_PLUGINS_DIR if you need the cache somewhere else.
+$pluginsDir = if ($env:DRASI_PLUGINS_DIR) { $env:DRASI_PLUGINS_DIR } else { Join-Path $TutorialDir "bin\plugins" }
 New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
 
 $serverPort = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { "8380" }
