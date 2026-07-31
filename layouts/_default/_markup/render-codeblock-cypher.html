@@ -9,6 +9,12 @@
   Linguist grammar highlights them.
 */ -}}
 {{- $h := trim .Inner "\n" | htmlEscape -}}
+{{- /* htmlEscape turns ' into the entity &#39;; its digits would otherwise be
+      caught by the number rule below (producing &#<span...>39</span>; which
+      browsers can't decode, showing a literal &#39;). Park it on a placeholder
+      and restore it after all the highlighting regexes have run. */ -}}
+{{- $sq := "\ue000" -}}
+{{- $h = replace $h "&#39;" $sq -}}
 {{- /* line comments */ -}}
 {{- $h = $h | replaceRE `(//[^\n]*)` `<span class="c1">$1</span>` -}}
 {{- /* keywords */ -}}
@@ -19,4 +25,6 @@
 {{- $h = $h | replaceRE `:([A-Za-z_][A-Za-z0-9_]*)` `:<span class="nl">$1</span>` -}}
 {{- /* numbers */ -}}
 {{- $h = $h | replaceRE `\b(\d+(?:\.\d+)?)\b` `<span class="m">$1</span>` -}}
+{{- /* restore the single-quote entity */ -}}
+{{- $h = replace $h $sq "&#39;" -}}
 <div class="highlight"><pre tabindex="0" class="chroma"><code class="language-cypher" data-lang="cypher">{{ $h | safeHTML }}</code></pre></div>
