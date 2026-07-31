@@ -12,9 +12,9 @@ Building this kind of capability by hand usually means stitching together severa
 
 **Sources** → **Continuous Queries** → **Reactions**
 
-- **Sources** — Connect to your data sources
-- **Continuous Queries** — Define what changes matter
-- **Reactions** — Take action automatically
+- **Sources**: Connect to your data sources
+- **Continuous Queries**: Define what changes matter
+- **Reactions**: Take action automatically
 
 You'll configure each of these building blocks yourself as you work through the steps below.
 

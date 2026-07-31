@@ -1,0 +1,13 @@
+# Downloaded Drasi Server binary
+bin/
+
+# Local environment overrides
+.env
+
+# Server runtime artifacts
+server.log
+data/
+
+# Operations console dependencies and build output
+webui/node_modules/
+webui/dist/
