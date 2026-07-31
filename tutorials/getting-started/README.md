@@ -43,7 +43,7 @@ Choose your preferred environment for working through the Getting Started tutori
 - **[Download Binary](download-binary/)** — Download a prebuilt binary. The fastest way to get started (recommended).
 - **[GitHub Codespace](github-codespace/)** — One-click cloud environment. No local installation needed.
 - **[Dev Container](dev-container/)** — VS Code Dev Container with all dependencies preconfigured.
-- **[Build from Source](build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
+- **[Build from Source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/)** — Clone and build Drasi Server yourself. Ideal for would-be contributors.
 
 <div style="margin-top: 2rem;"></div>
 
