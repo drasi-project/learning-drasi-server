@@ -92,6 +92,10 @@ defaultContentLanguageInSubdir = false
     # content policy rejects, so keep that directory out of the content mount.
     excludeFiles = "webui/**"
 
+  [[module.mounts]]
+    source = "tutorials/high-risk-containers"
+    target = "content/tutorials/high-risk-containers"
+
   # Keep default mounts for the remaining components.
   [[module.mounts]]
     source = "static"
