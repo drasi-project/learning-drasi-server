@@ -104,7 +104,7 @@ Choose your preferred environment for working through the Getting Started tutori
       </div>
     </div>
   </a>
-  <a href="/drasi-server/how-to-guides/installation/build-from-source/">
+  <a href="https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/">
     <div class="unified-card unified-card--tutorials">
       <div class="unified-card-icon"><i class="fas fa-hammer"></i></div>
       <div class="unified-card-content">
@@ -738,7 +738,7 @@ To receive notifications from the SSE Reaction you'll use the **SSE CLI** — a 
 The SSE CLI will enable you to see query result updates from the `message-counts` query as you change the underlying data without needing to view the Drasi Server console or call the REST API repeatedly.
 
 {{% alert title="Built Drasi Server from source?" color="info" %}}
-If you set up your environment by [building from source](/drasi-server/how-to-guides/installation/build-from-source/), you won't have the SSE CLI yet. Install it now by following [Install the SSE CLI](/drasi-server/how-to-guides/installation/install-sse-cli/) so that `./bin/drasi-sse-cli` is available for the steps below. The other setup methods include it already.
+If you set up your environment by [building from source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/), you won't have the SSE CLI yet. Install it now by following [Install the SSE CLI](https://drasi.io/drasi-server/how-to-guides/installation/install-sse-cli/) so that `./bin/drasi-sse-cli` is available for the steps below. The other setup methods include it already.
 {{% /alert %}}
 
 In **Terminal 3**, start the SSE CLI to stream changes from the `message-counts` query. You must specify the Drasi Server URL and the Continuous Query ID you want the SSE Reaction to subscribe to:
