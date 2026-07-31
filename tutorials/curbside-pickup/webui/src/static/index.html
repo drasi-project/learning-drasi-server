@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!--
+ Copyright 2025 The Drasi Authors.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Curbside Pickup — Operations Console</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚙</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1><span class="emoji">🚙</span> Curbside Pickup — Operations Console</h1>
+      <div id="status" class="status status-connecting">
+        <span class="dot"></span><span id="status-text">connecting…</span>
+      </div>
+    </header>
+
+    <p class="lede">
+      Drive change against the two databases. Every action runs a real UPDATE
+      and is logged below with the database it hit — then watch the Drasi
+      dashboard react.
+    </p>
+
+    <div class="grid">
+      <!-- Retail Operations (PostgreSQL / orders) -->
+      <section class="card">
+        <div class="card-head">
+          <h2><span class="emoji">🍕</span> Retail Operations</h2>
+          <span class="db-badge db-postgres">PostgreSQL</span>
+        </div>
+        <p class="card-sub">
+          <code>orders</code> table — toggle status
+          <em>preparing</em> ⇄ <em>ready</em>
+        </p>
+        <table class="data">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Customer</th>
+              <th>Plate</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="orders-body">
+            <tr>
+              <td colspan="5" class="empty">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Physical Operations (MySQL / vehicles) -->
+      <section class="card">
+        <div class="card-head">
+          <h2><span class="emoji">🚙</span> Physical Operations</h2>
+          <span class="db-badge db-mysql">MySQL</span>
+        </div>
+        <p class="card-sub">
+          <code>vehicles</code> table — toggle location
+          <em>Parking</em> ⇄ <em>Curbside</em>
+        </p>
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Plate</th>
+              <th>Vehicle</th>
+              <th>Color</th>
+              <th>Location</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="vehicles-body">
+            <tr>
+              <td colspan="5" class="empty">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="log-section">
+      <h2 class="log-title">SQL log <span class="muted">(most recent last)</span></h2>
+      <div id="log" class="log">
+        <div class="log-empty">No statements yet — toggle a row above to run one.</div>
+      </div>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>
