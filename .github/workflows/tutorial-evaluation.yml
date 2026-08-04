@@ -1,0 +1,151 @@
+# Copyright 2026 The Drasi Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Agentic Tutorial Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      tutorial:
+        description: 'Tutorial to evaluate'
+        type: choice
+        options:
+          - getting-started
+        default: 'getting-started'
+      model:
+        description: 'AI model to use for evaluation'
+        default: 'claude-opus-4.7'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      devcontainer: ${{ steps.config.outputs.devcontainer }}
+      tutorial_path: ${{ steps.config.outputs.tutorial_path }}
+    steps:
+      - name: Set tutorial config
+        id: config
+        run: |
+          case "${{ inputs.tutorial }}" in
+            getting-started)
+              echo "devcontainer=.devcontainer/getting-started/devcontainer.json" >> $GITHUB_OUTPUT
+              echo "tutorial_path=tutorials/getting-started" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "::error::Unknown tutorial: ${{ inputs.tutorial }}"
+              exit 1
+              ;;
+          esac
+
+  evaluate:
+    needs: setup
+    runs-on: ubuntu-latest
+    environment: tutorial-evaluation
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Prepare evaluation workspace
+        run: |
+          # The tutorial docs reference paths under `examples/<tutorial>/...`,
+          # which is the layout of the published drasi-server repo. In this repo the
+          # tutorial assets live under `tutorials/<tutorial>/...`, so create an
+          # `examples/` shim at the repo root so those paths resolve during evaluation.
+          rm -rf examples/${{ inputs.tutorial }}
+          mkdir -p examples
+          cp -r ${{ needs.setup.outputs.tutorial_path }} examples/${{ inputs.tutorial }}
+
+          # Snapshot the rendered tutorial doc the agent will follow, and the prompt,
+          # at the repo root (the devcontainer's default working directory) so that
+          # the prompt's `@tutorial-docs/README.md` reference resolves.
+          mkdir -p tutorial-docs
+          cp ${{ needs.setup.outputs.tutorial_path }}/README.md tutorial-docs/README.md
+          cp .github/prompts/tutorial-evaluation.md prompt.md
+
+      - name: Copilot-CLI inside Devcontainer
+        uses: devcontainers/ci@v0.3
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT_TOKEN }}
+          DRASI_TUTORIAL_EVALUATION: "true"
+        with:
+          configFile: ${{ needs.setup.outputs.devcontainer }}
+          push: never
+          runCmd: |
+            timeout 1200 copilot -p "$(cat prompt.md)" \
+              --allow-all-tools \
+              --allow-all-paths \
+              --deny-tool 'fetch' \
+              --deny-tool 'websearch' \
+              --deny-tool 'githubRepo' \
+              --deny-tool 'shell(wget *)' \
+              --deny-tool 'shell(nc *)' \
+              --deny-tool 'shell(ssh *)' \
+              --deny-tool 'shell(scp *)' \
+              --deny-tool 'shell(telnet *)' \
+              --deny-tool 'shell(ftp *)' \
+              --deny-tool 'shell(rm -rf /*)' \
+              --deny-tool 'shell(dd *)' \
+              --allow-url localhost \
+              --allow-url 127.0.0.1 \
+              --model ${{ inputs.model }}
+
+      - name: Check evaluation status
+        if: always()
+        run: |
+          REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+
+          if [ -z "$REPORT" ]; then
+            echo "::error::No report.md found in evaluation directory"
+            exit 1
+          fi
+
+          echo "Found report: $REPORT"
+          echo "--- Report Contents ---"
+          cat "$REPORT"
+          echo "--- End Report ---"
+
+          # Remove potential BOM and normalize line endings
+          sed -i '1s/^\xEF\xBB\xBF//' "$REPORT"
+          sed -i 's/\r$//' "$REPORT"
+
+          # Publish the full report to the GitHub Actions job summary so it can be
+          # read directly from the run's Summary tab without downloading artifacts.
+          {
+            echo "## Tutorial Evaluation Report (${{ inputs.tutorial }})"
+            echo ""
+            cat "$REPORT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
+            echo "::notice::Tutorial evaluation PASSED"
+            exit 0
+          elif grep -qiE "^##\s*STATUS:\s*FAILURE" "$REPORT"; then
+            echo "::error::Tutorial evaluation FAILED"
+            exit 1
+          else
+            echo "::error::No STATUS found in report.md"
+            echo "First 5 lines of report:"
+            head -5 "$REPORT" | cat -A
+            exit 1
+          fi
+
+      - name: Upload evaluation results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: evaluation-results-${{ inputs.tutorial }}-${{ github.run_id }}
+          path: |
+            evaluation-*/
+            tutorial-docs/
+            prompt.md
