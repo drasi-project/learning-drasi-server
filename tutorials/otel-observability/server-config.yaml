@@ -39,6 +39,8 @@ plugins:
   - ref: source/otel:0.1.0
   - ref: reaction/dashboard
   - ref: reaction/log
+  # Optional (Discord alerts step): uncomment to enable the HTTP reaction below.
+  # - ref: reaction/http
 
 # =============================================================================
 # Sources
@@ -430,3 +432,57 @@ reactions:
         template: "[{{query_name}}] ~ {{before}} -> {{after}}"
       deleted:
         template: "[{{query_name}}] - {{before}}"
+
+  # ===========================================================================
+  # Optional: Discord alerts (HTTP reaction)
+  # ===========================================================================
+  # Posts when slo-alert or missing-heartbeat is Added or Removed. To enable:
+  #   1. Uncomment `- ref: reaction/http` in the plugins list above.
+  #   2. Uncomment this reaction block (remove the leading "# " on each line).
+  #   3. Set DISCORD_WEBHOOK_URL and restart the server.
+  # See "Optional: Discord Alerts" in the tutorial for the walkthrough.
+  #
+  # - kind: http
+  #   id: discord-alerts
+  #   autoStart: true
+  #   queries:
+  #     - slo-alert
+  #     - missing-heartbeat
+  #   baseUrl: "${DISCORD_WEBHOOK_URL}"
+  #   timeoutMs: 30000
+  #   outputTemplates:
+  #     routes:
+  #       slo-alert:
+  #         added:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99:** {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
+  #             }
+  #         deleted:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "✅ **SLO recovered**\n• **Service:** `{{before.service}}`\n• **Version:** `{{before.deployVersion}}`"
+  #             }
+  #       missing-heartbeat:
+  #         added:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "💔 **Heartbeat missing**\n• **Service:** `{{after.service}}`"
+  #             }
+  #         deleted:
+  #           method: POST
+  #           headers:
+  #             Content-Type: application/json
+  #           template: |
+  #             {
+  #               "content": "✅ **Heartbeat restored**\n• **Service:** `{{before.service}}`"
+  #             }

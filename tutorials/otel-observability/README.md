@@ -19,6 +19,7 @@ This tutorial builds that correlation layer on **Drasi Server**. Three mock stor
 | **[Step 3: Open the Dashboard](#step-3-of-4-open-the-dashboard)** | Watch checkout v41 stay healthy | 2 min |
 | **[Step 4: Drive Change](#step-4-of-4-drive-change)** | `kubectl` a rollout, `UPDATE` the SLO, stop heartbeats | 8 min |
 | **[How It Works](#how-it-works)** | Understand the three sources, the virtual joins, and the queries | 5 min |
+| **[Optional: Discord](#optional-discord-alerts)** | Push SLO and heartbeat changes to a webhook | 5 min |
 
 > **Before you begin**
 >
@@ -356,12 +357,97 @@ This tutorial pins **Drasi Server 0.2.2** (`scripts/download.sh`, override with 
 
 `0.2.0-preview` is plugin-sdk 0.9 and cannot load this plugin. Re-run `bash scripts/download.sh` if you still have that binary.
 
-## Claims this demo does not make
+## Optional: Discord Alerts
+The dashboard is for *watching*. A reaction can *act*: the same **Added** / **Removed** edges posted to a webhook. Drasi Server's **HTTP reaction** (`kind: http`) does that with no extra code. This step is optional and needs a Discord server where you can create a webhook.
 
-- Drasi replaces Prometheus, Grafana, Loki, or a tracing backend.
-- Arbitrary raw OTLP volume can be retained safely.
-- Results have exactly-once delivery.
-- Cross-source events have a global order.
-- A correlated condition proves causation.
+The reaction is already written in `server-config.yaml`; it ships **commented out**. Enable it by uncommenting it and supplying a webhook URL.
 
-The defensible claim is that Drasi continuously maintains a declarative correlation and exposes its changing result set.
+> **Keep the demo running**
+>
+> This continues from the demo in Step 2. Leave the cluster and database up. You will restart only Drasi Server.
+
+> **Same pattern, any webhook**
+>
+> This uses Discord, but the HTTP reaction posts to any webhook-style endpoint (Slack, Microsoft Teams, PagerDuty, your own scaler) by changing the URL and the message `template`.
+
+### 1. Create a Discord webhook
+
+In Discord: **Server Settings → Integrations → Webhooks → New Webhook**, pick the channel, and **Copy Webhook URL**. It looks like `https://discord.com/api/webhooks/<id>/<token>`.
+
+### 2. Enable the HTTP reaction in `server-config.yaml`
+
+Open `server-config.yaml` and **uncomment** two things (remove the leading `# ` from each line):
+
+1. The HTTP reaction plugin in the `plugins:` list:
+
+   ```yaml
+   - ref: reaction/dashboard
+   - ref: reaction/log
+   - ref: reaction/http        # uncomment this line
+   ```
+
+2. The `discord-alerts` reaction block at the bottom of `reactions:`. It subscribes to `slo-alert` and `missing-heartbeat` and posts when a row is **Added** or **Removed**:
+
+   ```yaml
+     - kind: http
+       id: discord-alerts
+       autoStart: true
+       queries:
+         - slo-alert
+         - missing-heartbeat
+       baseUrl: "${DISCORD_WEBHOOK_URL}"
+       timeoutMs: 30000
+       outputTemplates:
+         routes:
+           slo-alert:
+             added:
+               method: POST
+               headers:
+                 Content-Type: application/json
+               template: |
+                 {
+                   "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99:** {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
+                 }
+             deleted:
+               method: POST
+               headers:
+                 Content-Type: application/json
+               template: |
+                 {
+                   "content": "✅ **SLO recovered**\n• **Service:** `{{before.service}}`\n• **Version:** `{{before.deployVersion}}`"
+                 }
+   ```
+
+- `baseUrl` is the webhook URL. `${DISCORD_WEBHOOK_URL}` is resolved at startup, so the secret is not in the file.
+- `added` templates use `{{after.*}}`; `deleted` templates use `{{before.*}}`. Those fields are what the query returns.
+- The body is Discord's `{"content": "..."}` format.
+
+### 3. Provide the webhook URL and restart
+
+Stop Drasi Server with **Ctrl+C** in Terminal 1, set the webhook URL, and start only the server (cluster and Postgres stay up):
+
+**bash / zsh**
+
+```bash
+export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/<id>/<token>"
+bash scripts/start-server.sh
+```
+
+**PowerShell**
+
+```powershell
+$env:DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/<id>/<token>"
+powershell -ExecutionPolicy Bypass -File scripts/start-server.ps1
+```
+
+On this start, Drasi Server installs `reaction/http` and brings up `discord-alerts` next to the dashboard.
+
+From **Terminal 2**, drive a change and watch the channel:
+
+```bash
+kubectl set image deployment/checkout app=otel-observability-checkout:v42
+kubectl rollout status deployment/checkout
+kubectl label deployment/checkout version=v42 --overwrite
+```
+
+After ~5 seconds you should see **SLO alert**. Roll back to v41 and you should see **SLO recovered**. `POST http://127.0.0.1:18080/heartbeat/off` posts **Heartbeat missing**; `/heartbeat/on` posts **Heartbeat restored**.
