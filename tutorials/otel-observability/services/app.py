@@ -63,6 +63,8 @@ GENERATE_TRAFFIC = os.environ.get("GENERATE_TRAFFIC", "false").lower() not in {
 _state_lock = threading.Lock()
 _work_ms = float(os.environ.get("WORK_MS", os.environ.get("LATENCY_P99_MS", "400")))
 _samples: deque[float] = deque(maxlen=32)
+# First export should be the configured delay, not a missing gauge (KPI 0).
+_samples.append(_work_ms)
 _heartbeat_enabled = os.environ.get("HEARTBEAT_ENABLED", "true").lower() not in {
     "0",
     "false",
@@ -282,8 +284,10 @@ def _exporter_loop() -> None:
             p99 = _p99_ms()
             if p99 is not None:
                 metrics.append(_gauge_metric("latency_p99_ms", "ms", p99))
-            if _heartbeat_on():
-                metrics.append(_gauge_metric("health.heartbeat", "1", float(time.time())))
+            # Always export the pulse. 0 means explicitly disabled so Drasi
+            # sees an Update immediately instead of waiting for lastSeen to age.
+            pulse = float(time.time()) if _heartbeat_on() else 0.0
+            metrics.append(_gauge_metric("health.heartbeat", "1", pulse))
             if metrics:
                 _post_otlp("/v1/metrics", _export_metrics_request(metrics))
             if span and PEER_SERVICE:

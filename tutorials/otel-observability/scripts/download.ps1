@@ -3,9 +3,9 @@
 
 $ErrorActionPreference = "Stop"
 
-# Pin to 0.2.2 (plugin-sdk 0.11.0) so it can load source/otel built from
-# drasi-core PR 750. 0.2.0-preview is plugin-sdk 0.9.x and will reject that plugin.
-$RepoUrl = "https://github.com/drasi-project/drasi-server/releases/download/0.2.2"
+# Pin Drasi Server. 0.2.2 ships plugin-sdk 0.11, which loads source/otel 0.1.0.
+$ServerVersion = if ($env:DRASI_SERVER_VERSION) { $env:DRASI_SERVER_VERSION } else { "0.2.2" }
+$RepoUrl = "https://github.com/drasi-project/drasi-server/releases/download/$ServerVersion"
 $InstallDir = "bin"
 
 $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture

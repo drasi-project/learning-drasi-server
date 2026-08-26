@@ -59,10 +59,6 @@ fi
 PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$PLATFORM_DIR/plugins}"
 mkdir -p "$PLUGINS_DIR"
 
-# source/otel is not on the public registry yet. Build it from drasi-core PR 750
-# into PLUGINS_DIR (no-op if the cdylib is already there).
-bash "$SCRIPT_DIR/install-otel-plugin.sh"
-
 if ! docker ps 2>/dev/null | grep -q otel-observability-postgres; then
     echo "Warning: the otel-observability-postgres container is not running."
     echo "Run ./scripts/setup-database.sh first."

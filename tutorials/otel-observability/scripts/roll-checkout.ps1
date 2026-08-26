@@ -35,6 +35,6 @@ if (-not (Test-Path $env:KUBECONFIG)) {
 
 kubectl set image deployment/checkout "app=otel-observability-checkout:$Version"
 if ($LASTEXITCODE -ne 0) { exit 1 }
-kubectl label deployment/checkout "version=$Version" --overwrite
-if ($LASTEXITCODE -ne 0) { exit 1 }
 kubectl rollout status deployment/checkout --timeout=120s
+if ($LASTEXITCODE -ne 0) { exit 1 }
+kubectl label deployment/checkout "version=$Version" --overwrite

@@ -13,14 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Install the source/otel plugin.
+# Optional local build of source/otel.
 #
-# source/otel is not on ghcr.io/drasi-project until drasi-core PR 750 is
-# published. This script builds libdrasi_source_otel from that PR and copies
-# it into the tutorial plugin directory so Drasi Server can load kind: otel.
-#
-# First run clones drasi-core and compiles the crate (several minutes).
-# Later runs are no-ops if the plugin file is already present.
+# start-server no longer calls this. The published plugin is
+# ghcr.io/drasi-project/source/otel:0.1.0 and auto-installs from
+# server-config.yaml. Keep this script for air-gapped rebuilds.
 
 set -e
 

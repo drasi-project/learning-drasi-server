@@ -18,9 +18,9 @@
 
 set -e
 
-# Pin to 0.2.2 (plugin-sdk 0.11.0) so it can load source/otel built from
-# drasi-core PR 750. 0.2.0-preview is plugin-sdk 0.9.x and will reject that plugin.
-REPO_URL="https://github.com/drasi-project/drasi-server/releases/download/0.2.2"
+# Pin Drasi Server. 0.2.2 ships plugin-sdk 0.11, which loads source/otel 0.1.0.
+DRASI_SERVER_VERSION="${DRASI_SERVER_VERSION:-0.2.2}"
+REPO_URL="https://github.com/drasi-project/drasi-server/releases/download/${DRASI_SERVER_VERSION}"
 # Host and the Linux dev container share this folder via bind mount. Keep
 # each OS/arch in its own directory so a Mac binary is not exec'd in Linux.
 INSTALL_DIR="bin/$(uname -s)-$(uname -m)"

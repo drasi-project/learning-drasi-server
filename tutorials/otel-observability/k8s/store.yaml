@@ -78,6 +78,8 @@ metadata:
     version: v41
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: checkout
@@ -87,6 +89,7 @@ spec:
         app: checkout
         version: v41
     spec:
+      terminationGracePeriodSeconds: 5
       containers:
         - name: app
           image: otel-observability-checkout:v41

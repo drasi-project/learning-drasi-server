@@ -58,9 +58,6 @@ if (-not $pgRunning) {
 $pluginsDir = if ($env:DRASI_PLUGINS_DIR) { $env:DRASI_PLUGINS_DIR } else { Join-Path $TutorialDir "bin\plugins" }
 New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
 
-& powershell -ExecutionPolicy Bypass -File (Join-Path $ScriptDir "install-otel-plugin.ps1")
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 $serverPort = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { "8380" }
 $dashboardPort = if ($env:DASHBOARD_PORT) { $env:DASHBOARD_PORT } else { "3000" }
 $otlpBind = if ($env:OTEL_GRPC_BIND) { $env:OTEL_GRPC_BIND } else { "0.0.0.0:14317" }

@@ -34,5 +34,5 @@ if [ ! -f "$KUBECONFIG" ]; then
 fi
 
 kubectl set image deployment/checkout "app=otel-observability-checkout:${VERSION}"
-kubectl label deployment/checkout "version=${VERSION}" --overwrite
 kubectl rollout status deployment/checkout --timeout=120s
+kubectl label deployment/checkout "version=${VERSION}" --overwrite

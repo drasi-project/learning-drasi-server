@@ -27,18 +27,16 @@ port: ${SERVER_PORT:-8380}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
 
-# Registry plugins (postgres, kubernetes, dashboard, log) auto-install from
-# ghcr.io/drasi-project. source/otel is not published until drasi-core PR 750
-# lands, so scripts/install-otel-plugin.sh builds it locally. Signature
-# verification must be off for that unsigned cdylib to load.
+# Plugins auto-install from ghcr.io/drasi-project. Pin source/otel to the
+# published 0.1.0 (plugin-sdk 0.11, signed). Pair with Drasi Server 0.2.2.
 autoInstallPlugins: true
-verifyPlugins: false
+verifyPlugins: true
 plugins:
   - ref: source/postgres
   - ref: bootstrap/postgres
   - ref: source/kubernetes
   - ref: bootstrap/kubernetes
-  - ref: source/otel
+  - ref: source/otel:0.1.0
   - ref: reaction/dashboard
   - ref: reaction/log
 
@@ -90,8 +88,6 @@ sources:
     metricAllowlist:
       - latency_p99_ms
       - health.heartbeat
-    metricIdentityAttributes:
-      - version
     heartbeatMetric: health.heartbeat
     destinationAttributes:
       - peer.service
@@ -111,9 +107,8 @@ queries:
     query: |
       MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric)
       WHERE m.name = 'latency_p99_ms'
-        AND m.version = d.version
       RETURN
-        d.version AS deployVersion,
+        s.version AS deployVersion,
         s.name AS service,
         m.value AS latencyMs
     sources:
@@ -153,9 +148,8 @@ queries:
       MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric)
       WHERE m.name = 'latency_p99_ms'
         AND s.name = 'checkout'
-        AND m.version = d.version
       RETURN
-        d.version AS deployVersion,
+        s.version AS deployVersion,
         s.name AS service,
         m.value AS latencyMs
     sources:
@@ -195,7 +189,7 @@ queries:
       MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric),
             (s)-[:GOVERNED_BY]->(p:service_slo_policy)
       WHERE m.name = p.metric_name
-        AND m.version = d.version
+        AND s.version = d.version
         AND m.value > p.threshold_ms
         AND drasi.trueFor(
           m.value > p.threshold_ms,
@@ -256,42 +250,50 @@ queries:
         relations:
           - DEPENDS_ON
 
-  # Live pulse. Empty until the first health.heartbeat export arrives.
+  # Live pulse. value > 0 is on; 0 is an explicit /heartbeat/off.
   - id: checkout-heartbeat
     autoStart: true
     queryLanguage: Cypher
     query: |
-      MATCH (svc:Service)-[:HEARTBEAT]->(h:Heartbeat)
+      MATCH (svc:Service)-[:REPORTS]->(m:Metric)
       WHERE svc.name = 'checkout'
-      RETURN svc.name AS service, h.lastSeen AS lastSeen
+        AND m.name = 'health.heartbeat'
+      RETURN
+        svc.name AS service,
+        m.value AS pulse,
+        m.receivedAt AS lastSeen
     sources:
       - sourceId: otel
         nodes:
           - Service
-          - Heartbeat
+          - Metric
         relations:
-          - HEARTBEAT
+          - REPORTS
 
-  # Same Heartbeat node the plugin upserts. No version join — a rolling
-  # checkout still has one pulse, and turning it off ages lastSeen.
+  # Missing when checkout sends pulse 0, or when the last pulse is older
+  # than 10 seconds (process gone, no export at all).
   - id: missing-heartbeat
     autoStart: true
     queryLanguage: Cypher
     query: |
-      MATCH (svc:Service)-[:HEARTBEAT]->(h:Heartbeat)
+      MATCH (svc:Service)-[:REPORTS]->(m:Metric)
       WHERE svc.name = 'checkout'
-        AND drasi.trueNowOrLater(
-              datetime(h.lastSeen) <= (datetime.realtime() - duration({ seconds: 10 })),
-              datetime(h.lastSeen) + duration({ seconds: 10 })
+        AND m.name = 'health.heartbeat'
+        AND (
+              m.value <= 0
+              OR drasi.trueNowOrLater(
+                   datetime(m.receivedAt) <= (datetime.realtime() - duration({ seconds: 10 })),
+                   datetime(m.receivedAt) + duration({ seconds: 10 })
+                 )
             )
       RETURN svc.name AS service
     sources:
       - sourceId: otel
         nodes:
           - Service
-          - Heartbeat
+          - Metric
         relations:
-          - HEARTBEAT
+          - REPORTS
 
 # =============================================================================
 # Reactions
@@ -404,7 +406,11 @@ reactions:
               template: |
                 {{#if count}}
                 {{#each rows}}
+                {{#if this.pulse}}
                 ✅ **{{this.service}}** last seen `{{this.lastSeen}}`
+                {{else}}
+                💔 **{{this.service}}** heartbeat disabled
+                {{/if}}
                 {{/each}}
                 {{else}}
                 ⏳ No heartbeat received yet.

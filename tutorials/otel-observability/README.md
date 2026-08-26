@@ -59,9 +59,9 @@ powershell -ExecutionPolicy Bypass -File scripts/download.ps1
 
 This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
 
-> **The OTel source plugin**
+> **Pinned versions**
 >
-> `source/otel` is not on the public plugin registry until [drasi-core PR 750](https://github.com/drasi-project/drasi-core/pull/750) is published. `scripts/start-server.sh` calls `scripts/install-otel-plugin.sh`, which clones that PR and builds `libdrasi_source_otel.so` into `bin/plugins` (first run takes several minutes; later runs are a no-op). The server is pinned to **0.2.2** (plugin-sdk 0.11) so that locally built plugin can load. `verifyPlugins` is off because the local cdylib is unsigned.
+> This tutorial pins **Drasi Server 0.2.2** and the published **`source/otel:0.1.0`** plugin (plugin-sdk 0.11, signed).
 
 ## Step 2 of 4: Run the Demo
 Everything runs from a single configuration file, `server-config.yaml`. In **Terminal 1**, start the demo:
@@ -85,7 +85,7 @@ The `start-demo` script does four things:
 3. **Starts PostgreSQL** and seeds `service_slo_policy` (checkout / `latency_p99_ms` / 750 ms).
 4. **Runs Drasi Server** in the foreground with the full configuration.
 
-On first start, Drasi Server downloads the registry plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `reaction/dashboard`, `reaction/log`) from `ghcr.io/drasi-project`. `install-otel-plugin.sh` builds `source/otel` from PR 750 into the same `bin/plugins` directory. When you see a line like the following, it's ready:
+On first start, Drasi Server downloads the signed registry plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `source/otel:0.1.0`, `reaction/dashboard`, `reaction/log`) from `ghcr.io/drasi-project`. When you see a line like the following, it's ready:
 
 ```text
 Drasi Server started successfully with API on port 8380
@@ -133,46 +133,34 @@ export KUBECONFIG=bin/kubeconfig.yaml
 $env:KUBECONFIG = "bin/kubeconfig.yaml"
 ```
 
+List what the cluster is running before you change anything:
+
+```bash
+kubectl get deploy,pods,svc
+```
+
+You should see `frontend`, `checkout` (image tag `v41`), `payments`, and `otel-collector`.
+
 ### Roll checkout to v42
 
 This is a real Deployment change. **v41** starts at 400 ms; **v42** starts at 920 ms (above the 750 ms policy). The image change is the latency change.
 
-**bash / zsh**
-
 ```bash
 kubectl set image deployment/checkout app=otel-observability-checkout:v42
-kubectl label deployment/checkout version=v42 --overwrite
 kubectl rollout status deployment/checkout
+kubectl label deployment/checkout version=v42 --overwrite
 ```
 
-**PowerShell**
-
-```powershell
-kubectl set image deployment/checkout app=otel-observability-checkout:v42
-kubectl label deployment/checkout version=v42 --overwrite
-kubectl rollout status deployment/checkout
-```
-
-`set image` starts a v42 replica that **actually sleeps ~920 ms** on each `/work` request (v41 sleeps ~400 ms). Frontend keeps calling checkout; checkout calls payments; the exported `latency_p99_ms` is the p99 of those real timings. `label` is what the query returns as `deployVersion`. Both versions can run during the rollout — metrics are keyed by `version`, and the query only joins the Deployment's current version. After `rollout status` finishes, **Current Health** shows **v42** at ~920 ms. Five seconds later **slo-alert** emits **Added**.
+`set image` starts a v42 replica that **actually sleeps ~920 ms** on each `/work` request (v41 sleeps ~400 ms). Frontend keeps calling checkout; checkout calls payments; the exported `latency_p99_ms` is the p99 of those real timings. After `rollout status`, **Current Health** shows **v42** at ~920 ms. Five seconds later **slo-alert** emits **Added**.
 
 ### Recover, then change the policy
 
 Roll back to v41 — 400 ms, under the SLO. The same alert row is **Removed**; there is no separate resolution query.
 
-**bash / zsh**
-
 ```bash
 kubectl set image deployment/checkout app=otel-observability-checkout:v41
-kubectl label deployment/checkout version=v41 --overwrite
 kubectl rollout status deployment/checkout
-```
-
-**PowerShell**
-
-```powershell
-kubectl set image deployment/checkout app=otel-observability-checkout:v41
 kubectl label deployment/checkout version=v41 --overwrite
-kubectl rollout status deployment/checkout
 ```
 
 The threshold lives in PostgreSQL, not in the query. Checkout v41 is already ~400 ms, so dropping the policy to 100 ms is enough to fire the alert — no latency change required.
@@ -216,7 +204,7 @@ curl -fsS -X POST http://127.0.0.1:18080/heartbeat/off
 curl.exe -fsS -X POST http://127.0.0.1:18080/heartbeat/off
 ```
 
-The **Checkout heartbeat** widget keeps showing the last `lastSeen`. After ~10 seconds **missing-heartbeat** emits **Added** and the Missing Heartbeats KPI ticks to 1. Resume the signal:
+Checkout keeps exporting `health.heartbeat`, but the value is **0**. **Checkout heartbeat** flips to disabled and **missing-heartbeat** emits **Added**. Resume the signal:
 
 **bash / zsh**
 
@@ -310,7 +298,7 @@ joins:
 MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric)
 WHERE m.name = 'latency_p99_ms'
 RETURN
-  d.version AS deployVersion,
+  s.version AS deployVersion,
   s.name AS service,
   m.value AS latencyMs
 ```
@@ -321,6 +309,7 @@ RETURN
 MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric),
       (s)-[:GOVERNED_BY]->(p:service_slo_policy)
 WHERE m.name = p.metric_name
+  AND s.version = d.version
   AND m.value > p.threshold_ms
   AND drasi.trueFor(
     m.value > p.threshold_ms,
@@ -333,15 +322,18 @@ RETURN
   p.threshold_ms AS thresholdMs
 ```
 
-**service-dependencies** is the live `DEPENDS_ON` map. **missing-heartbeat** watches checkout — the service the drive scripts stop — and uses `drasi.trueNowOrLater` on `Metric.receivedAt` so the row appears 10 seconds after the last heartbeat and disappears when the signal resumes:
+**service-dependencies** is the live `DEPENDS_ON` map. **missing-heartbeat** watches checkout's `health.heartbeat` gauge: `POST /heartbeat/off` exports **0** (immediate **Added**); a process that stops exporting ages `receivedAt` for 10 seconds.
 
 ```cypher
 MATCH (svc:Service)-[:REPORTS]->(m:Metric)
-WHERE m.name = 'health.heartbeat'
-  AND svc.name = 'checkout'
-  AND drasi.trueNowOrLater(
-        datetime(m.receivedAt) <= (datetime.realtime() - duration({ seconds: 10 })),
-        datetime(m.receivedAt) + duration({ seconds: 10 })
+WHERE svc.name = 'checkout'
+  AND m.name = 'health.heartbeat'
+  AND (
+        m.value <= 0
+        OR drasi.trueNowOrLater(
+             datetime(m.receivedAt) <= (datetime.realtime() - duration({ seconds: 10 })),
+             datetime(m.receivedAt) + duration({ seconds: 10 })
+           )
       )
 RETURN svc.name AS service
 ```
@@ -359,14 +351,10 @@ The cluster runs three small images that share `services/app.py` and differ only
 
 Same `app.py`; v41/v42 differ by `WORK_MS`. Each request is timed; the process exports a p99 gauge of recent samples (the OTel source accepts gauges, not histograms). Checkout's control API is `http://127.0.0.1:18080` (`POST /delay/<ms>` changes the sleep, `POST /heartbeat/on|off` toggles the heartbeat).
 
-### Loading a local OTel plugin
-`start-server` / `start-demo` already run `scripts/install-otel-plugin.sh`. That script:
+### Plugin and server versions
+This tutorial pins **Drasi Server 0.2.2** (`scripts/download.sh`, override with `DRASI_SERVER_VERSION`) and **`source/otel:0.1.0`** from `ghcr.io/drasi-project`. First start downloads the signed cdylib into `bin/<os>-<arch>/plugins` (host and the Linux dev container keep separate trees so a Mac bind-mount cannot exec a Darwin binary).
 
-1. No-ops if `bin/<os>-<arch>/plugins/libdrasi_source_otel.so` (or `.dylib` / `.dll`) is already there. Host and the Linux dev container share this folder, so each platform keeps its own binary and plugin.
-2. Otherwise clones [drasi-core PR 750](https://github.com/drasi-project/drasi-core/pull/750) into `bin/otel-plugin-src` and builds with `cargo build --lib -p drasi-source-otel --features dynamic-plugin --release` (on Linux natively, elsewhere inside `rust:1.95.0-bookworm`). The `dynamic-plugin` feature is what exports `drasi_plugin_init`.
-3. Copies the cdylib into `bin/<os>-<arch>/plugins`.
-
-Re-run `bash scripts/download.sh` if you still have the `0.2.0-preview` server — that binary is plugin-sdk 0.9 and cannot load this plugin. To force a rebuild, delete `bin/<os>-<arch>/plugins/libdrasi_source_otel.*` and start the server again.
+`0.2.0-preview` is plugin-sdk 0.9 and cannot load this plugin. Re-run `bash scripts/download.sh` if you still have that binary.
 
 ## Claims this demo does not make
 
