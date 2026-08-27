@@ -37,7 +37,7 @@ plugins:
   - ref: source/kubernetes
   - ref: bootstrap/kubernetes
   - ref: source/otel:0.1.0
-  - ref: reaction/dashboard
+  - ref: reaction/dashboard:0.1.5
   - ref: reaction/log
   # Optional (Discord alerts step): uncomment to enable the HTTP reaction below.
   # - ref: reaction/http
@@ -390,14 +390,14 @@ reactions:
                 {{/if}}
 
           - id: dependencies
-            type: table
+            type: graph
             title: Service Dependencies
-            grid: { x: 0, y: 7, w: 6, h: 4 }
+            grid: { x: 0, y: 7, w: 6, h: 5 }
             config:
               queryId: service-dependencies
-              columns:
-                - fromService
-                - toService
+              nodeField: fromService
+              connectsToField: toService
+              layout: force
 
           - id: missing-heartbeats
             type: text

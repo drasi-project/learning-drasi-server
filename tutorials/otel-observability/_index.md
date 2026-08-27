@@ -117,7 +117,7 @@ The `start-demo` script does four things:
 3. **Starts PostgreSQL** and seeds `service_slo_policy` (checkout / `latency_p99_ms` / 750 ms).
 4. **Runs Drasi Server** in the foreground with the full configuration.
 
-On first start, Drasi Server downloads the signed registry plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `source/otel:0.1.0`, `reaction/dashboard`, `reaction/log`) from `ghcr.io/drasi-project`. When you see a line like the following, it's ready:
+On first start, Drasi Server downloads the signed registry plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `source/otel:0.1.0`, `reaction/dashboard:0.1.5`, `reaction/log`) from `ghcr.io/drasi-project`. When you see a line like the following, it's ready:
 
 ```text
 Drasi Server started successfully with API on port 8380
@@ -144,7 +144,7 @@ The OTel source has **no bootstrap dump** — it waits for the next export. Wait
 - **Active SLO Alerts** — empty. Checkout is healthy.
 - **Checkout p99** and the gauge — about **400 ms**, under the 750 ms policy.
 - **Current Health** — checkout at deploy version **v41**.
-- **Service Dependencies** — `frontend → checkout` and `checkout → payments`, derived from CLIENT spans.
+- **Service Dependencies** — a live graph of `frontend → checkout` and `checkout → payments`, derived from CLIENT spans.
 - **Checkout heartbeat** — a `lastSeen` timestamp. Empty means no pulse has arrived yet, not that the signal is healthy.
 
 The dashboard updates the instant the data changes, with no refreshing. Let's make something change.
