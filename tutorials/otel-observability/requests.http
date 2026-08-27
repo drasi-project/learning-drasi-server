@@ -1,0 +1,103 @@
+# Copyright 2026 The Drasi Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# Drasi Server OTel Observability - HTTP Requests
+# =============================================================================
+# Use with the VSCode REST Client extension (humao.rest-client) or similar.
+# API documentation is served at http://localhost:8380/api/v1/docs/
+
+@baseUrl = http://localhost:8380
+@dashboardUrl = http://localhost:3000
+@checkoutUrl = http://localhost:18080
+
+### ==========================================================================
+### Health & Info
+### ==========================================================================
+
+### Health check
+GET {{baseUrl}}/health
+
+### List API versions
+GET {{baseUrl}}/api/versions
+
+### ==========================================================================
+### Sources
+### ==========================================================================
+
+### List all sources
+GET {{baseUrl}}/api/v1/sources
+
+### Get the PostgreSQL SLO source status
+GET {{baseUrl}}/api/v1/sources/slo
+
+### Get the Kubernetes source status
+GET {{baseUrl}}/api/v1/sources/k8s
+
+### Get the OTel source status
+GET {{baseUrl}}/api/v1/sources/otel
+
+### ==========================================================================
+### Continuous Queries
+### ==========================================================================
+
+### List all queries
+GET {{baseUrl}}/api/v1/queries
+
+### Current health (always-on deployment/metric view)
+GET {{baseUrl}}/api/v1/queries/current-health/results
+
+### Active SLO alerts
+GET {{baseUrl}}/api/v1/queries/slo-alert/results
+
+### Service dependency edges
+GET {{baseUrl}}/api/v1/queries/service-dependencies/results
+
+### Missing heartbeats
+GET {{baseUrl}}/api/v1/queries/missing-heartbeat/results
+
+### ==========================================================================
+### Reactions
+### ==========================================================================
+
+### List all reactions
+GET {{baseUrl}}/api/v1/reactions
+
+### Get the dashboard reaction status
+GET {{baseUrl}}/api/v1/reactions/otel-observability-dashboard
+
+### Seeded dashboards
+GET {{dashboardUrl}}/api/dashboards
+
+### ==========================================================================
+### Checkout control API (mock service)
+### ==========================================================================
+
+### Current checkout mock state
+GET {{checkoutUrl}}/state
+
+### Spike checkout p99 latency to 920ms
+POST {{checkoutUrl}}/latency/920
+
+### Recover checkout p99 latency to 700ms
+POST {{checkoutUrl}}/latency/700
+
+### Restore healthy checkout p99 latency
+POST {{checkoutUrl}}/latency/400
+
+### Stop checkout heartbeats
+POST {{checkoutUrl}}/heartbeat/off
+
+### Resume checkout heartbeats
+POST {{checkoutUrl}}/heartbeat/on

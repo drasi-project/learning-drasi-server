@@ -1,0 +1,9 @@
+# Downloaded Drasi Server binary and generated kubeconfig
+bin/
+
+# Local environment overrides
+.env
+
+# Server runtime artifacts
+server.log
+data/
