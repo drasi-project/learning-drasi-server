@@ -169,7 +169,7 @@ bash scripts/set-room.sh room_01_02_03 82 40 10
 docker exec building-comfort-postgres psql -U drasi_user -d building_comfort -c "UPDATE \"Room\" SET temperature=82, humidity=40, co2=10 WHERE id='room_01_02_03';"
 ```
 
-That gives `50 + (82-72) + (40-42) + 0 = 58` — above 50, so the room and its floor raise alerts even though humidity and CO2 are fine.
+That gives `50 + (82-72) + (40-42) + 0 = 58` — above 50, so the room raises an alert even though humidity and CO2 are fine. Assuming the other two rooms on that floor are still at their initial seeded comfort level of 46, the floor average is `(58 + 46 + 46) / 3 = 50`. The floor does **not** raise an alert: 50 is still inside the comfortable band.
 
 ### Let it run hands-free
 
