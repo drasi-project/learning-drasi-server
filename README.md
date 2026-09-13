@@ -75,6 +75,81 @@ python3 scripts/render-tutorials.py          # write README.md files
 python3 scripts/render-tutorials.py --check   # fail if any are stale (CI check)
 ```
 
+## Isolated Native Runtime Evaluation
+
+`scripts/tutorial-runtime.py` runs the published tutorial infrastructure without
+reusing the normal tutorial container names, volumes, ports, or Kubernetes
+context. It is an optional development path; the normal tutorial commands and
+downloaded releases remain unchanged. It requires Python 3, working Docker
+Compose, and a **native-enabled** Drasi Server build with matching local plugin
+artifacts. High Risk Containers additionally needs `kubectl` and `k3d`.
+
+From this repository's root, choose an unused run ID and an evidence directory:
+
+```bash
+python3 scripts/tutorial-runtime.py prepare building-comfort \
+  --run-id my-native-evaluation --output /path/to/evidence
+```
+
+The `prepare` action uses that tutorial's real Compose configuration and seed SQL.
+It generates isolated `compose.json`, `server-config.yaml`, `environment.sh`, an
+ownership manifest, and command logs under `/path/to/evidence/building-comfort`.
+It refuses to overwrite an existing evaluation or reuse existing data volumes.
+The default loopback ports for PostgreSQL, API, and dashboard are respectively
+`49110`, `49112`, and `49113` for Building Comfort. The other tutorial blocks start
+at `49100` (Getting Started), `49120` (High Risk Containers), and `49130` (Curbside
+Pickup). Override the range with `--base-port`.
+
+Start the exact server build under evaluation, supplying its SHA256:
+
+```bash
+python3 scripts/tutorial-runtime.py serve building-comfort \
+  --run-id my-native-evaluation --output /path/to/evidence \
+  --server /path/to/drasi-server --server-sha256 <sha256> \
+  --plugins /path/to/local-plugins
+```
+
+This selects `--execution-mode computation-graph` and requires the live instance's
+`/api/v1/instances/<id>/runtime` endpoint to report `computationGraph` and
+`running: true`. A compiled feature or a healthy API alone is not accepted as
+native-runtime proof. The server hash, plugin hashes, process ID, arguments,
+runtime response, and server log are recorded. Signature verification is skipped
+only for these explicitly supplied local development plugins, not for normal
+published tutorial downloads.
+
+Use the generated environment with the tutorial's data-changing commands and
+compare all published observations, including result identities, aggregates,
+timers, reaction events, dashboard changes, and stop/restart behavior. Getting
+Started starts from `configs/getting-started-step-3.yaml`; its five queries must
+still be added and exercised in the published sequence, not replaced by the
+older `server-config.yaml` smoke demo. Helpers with fixed container names must be
+adapted to the exact names recorded in the ownership manifest.
+
+For High Risk Containers, after `prepare`, use the same run ID with:
+
+```bash
+python3 scripts/tutorial-runtime.py cluster high-risk-containers \
+  --run-id my-native-evaluation --output /path/to/evidence \
+  --k3d /path/to/k3d --kube-port 49650
+```
+
+This deploys the actual tutorial Pods into a dedicated namespace, writes a private
+kubeconfig, and updates only the generated server configuration. It does not
+update or switch the global Kubernetes context.
+
+After stopping the server, simulator, SSE CLI, and any operations console you
+started, remove only the recorded infrastructure:
+
+```bash
+python3 scripts/tutorial-runtime.py cleanup building-comfort \
+  --run-id my-native-evaluation --output /path/to/evidence
+```
+
+For High Risk Containers, also pass `--k3d` if it is not on `PATH`; cleanup removes
+the owned cluster as well. The evidence is retained. **These commands establish
+infrastructure and runtime provenance, not that a tutorial passed.** Report
+unexecuted or failed workflow steps separately.
+
 ## Project Links
 
 - [Drasi Server](https://github.com/drasi-project/drasi-server)
