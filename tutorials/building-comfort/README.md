@@ -8,9 +8,9 @@ This tutorial builds a **Building Comfort** monitoring demo on **Drasi Server**.
 
 **Sources** → **Continuous Queries** → **Reactions**
 
-- **Sources** — Connect to your data sources
-- **Continuous Queries** — Define what changes matter
-- **Reactions** — Take action automatically
+- **Sources**: Connect to your data sources
+- **Continuous Queries**: Define what changes matter
+- **Reactions**: Take action automatically
 
 | Step | What You'll Do | Time |
 | ---- | ------------- | ---- |
@@ -32,7 +32,7 @@ The easiest way to follow this tutorial is the **dev container**, which installs
 
 ### Option A: Dev Container or GitHub Codespaces (recommended)
 
-1. Open this repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
+1. Open the [`learning-drasi-server`](https://github.com/drasi-project/learning-drasi-server) repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
 2. When prompted for a configuration, choose **Drasi Server - Building Comfort Tutorial**.
 3. Wait for the container to finish. Its setup script downloads the Drasi Server binary and installs the PostgreSQL client.
 
@@ -57,6 +57,28 @@ powershell -ExecutionPolicy Bypass -File scripts/download.ps1
 ```
 
 This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
+
+### Option C: Build from Source
+
+Prefer to compile Drasi Server yourself? Follow the [**Build from Source**](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) installation guide to clone the repository and build the binary.
+
+Once it is built, make the `drasi-server` binary available to this tutorial's helper scripts — either add it to your `PATH`, or copy it into this tutorial's `bin/` directory (the same location [Option B](#step-1-of-4-set-up-your-environment) uses):
+
+**bash / zsh**
+
+```bash
+cd tutorials/building-comfort
+mkdir -p bin
+cp /path/to/drasi-server/bin/drasi-server bin/drasi-server
+```
+
+**PowerShell**
+
+```powershell
+cd tutorials/building-comfort
+New-Item -ItemType Directory -Force bin | Out-Null
+Copy-Item C:\path\to\drasi-server\bin\drasi-server.exe bin\drasi-server.exe
+```
 
 ## Step 2 of 4: Run the Demo
 Everything runs from a single configuration file, `server-config.yaml`. In **Terminal 1**, start the demo:
