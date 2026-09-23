@@ -7,8 +7,9 @@
 """Isolated infrastructure for evaluating the published server tutorials.
 
 This prepares real tutorial databases, not substitute fixtures. The optional
-serve action requires an explicitly hashed local server build, selects native
-ComputationGraph execution, and checks the instance's runtime endpoint.
+serve action requires an explicitly hashed ComputationGraph-only server build
+and checks the live instance's identity and running status. There is no engine
+selector.
 Infrastructure readiness is never reported as a tutorial acceptance result.
 """
 
@@ -324,11 +325,12 @@ def serve(args):
     run = evidence / f"server-{time.time_ns()}"
     run.mkdir()
     argv = [
-        str(server), "--execution-mode", "computation-graph", "--config", str(config),
+        str(server), "--config", str(config),
         "--plugins-dir", str(plugins), "--skip-verification",
     ]
     (run / "provenance.json").write_text(json.dumps({
         "server": str(server), "server_sha256": actual_hash, "argv": argv,
+        "runtime": "computationGraph",
         "tutorial_revision": ownership["tutorial_revision"],
         "plugins": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                     for p in plugins.iterdir() if p.suffix in (".dylib", ".so", ".dll")},
@@ -354,7 +356,7 @@ def serve(args):
                     time.sleep(0.5)
                     continue
                 (run / "native-runtime.json").write_text(json.dumps(proof, indent=2) + "\n")
-                expected = {"instanceId": instance_id, "executionMode": "computationGraph", "running": True}
+                expected = {"instanceId": instance_id, "runtime": "computationGraph", "running": True}
                 if not proof.get("success") or proof.get("data") != expected:
                     raise RuntimeError(f"Native runtime proof did not match: {proof}")
                 print(f"Native ComputationGraph running: {url}\nEvidence: {run}", flush=True)

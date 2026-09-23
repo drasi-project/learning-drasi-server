@@ -75,13 +75,13 @@ python3 scripts/render-tutorials.py          # write README.md files
 python3 scripts/render-tutorials.py --check   # fail if any are stale (CI check)
 ```
 
-## Isolated Native Runtime Evaluation
+## Isolated Runtime Evaluation
 
 `scripts/tutorial-runtime.py` runs the published tutorial infrastructure without
 reusing the normal tutorial container names, volumes, ports, or Kubernetes
 context. It is an optional development path; the normal tutorial commands and
 downloaded releases remain unchanged. It requires Python 3, working Docker
-Compose, and a **native-enabled** Drasi Server build with matching local plugin
+Compose, and a **ComputationGraph-only** Drasi Server build with matching local plugin
 artifacts. High Risk Containers additionally needs `kubectl` and `k3d`.
 
 From this repository's root, choose an unused run ID and an evidence directory:
@@ -109,13 +109,18 @@ python3 scripts/tutorial-runtime.py serve building-comfort \
   --plugins /path/to/local-plugins
 ```
 
-This selects `--execution-mode computation-graph` and requires the live instance's
-`/api/v1/instances/<id>/runtime` endpoint to report `computationGraph` and
-`running: true`. A compiled feature or a healthy API alone is not accepted as
-native-runtime proof. The server hash, plugin hashes, process ID, arguments,
-runtime response, and server log are recorded. Signature verification is skipped
-only for these explicitly supplied local development plugins, not for normal
-published tutorial downloads.
+ComputationGraph is the server's only runtime; no engine flag or feature opt-in
+is needed. Removed `--execution-mode` and `executionMode` configuration selectors
+are not supported. The script requires the live instance's
+`/api/v1/instances/<id>/runtime` endpoint to report exactly that `instanceId`,
+`runtime: "computationGraph"`, and `running: true` inside a successful response.
+A different instance or a healthy API alone does not satisfy readiness
+verification. The server hash, plugin hashes, process ID, arguments, runtime
+response, and server log are recorded. Provenance also includes the fixed
+informational `runtime: "computationGraph"` label; it is not a selectable mode or
+a replacement for the live identity/readiness check. Signature verification is
+skipped only for these explicitly supplied local development plugins, not for
+normal published tutorial downloads.
 
 Use the generated environment with the tutorial's data-changing commands and
 compare all published observations, including result identities, aggregates,
