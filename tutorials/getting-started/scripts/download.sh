@@ -18,7 +18,8 @@
 
 set -e
 
-REPO_URL="https://github.com/drasi-project/drasi-server/releases/latest/download"
+# Keep the server release aligned with this tutorial's host ABI 0.13 plugin pins.
+REPO_URL="https://github.com/drasi-project/drasi-server/releases/download/0.2.3"
 INSTALL_DIR="bin"
 
 # Detect OS
