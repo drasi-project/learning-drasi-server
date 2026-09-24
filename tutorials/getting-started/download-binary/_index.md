@@ -28,16 +28,20 @@ cd drasi-server
 
 ## Step 2: Download Tutorial Files
 
-There are a set files used during setup and the tutorial that you need to download. Use the following command to download the zip file containing the files, then unzip it:
+Download the current tutorial assets from `learning-drasi-server`. These include the plugin pins paired with Drasi Server 0.2.3; older example bundles from the server repository may contain unversioned plugin references. Copy the tutorial into `examples/getting-started` so the paths used throughout the tutorial resolve:
 
 {{< tabpane persist="header" >}}
 {{< tab header="Mac / Linux" lang="bash" >}}
-curl -fsSL https://github.com/drasi-project/drasi-server/releases/latest/download/drasi-server-examples.zip -o drasi-server-examples.zip
-unzip drasi-server-examples.zip -d .
+curl -fsSL https://github.com/drasi-project/learning-drasi-server/archive/refs/heads/main.zip -o learning-drasi-server.zip
+unzip learning-drasi-server.zip -d .
+mkdir -p examples
+cp -R learning-drasi-server-main/tutorials/getting-started examples/
 {{< /tab >}}
 {{< tab header="Windows" lang="powershell" >}}
-curl -fsSL https://github.com/drasi-project/drasi-server/releases/latest/download/drasi-server-examples.zip -o drasi-server-examples.zip
-tar -xf drasi-server-examples.zip
+Invoke-WebRequest -Uri https://github.com/drasi-project/learning-drasi-server/archive/refs/heads/main.zip -OutFile learning-drasi-server.zip
+Expand-Archive -Path learning-drasi-server.zip -DestinationPath .
+New-Item -ItemType Directory -Force examples | Out-Null
+Copy-Item -Recurse learning-drasi-server-main/tutorials/getting-started examples/
 {{< /tab >}}
 {{< /tabpane >}}
 
@@ -50,11 +54,11 @@ There are 2 binary files you need to download to proceed with the tutorial:
 
 The rest of the tutorial assumes these files are in the `./bin/` directory (as `./bin/drasi-server` and `./bin/drasi-sse-cli`).
 
-To download the correct binaries for your platform run the following command:
+The scripts download the binaries from release **0.2.3**, matching the tutorial's native plugin ABI 0.13 pins. Run the following command for your platform:
 
 {{< tabpane persist="header" >}}
 {{< tab header="bash / zsh" lang="bash" >}}
-./examples/getting-started/scripts/download.sh
+bash examples/getting-started/scripts/download.sh
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
 .\examples\getting-started\scripts\download.ps1
