@@ -1,51 +1,469 @@
 <!-- DO NOT EDIT. Generated from _index.md by scripts/render-tutorials.py. Edit _index.md and run `python3 scripts/render-tutorials.py`. -->
 
-Many teams already run **Debezium** for change data capture. This tutorial shows how to feed those change events into **Drasi Server** without rewriting your application or replacing your database — you only change the path between the database and Drasi.
+If you already use **Debezium** for change data capture, you can keep it as your CDC reader and use **Drasi Server** to continuously evaluate queries over its events. This tutorial connects an existing Debezium deployment to Drasi; it does not replace your database connector or introduce another CDC reader.
 
-You'll reuse the same **Building Comfort** scenario as the [Building Comfort tutorial](../building-comfort/): a PostgreSQL building with floors and rooms, six continuous queries, and the live dashboard reaction. The queries and dashboard stay the same. What changes is **how change events get from PostgreSQL into Drasi**.
+Choose the route that matches your deployment. **Each route stands alone**: you do not need to run both.
 
-**Two integration paths:**
+| Route | Pipeline | Use it when |
+| ----- | -------- | ----------- |
+| **[Debezium Server over HTTP](#route-a-debezium-server-drasi-http-source)** | Database → Debezium Server HTTP sink → Drasi HTTP source | You use Debezium Server and can direct its sink to Drasi |
+| **[Debezium on Kafka Connect](#route-b-debezium-on-kafka-connect-drasi-kafka-source)** | Database → Debezium Connect → existing Kafka topic → Drasi Kafka source | You already publish Debezium events to Kafka |
 
-| Path | Pipeline | Drasi source | When to use it |
-| ---- | -------- | ------------ | -------------- |
-| **1. Debezium Server → HTTP** | Postgres → Debezium Server → HTTP POST | `source/http` | No Kafka in your stack; simplest glue |
-| **2. Kafka Connect → Kafka** | Postgres → Debezium Connect → Kafka topic | `source/kafka` | You already run Kafka / Connect |
+Drasi consumes Kafka directly. **There is no Kafka sink connector to install.**
 
-**PostgreSQL** → **Debezium** → **Drasi Server** → **Dashboard**
+**Your database** → **Debezium** → **Drasi source** → **Queries and reactions**
 
-- **PostgreSQL**: Building · Floor · Room
-- **Debezium**: Server or Connect
-- **Drasi Server**: HTTP or Kafka source
-- **Dashboard**: Live comfort view
+- **Your database**: Existing captured tables
+- **Debezium**: Server HTTP sink or Connect + Kafka
+- **Drasi source**: Map row events to graph changes
+- **Queries and reactions**: Use your existing Drasi configuration
 
-| Step | What You'll Do | Time |
-| ---- | ------------- | ---- |
-| **[Step 1: Set Up Your Environment](#step-1-of-4-set-up-your-environment)** | Open the dev container (or install tools locally) | 5 min |
-| **[Step 2: Path 1 — Debezium Server → HTTP](#step-2-of-4-path-1-debezium-server-http)** | Run the HTTP integration end to end | 10 min |
-| **[Step 3: Path 2 — Kafka Connect → Kafka](#step-3-of-4-path-2-kafka-connect-kafka)** | Run the Kafka integration end to end | 10 min |
-| **[Step 4: Drive Change](#step-4-of-4-drive-change)** | Update Postgres rows and watch events flow through Debezium into Drasi | 5 min |
-| **[How It Works](#how-it-works)** | Minimal Debezium setup (no magic), mappings, and config walkthrough | 10 min |
+The examples use the `Room` table from [Building Comfort](../building-comfort/) to make the mapping concrete. Adapt the table, key, labels, and query properties to your own captured table. The full six-query/dashboard example remains in the bundled [HTTP configuration](server-config-http.yaml) and [Kafka configuration](server-config-kafka.yaml); this tutorial focuses on the integration.
+
+| Step | What You'll Do |
+| ---- | -------------- |
+| **[Step 1: Prepare your event and mapping](#step-1-of-3-prepare-your-event-and-mapping)** | Inspect a real event, choose identities, and plan initial state |
+| **[Step 2: Connect your change feed](#step-2-of-3-connect-your-change-feed)** | Follow either the [HTTP](#route-a-debezium-server-drasi-http-source) or [Kafka](#route-b-debezium-on-kafka-connect-drasi-kafka-source) instructions |
+| **[Step 3: Verify database changes](#step-3-of-3-verify-database-changes)** | Trace an insert, update, and delete through a query and reaction |
+| **[How It Works](#how-it-works)** | Check envelope paths, deletion behavior, and important settings |
+| **[Optional disposable lab](#optional-appendix-disposable-building-comfort-lab)** | Try both routes locally or in a dev container without an existing environment |
 
 > **Before you begin**
 >
-> - **Terminals:** **Terminal 1** runs the demo (stays in the foreground). **Terminal 2** drives SQL changes and optional debug commands.
-> - **Working directory:** run every command from `tutorials/debezium-integration/`. The dev container opens there automatically.
-> - **Command tabs:** bash is shown first (Codespaces / dev container). Use the PowerShell notes only when running locally on Windows.
-> - **Ports:** API `8380`, dashboard `3000`, Postgres `5752`, HTTP CDC `9080`, Kafka `19092`, Connect REST `8083`.
-> - **One path at a time:** finish Path 1 (or clean up) before starting Path 2 so containers and replication slots don't collide.
+> - **Drasi familiarity:** you should already know how to configure sources, queries, and reactions. Start with [Getting Started](../getting-started/) and [Building Comfort](../building-comfort/) if these are new to you.
+> - **Access:** use a nonproduction Debezium deployment, its configuration/logs, and a captured table where you can safely change a test row. For Server, you need a distribution with the native HTTP sink; for Connect, Kafka read/metadata permissions and broker addresses reachable from Drasi.
+> - **Format:** these examples consume Debezium row envelopes as JSON, with `op`, `before`, `after`, and `source`. Inspect the actual value first. Schema-wrapped JSON needs different paths; flattened SMT records, Avro, and Protobuf are not interchangeable with this format.
+> - **Drasi runtime:** use a server and compatible source/reaction plugins. The examples pin Drasi Server **0.2.3**; see [compatibility](#compatibility-and-verification-scope) before changing versions.
+> - **Tools:** the commands use bash, `curl`, and `jq`; Kafka inspection uses `kcat` or your existing topic browser. SQL uses your database client. Docker is needed **only for the optional lab**, not for connecting existing services.
 
-## Step 1 of 4: Set Up Your Environment
-### Option A: Dev Container or GitHub Codespaces (recommended)
+## Step 1 of 3: Prepare Your Event and Mapping
+Capture a representative event through your existing Debezium diagnostics or Kafka topic browser. Keep sample data local and redact credentials or sensitive row values before sharing it. For Kafka, the [read-only inspection commands](#route-b-debezium-on-kafka-connect-drasi-kafka-source) below show how to read without joining an application consumer group.
 
-1. Open the [`learning-drasi-server`](https://github.com/drasi-project/learning-drasi-server) repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
-2. When prompted for a configuration, choose **Drasi Server - Debezium Integration Tutorial**.
-3. Wait for the container to finish. Its setup script downloads the Drasi Server binary and installs the PostgreSQL client.
+For example, an update to a Building Comfort room has this **value/body**, not a Drasi API change object:
 
-That's it — skip ahead to [Step 2](#step-2-of-4-path-1-debezium-server-http).
+```json
+{
+  "before": {"id":"room_01_01_01","name":"Room 01","temperature":70,"humidity":40,"co2":10,"floor_id":"floor_01_01"},
+  "after": {"id":"room_01_01_01","name":"Room 01","temperature":40,"humidity":20,"co2":700,"floor_id":"floor_01_01"},
+  "source": {"db":"building_comfort","schema":"public","table":"Room"},
+  "op": "u"
+}
+```
 
-### Option B: Run Locally
+Check these prerequisites before configuring either source:
 
-You'll need **Docker**, **curl**, and **bash** (Git Bash or WSL on Windows). From the repository root:
+| Check | Why it matters |
+| ----- | -------------- |
+| **Stable row key** | Inserts/updates need the key in `after`; deletes need it in `before`. Include **all** components of a composite key. These examples assume an immutable `id`, not a mutable business attribute. |
+| **Unambiguous graph identity** | IDs must be unique across all tables within a Drasi source, not just within each table. The examples prefix the row ID with database, schema, and table. |
+| **Table and schema scope** | Inspect `source.db`, `source.schema`, and `source.table`. The mapping's table-name filter is not a database/schema authorization filter. Scope the upstream feed or use separate sources/labels when schemas contain identically named tables. |
+| **Complete update image** | `after` becomes the complete node properties, not a partial patch. Check connector row-image settings and unavailable/unchanged large-column values. The PostgreSQL lab uses `REPLICA IDENTITY FULL`; that is not a universal fix for every database or TOAST-value case. |
+| **Query contract** | Labels and property names are case-sensitive. The sample maps `Room` to label `Room` and leaves `id` and `floor_id` properties unchanged, so the Building Comfort property-based joins still work. |
+| **Initial state and recovery** | A new Drasi query needs existing rows as well as future changes. Agree on a supported snapshot/bootstrap/replay procedure and a restart strategy before switching delivery. |
+
+The ID template tests **`after`**, not `after.id`, to choose the row image. A truthiness test on the key would treat numeric `0` as false and can lose valid inserts. For a composite key such as `(tenant_id, id)`, include both in the same branch:
+
+```handlebars
+{{payload.source.db}}:{{payload.source.schema}}:{{payload.source.table}}:{{#if payload.after}}{{payload.after.tenant_id}}:{{payload.after.id}}{{else}}{{payload.before.tenant_id}}:{{payload.before.id}}{{/if}}
+```
+
+This delimiter pattern assumes the components cannot contain `:` and exist on every row event. For arbitrary strings, normalize/encode keys upstream into a collision-free identifier. If your queries use graph element IDs rather than row properties, adapt those queries and any explicit relation endpoints to the prefixed IDs too.
+
+> **Existing rows do not automatically reappear**
+>
+> Changing an HTTP sink URL does not request a new snapshot. `snapshot.mode=initial` depends on the connector's saved state; it does not re-snapshot on every restart. Kafka can replay only retained records, which might not include unchanged old rows or a complete snapshot. Use a connector-supported snapshot/signaling procedure or a separately planned Drasi bootstrap/rebuild. **Do not delete production offsets, replication slots, or consumer groups to follow this tutorial.**
+
+## Step 2 of 3: Connect Your Change Feed
+### Route A: Debezium Server → Drasi HTTP Source
+```text
+Your database → existing Debezium Server → HTTP POST /debezium → Drasi queries
+```
+
+#### Configure the Drasi listener
+
+Keep your existing Debezium source connector settings, database credentials, offset storage, and replication slot. First prepare Drasi. Save this as `drasi-http.yaml` in your integration working directory, or merge its plugin/source entries into your own Drasi configuration. The small query and log reaction let you observe row changes without installing the full dashboard.
+
+```yaml
+apiVersion: drasi.io/v1
+id: debezium-http-server
+host: "127.0.0.1"
+port: 8380
+persistConfig: false
+autoInstallPlugins: true
+plugins:
+  - ref: source/http:0.2.11
+  - ref: reaction/log:0.2.7
+sources:
+  - kind: http
+    id: debezium-rooms
+    autoStart: true
+    host: "0.0.0.0"
+    port: 9080
+    webhooks:
+      errorBehavior: reject
+      routes:
+        - path: /debezium
+          methods: [POST]
+          mappings:
+            - when:
+                field: source.table
+                equals: Room
+              operationFrom: payload.op
+              operationMap: {c: insert, r: insert, u: update, d: delete}
+              elementType: node
+              template:
+                id: "{{payload.source.db}}:{{payload.source.schema}}:{{payload.source.table}}:{{#if payload.after}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
+                labels: ["{{payload.source.table}}"]
+                properties: "{{payload.after}}"
+queries:
+  - id: room-readings
+    autoStart: true
+    queryLanguage: Cypher
+    query: "MATCH (r:Room) RETURN r.id AS RoomId, r.temperature AS Temperature"
+    sources:
+      - sourceId: debezium-rooms
+        nodes: [Room]
+reactions:
+  - kind: log
+    id: room-changes
+    autoStart: true
+    queries: [room-readings]
+```
+
+Replace `Room`, `id`, and `temperature` if using a different table. For several captured tables, use a table allowlist such as `regex: "^(Building|Floor|Room)$"` instead of `equals`; subscribe your queries to the appropriate labels. See [envelope variants](#debezium-envelope-drasi-changes) if the sample event contains an outer `schema`/`payload` wrapper.
+
+`9080` is the **source listener**; `8380` is the **management API**, not the CDC destination. Change conflicting ports before starting. The webhook binds to all interfaces for remote delivery; restrict network access and configure appropriate authentication/TLS before exposing it beyond a trusted test network. Consult the [pinned HTTP source documentation](https://github.com/drasi-project/drasi-core/blob/drasi-source-http-v0.2.11/components/sources/http/README.md) for the supported options.
+
+#### Start Drasi before redirecting delivery
+
+With a compatible `drasi-server` on your path, run the following in Terminal 1. The dedicated plugin directory avoids changing another Drasi installation's cache.
+
+**bash / zsh**
+
+```bash
+mkdir -p .drasi-plugins
+drasi-server --config drasi-http.yaml --plugins-dir "$PWD/.drasi-plugins"
+```
+
+**PowerShell**
+
+```powershell
+New-Item -ItemType Directory -Force .drasi-plugins | Out-Null
+drasi-server --config drasi-http.yaml --plugins-dir "$PWD/.drasi-plugins"
+```
+
+In Terminal 2, check the listener and inspect the source and query status:
+
+```bash
+curl --fail-with-body http://127.0.0.1:9080/health
+curl --fail-with-body http://127.0.0.1:8380/api/v1/instances/debezium-http-server/sources/debezium-rooms
+curl --fail-with-body http://127.0.0.1:8380/api/v1/instances/debezium-http-server/queries/room-readings
+```
+
+Expect healthy HTTP responses and a running source/query, without plugin-load or mapping errors in Drasi's logs. **Readiness is not evidence that existing rows have been ingested.** Complete [Step 3](#step-3-of-3-verify-database-changes) after connecting Debezium.
+
+#### Point the existing Server HTTP sink at Drasi
+
+Back up your Debezium Server configuration. In its `application.properties`, set the following sink/format properties, using an address reachable **from the Debezium Server process**. `drasi-host` below is a placeholder for that host or service DNS name.
+
+```properties
+debezium.sink.type=http
+debezium.sink.http.url=http://drasi-host:9080/debezium
+debezium.sink.http.timeout.ms=10000
+debezium.sink.http.retries=10
+debezium.sink.http.retry.interval.ms=2000
+debezium.format.key=json
+debezium.format.value=json
+debezium.format.key.schemas.enable=false
+debezium.format.value.schemas.enable=false
+```
+
+These are settings for the native sink shipped with Debezium Server 2.7; check the [Server documentation](https://debezium.io/documentation/reference/2.7/operations/debezium-server.html) for your distribution/version. If you retain schemaful JSON, keep your format settings and adapt Drasi's mapping instead.
+
+Debezium Server has one selected sink. **Switching it redirects delivery; it does not multicast to the old destination and Drasi.** If another consumer needs the current sink, arrange a separate feed/deployment with its own connector identity and offset storage rather than redirecting it.
+
+Test `/health` from the Server's network namespace using your usual diagnostics before restarting Server through your deployment's normal procedure. For containers, `localhost` means that container. `host.docker.internal` can reach a Docker host when configured, but does not universally address a sibling dev container; use shared-network service DNS or an explicitly reachable host address. Preserve the existing offsets and confirm streaming resumes in Server logs.
+
+The example uses `errorBehavior: reject` so parse/mapping failures are not acknowledged as success. Unmatched heartbeat, schema-change, transaction, or other-table events are rejected too: arrange row-only delivery for this endpoint or normalize/filter a dedicated feed upstream. The pinned Server sink skips null values, but an `op: d` envelope is **not null** and must still be delivered. Do not remove deletes while filtering noise.
+
+The sink has bounded retry settings, not a durable queue or an exactly-once guarantee. Drasi's sample listener/query state is not configured for durable recovery. A successful POST or a healthy source does not prove every event affected every query. Watch both sets of logs, plan recovery, then continue with [database verification](#step-3-of-3-verify-database-changes).
+
+### Route B: Debezium on Kafka Connect → Drasi Kafka Source
+```text
+Your database → existing Debezium Connect → existing Kafka topic → Drasi queries
+```
+
+#### Inspect the existing topic without changing it
+
+Keep your connector, topic names, and existing consumers. With your deployment's addresses and connector name, inspect status and metadata:
+
+```bash
+CONNECT_URL=http://connect-host:8083
+CONNECTOR=your-existing-connector
+BROKERS=broker-host:9092
+TOPIC=building.public.Room
+
+curl --fail-with-body "$CONNECT_URL/connectors/$CONNECTOR/status" | jq .
+kcat -b "$BROKERS" -L -t "$TOPIC"
+kcat -b "$BROKERS" -C -t "$TOPIC" -o beginning -c 3 -e \
+  -f 'key=%k\nvalue=%s\n'
+```
+
+Supply authentication using your existing client configuration if required. `kcat -C` here reads directly without `-G`: it does not join/reset a production group; `-e` exits at the end of the topic. Check both the **key bytes** and **value**: is the value raw JSON, schema-wrapped JSON, a flattened row, or a binary format? Inspect the connector's `value.converter` and effective worker defaults locally if needed; connector configurations may contain credentials.
+
+Do not change a shared connector's converters or add the lab's `RegexRouter` just to use Drasi. If the topic is Avro/Protobuf or its deletion format is incompatible, provide an isolated Drasi-specific JSON feed via an upstream adapter or a separately managed connector with appropriate serialization/tombstone settings. A separate connector must have its own offset/replication identity. See [envelopes and tombstones](#debezium-envelope-drasi-changes) before choosing.
+
+#### Configure a Drasi consumer for that topic
+
+Save this as `drasi-kafka.yaml`, or merge the entries into your own configuration. Replace the brokers/topic with the ones you inspected and adapt the table/key/query as in Step 1. No Connect REST mutation or sink connector is needed.
+
+```yaml
+apiVersion: drasi.io/v1
+id: debezium-kafka-server
+host: "127.0.0.1"
+port: 8380
+persistConfig: false
+autoInstallPlugins: true
+plugins:
+  - ref: source/kafka:0.1.7
+  - ref: reaction/log:0.2.7
+sources:
+  - kind: kafka
+    id: debezium-rooms
+    autoStart: true
+    bootstrapServers: "broker-host:9092"
+    topic: building.public.Room
+    groupId: drasi-room-integration
+    nodeLabel: Room
+    autoOffsetReset: earliest
+    mappings:
+      - when:
+          field: source.table
+          equals: Room
+        operationFrom: payload.op
+        operationMap: {c: insert, r: insert, u: update, d: delete}
+        elementType: node
+        template:
+          id: "{{payload.source.db}}:{{payload.source.schema}}:{{payload.source.table}}:{{#if payload.after}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
+          labels: ["{{payload.source.table}}"]
+          properties: "{{payload.after}}"
+queries:
+  - id: room-readings
+    autoStart: true
+    queryLanguage: Cypher
+    query: "MATCH (r:Room) RETURN r.id AS RoomId, r.temperature AS Temperature"
+    sources:
+      - sourceId: debezium-rooms
+        nodes: [Room]
+reactions:
+  - kind: log
+    id: room-changes
+    autoStart: true
+    queries: [room-readings]
+```
+
+`bootstrapServers` is only the initial connection. All broker addresses returned through Kafka's **advertised listeners** must also be reachable from Drasi. Keep your existing Kafka-compatible broker, including Redpanda if that is what you use.
+
+The pinned plugin accepts a singular `topic`, not a topic list or regex subscription. For existing per-table topics, add one source per topic with distinct source IDs and dedicated Drasi group IDs. Each query must subscribe to **all** relevant source IDs, for example:
+
+```yaml
+sources:
+  - sourceId: debezium-rooms
+    nodes: [Room]
+  - sourceId: debezium-floors
+    nodes: [Floor]
+  - sourceId: debezium-buildings
+    nodes: [Building]
+```
+
+This fragment belongs under a query, not at the top-level `sources`. Apply it to the bundled Building Comfort queries that require those labels; keep their joins, query text, and reactions unchanged.
+
+For secured clusters, `source/kafka:0.1.7` exposes `securityProtocol`, `saslMechanism`, `saslUsername`, `saslPassword`, and an `additionalProperties` map passed to librdkafka. For example, merge these fields into the source for SASL/SCRAM with TLS and supply the credentials through your normal secret/environment mechanism:
+
+```yaml
+securityProtocol: SASL_SSL
+saslMechanism: SCRAM-SHA-512
+saslUsername: "${KAFKA_USERNAME}"
+saslPassword: "${KAFKA_PASSWORD}"
+additionalProperties:
+  ssl.ca.location: /path/to/broker-ca.pem
+```
+
+Use your actual broker authentication method and a CA file accessible to Drasi. See the [pinned plugin configuration](https://github.com/drasi-project/drasi-core/blob/drasi-source-kafka-v0.1.7/components/sources/kafka/src/descriptor.rs) and [librdkafka settings](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) for version-dependent options. Do not disable certificate verification or override offset/commit controls as a shortcut.
+
+#### Start and check Drasi
+
+Run in Terminal 1 (use a separate working directory/plugin directory from other installations):
+
+**bash / zsh**
+
+```bash
+mkdir -p .drasi-plugins
+drasi-server --config drasi-kafka.yaml --plugins-dir "$PWD/.drasi-plugins"
+```
+
+**PowerShell**
+
+```powershell
+New-Item -ItemType Directory -Force .drasi-plugins | Out-Null
+drasi-server --config drasi-kafka.yaml --plugins-dir "$PWD/.drasi-plugins"
+```
+
+In Terminal 2:
+
+```bash
+curl --fail-with-body http://127.0.0.1:8380/api/v1/instances/debezium-kafka-server/sources/debezium-rooms
+curl --fail-with-body http://127.0.0.1:8380/api/v1/instances/debezium-kafka-server/queries/room-readings
+curl --fail-with-body http://127.0.0.1:8380/api/v1/instances/debezium-kafka-server/queries/room-readings/results
+```
+
+Check for a running source/query, successful partition assignment in the logs, and no JSON/mapping errors. Empty results can mean no retained rows match; source status alone cannot distinguish that from an incomplete initial state. Continue with [Step 3](#step-3-of-3-verify-database-changes).
+
+> **Replay behavior: source/kafka 0.1.7**
+>
+> This version **manually assigns all topic partitions** and disables automatic commits. It first uses Drasi query resume positions (or a configured bootstrap boundary); without those, `earliest` explicitly selects the beginning and `latest` the end. It does **not** restore from Kafka group committed offsets in this path. A dedicated `groupId` avoids reusing another application's identity, but does not provide partition load balancing between Drasi instances.
+>
+> This differs from the usual Kafka consumer-group rule, where `auto.offset.reset` applies only when no valid committed offset exists. Do not use a production group reset to initialize Drasi. Replaying the beginning still means **retained** history, not every row that ever existed. These sample configurations keep query state in memory; restarting without restored query state/positions can replay retained events and repeat reactions. Running multiple instances can duplicate processing. Plan coordinated state restoration or a complete rebuild/snapshot before relying on restart behavior, and recheck semantics when changing plugin versions.
+
+## Step 3 of 3: Verify Database Changes
+Use your database client to perform **three separate committed operations** on a test row in a table already captured by Debezium: insert, update, then delete. Wait for each stage to reach Drasi before proceeding; do not place all three in a transaction that leaves no observable row.
+
+For your own schema, choose a unique test key, fill required columns/foreign keys, and adapt the `room-readings` query and mapping to that table. **Do not run the lab's schema/reset scripts against an existing database.** If the Building Comfort schema is already installed and `floor_01_01` exists, these are concrete SQL statements you can use:
+
+```sql
+-- First confirm this test ID is unused; do not overwrite an existing row.
+SELECT * FROM "Room" WHERE id = 'room_drasi_probe';
+
+INSERT INTO "Room" (id, name, temperature, humidity, co2, floor_id)
+VALUES ('room_drasi_probe', 'Drasi probe', 70, 40, 10, 'floor_01_01');
+```
+
+Inspect the query results (set `INSTANCE` to the route you chose):
+
+```bash
+API=http://127.0.0.1:8380
+INSTANCE=debezium-http-server
+# For Kafka: INSTANCE=debezium-kafka-server
+curl --fail-with-body "$API/api/v1/instances/$INSTANCE/queries/room-readings/results" | jq .
+```
+
+Expect `RoomId: room_drasi_probe` with `Temperature: 70` and an added result in the log reaction. Then execute and verify:
+
+```sql
+UPDATE "Room" SET temperature = 40 WHERE id = 'room_drasi_probe';
+```
+
+The same query row should now report `Temperature: 40`, with an update in the reaction. Finally:
+
+```sql
+DELETE FROM "Room" WHERE id = 'room_drasi_probe';
+```
+
+The query row must disappear, with a removed result in the reaction. Inspect the corresponding Debezium `c`, `u`, and `d` events in your diagnostics/topic browser if any stage fails. A delete envelope must retain the key in `before`. Check serialization, mapping paths, labels, source subscriptions, and logs before changing offsets.
+
+If you run the **bundled** six-query configuration instead of the small probe config, its source is `building-facilities` and its per-room query is `building-comfort-ui`. Use:
+
+```bash
+curl --fail-with-body "$API/api/v1/instances/$INSTANCE/queries/building-comfort-ui/results" | jq .
+```
+
+Its dashboard is at `http://localhost:3000`. Only the freshly seeded lab has the expected **9 rooms at comfort 46**; after `break-room.sh room_01_01_01`, that room is **4** and its floor is **32**. Arbitrary existing datasets have different counts/values.
+
+A synthetic POST from [`requests.http`](https://github.com/drasi-project/learning-drasi-server/blob/main/tutorials/debezium-integration/requests.http) is a **mapping smoke test only**. It bypasses both the database and Debezium and changes Drasi's view without changing the database. Use it only with an isolated test source; it is not evidence that CDC works.
+
+## How It Works
+### Debezium Envelope → Drasi Changes
+The sources construct a template context around the incoming value/body: **Drasi's `payload` is the whole incoming JSON document**. It is not a requirement to wrap the HTTP body in another `payload`.
+
+| Debezium `op` | Drasi operation | Row image |
+| ------------- | --------------- | --------- |
+| `c` (create), `r` (snapshot read) | `insert` | ID and properties from `after` |
+| `u` | `update` | Same stable ID, complete properties from `after` |
+| `d` | `delete` | ID from `before`; `after` is null |
+
+The pinned mapping engine supports deletes: it builds the element metadata and emits a delete containing that metadata. A properties template resolving to null produces no properties, which is valid for this delete path. It does not need a fabricated `after` row.
+
+For schema-enabled JSON, the **wire document** instead looks like:
+
+```json
+{
+  "schema": {"type":"struct","fields":[]},
+  "payload": {
+    "op":"d",
+    "before":{"id":0},
+    "after":null,
+    "source":{"db":"building_comfort","schema":"public","table":"Room"}
+  }
+}
+```
+
+The abbreviated `schema` illustrates nesting; Drasi maps the JSON value and does not interpret the Connect schema. Use these exact paths:
+
+| Setting | Raw envelope (both sources) | Schema-wrapped envelope (both sources) |
+| ------- | --------------------------- | ------------------------------------- |
+| `when.field` | `source.table` | `payload.payload.source.table` |
+| `operationFrom` | `payload.op` | `payload.payload.op` |
+| `template.labels` entry | `{{payload.source.table}}` | `{{payload.payload.source.table}}` |
+| `template.properties` | `{{payload.after}}` | `{{payload.payload.after}}` |
+
+For the wrapped ID use:
+
+```handlebars
+{{payload.payload.source.db}}:{{payload.payload.source.schema}}:{{payload.payload.source.table}}:{{#if payload.payload.after}}{{payload.payload.after.id}}{{else}}{{payload.payload.before.id}}{{/if}}
+```
+
+**Why the double prefix in the condition?** For raw input, HTTP conditions resolve against the incoming body and strip one optional `payload.` prefix; Kafka conditions resolve against the context, adding `payload.` unless already explicit. Thus `source.table` works for both raw inputs, while `payload.payload.source.table` correctly reaches the inner envelope in both wrapped inputs. `payload.source.table` alone still refers to the raw-envelope location, not to the inner wrapped envelope.
+
+The mappings shown exclude records without a matching `source.table`; `operationMap` has no fallback for unknown operations. HTTP rejects unmatched events with the chosen error policy; Kafka logs unmatched/malformed messages without producing the mapped row change. Heartbeat, schema, and transaction metadata are not row changes. Use row-data topics or an upstream dedicated filter, and investigate warnings rather than assuming all non-row messages were safely ingested. HTTP can apply multiple matching mappings; Kafka uses the first matching mapping, so avoid overlapping rules.
+
+An `ExtractNewRecordState`/unwrap SMT removes the envelope fields these snippets need. Inspect its exact output and deletion behavior before designing a different mapping; if deletes/keys have been discarded, a field-path change cannot recover them. The Kafka source parses JSON values, not Schema Registry Avro/Protobuf. Use a decoding/normalizing adapter or an isolated compatible feed, rather than adding invented converter fields to the Drasi source. Changing a shared Connect `JsonConverter` setting changes the format for every consumer of its output.
+
+#### Kafka tombstones are a separate path
+
+A Kafka **null value** is a tombstone, distinct from a non-null JSON `op: d` envelope with `after: null`. In `source/kafka:0.1.7`, tombstones **bypass mappings**: the plugin emits a delete using the raw UTF-8 Kafka key as the element ID and `nodeLabel` as the label. A key such as `{"id":"room_01_01_01"}` does not equal the mapped ID `building_comfort:public:Room:room_01_01_01`.
+
+The preceding `op: d` envelope still deletes the correct mapped node. The tombstone does not replace that envelope, and a `when` filter cannot repair or discard the tombstone bypass. Verify the key/ID contract and do not depend on the raw-key delete for these row-derived IDs. If your feed contains only tombstones for deletion, or raw keys could collide with mapped IDs, provide an isolated Drasi-specific feed that retains delete envelopes and either normalizes keys consistently or omits tombstones. **Do not disable tombstones globally on an existing shared connector/topic.** The disposable lab disables them on its own connector only.
+
+These version-specific details come from the pinned [Kafka consumer](https://github.com/drasi-project/drasi-core/blob/drasi-source-kafka-v0.1.7/components/sources/kafka/src/consumer.rs), [HTTP condition matcher](https://github.com/drasi-project/drasi-core/blob/drasi-source-http-v0.2.11/components/sources/http/src/route_matcher.rs), and [shared mapping engine](https://github.com/drasi-project/drasi-core/blob/drasi-source-kafka-v0.1.7/components/sources/mapping/src/engine.rs).
+
+### Important Configuration Reference
+
+| Setting | Integration decision |
+| ------- | -------------------- |
+| HTTP `host`, `port`, `webhooks.routes[].path` | Where Debezium posts. This is separate from the server's management `port`. Confirm network reachability from the sender. |
+| HTTP `webhooks.errorBehavior` | `reject` surfaces mapping failures to the sender. `accept_and_log` acknowledges even rejected/unmatched input; do not treat a 2xx response under that policy as successful ingestion. |
+| Server `debezium.sink.http.url` | Destination for the selected sink. Preserve connector offsets and coordinate the effect on the previous destination. |
+| Server `timeout.ms`, `retries`, `retry.interval.ms` under `debezium.sink.http.` | Native sink request/retry controls. They are not a replay store or a delivery guarantee. |
+| `debezium.format.value` / `debezium.format.value.schemas.enable` | Server value encoding and optional schema wrapper; match Drasi paths to the observed body. |
+| Connect `value.converter` / `value.converter.schemas.enable` | Effective connector or worker serialization. Inspect before changing; other consumers share the output. |
+| Kafka `bootstrapServers`, `topic` | Reachable bootstrap and advertised brokers; one topic per source in the pinned version. |
+| Kafka `groupId`, `autoOffsetReset` | Dedicated identity and initial/replay policy. See the version-specific manual-assignment behavior above, not generic group assumptions. |
+| Kafka security fields / `additionalProperties` | Match the broker's SASL/TLS requirements; keep credentials out of committed files. |
+| `when`, `operationFrom`, `operationMap`, `template` | Table selection, operation codes, stable namespaced identity, label and complete properties. Conditions expose a single field/header test, not a compound database/schema/table predicate. |
+| Debezium `table.include.list`, snapshot settings | Scope the captured feed and establish initial state with the connector owner; do not reconfigure shared capture casually. Server source settings use the `debezium.source.` prefix. |
+| `plugins[].ref`, `--plugins-dir` | Keep a matched server/plugin set isolated from other installations. |
+
+### Compatibility and Verification Scope
+The bundled downloads pin **Drasi Server 0.2.3**, with **`source/http:0.2.11`**, **`source/kafka:0.1.7`**, **`reaction/dashboard:0.1.5`**, and **`reaction/log:0.2.7`**. Its runtime loader expects ABI **0.13**, even though its `--version` output reports a different plugin SDK crate version. The next plugin releases (HTTP 0.2.12, Kafka 0.1.8, dashboard 0.1.6, log 0.2.8) were rejected for ABI 0.14. Do not infer compatibility from SDK crate labels or automatically select `latest`.
+
+The Kafka Building Comfort lab was previously exercised end to end on native Apple Silicon macOS with this matched set: nine rooms at 46, followed by the room/floor change to 4/32. An older server/plugin combination aborted; that observation does not establish a Kafka, ABI, or universal platform root cause. HTTP 0.2.11 loads with Server 0.2.3, but full database-to-HTTP CDC was verified only with the earlier Server 0.2.0 combination, not rerun after the version bump. **Full Linux/Codespaces end-to-end behavior has not been verified.**
+
+Isolated HTTP mapping checks with Server 0.2.3 cover raw and schema-wrapped JSON, create/snapshot/update/delete operations, numeric-zero keys, namespaced IDs, and query/log-reaction changes. These synthetic checks do not exercise Debezium or the database.
+
+Use an isolated plugin directory as shown above (the lab scripts default to `tutorials/debezium-integration/.drasi-plugins`). Never delete `~/.drasi/plugins` to repair this tutorial. Check actual loader errors and the installed plugin versions when diagnosing compatibility.
+
+## Optional Appendix: Disposable Building Comfort Lab
+Use this appendix if you do not have a Debezium environment. It supplies PostgreSQL, Debezium Server or Connect, and optionally Redpanda. Return to [preparation](#step-1-of-3-prepare-your-event-and-mapping), [HTTP integration](#route-a-debezium-server-drasi-http-source), or [Kafka integration](#route-b-debezium-on-kafka-connect-drasi-kafka-source) to understand/adapt the running configuration.
+
+> **Disposable infrastructure only**
+>
+> `setup-database.sh` and both `start-demo-*` scripts destroy/recreate this Compose project's data: setup runs `down -v`, drops/reseeds the lab tables, and the Kafka route deletes/re-registers its demo connector. The HTTP demo also resets its own offset volume. **Never point these scripts at existing infrastructure.** They use fixed `debezium-integration-*` container/network names; run only one copy of the lab on a Docker daemon. Check for existing lab containers and port conflicts first.
+
+### Prepare the lab
+
+Choose **Drasi Server - Debezium Integration Tutorial** when reopening the repository in a VS Code dev container or creating a Codespace. The setup installs the Drasi binary and PostgreSQL client; Docker-in-Docker provides the disposable services. Network reachability still needs checking, and the end-to-end limitation above applies.
+
+For a local run, install Docker with Compose, bash, and curl, then download the pinned binary from the repository root:
 
 **bash / zsh**
 
@@ -59,485 +477,98 @@ bash scripts/download.sh
 ```powershell
 cd tutorials/debezium-integration
 powershell -ExecutionPolicy Bypass -File scripts/download.ps1
+# Run the remaining bash helper scripts in Git Bash or WSL.
 ```
 
-### Option C: Build from Source
+Alternatively follow [Build from Source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) and place a compatible binary in this tutorial's `bin/`. The launchers prefer that binary over a repository-root installation.
 
-Follow the [**Build from Source**](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) guide, then copy the binary into this tutorial's `bin/` directory (same layout as Option B).
+Run all remaining lab commands from `tutorials/debezium-integration/`. Use Terminal 1 for Drasi/demo startup and Terminal 2 for database writes. Defaults are API `8380`, dashboard `3000`, PostgreSQL `5752`, HTTP CDC `9080`, Kafka `19092`, and Connect `8083` (Redpanda also publishes `18081`/`18082`). Copy `.env.example` to `.env` for overrides. If changing ports, update both endpoints, such as `HTTP_SOURCE_PORT` and `DEBEZIUM_SINK_HTTP_URL`, or `KAFKA_HOST_PORT` and `KAFKA_BOOTSTRAP_SERVERS`.
 
-## Step 2 of 4: Path 1 — Debezium Server → HTTP
-**Goal:** Debezium Server reads PostgreSQL's WAL, then **POSTs** each change event to Drasi's HTTP source. No Kafka required.
+### Start with Server over HTTP
 
-```text
-PostgreSQL  ──WAL──►  Debezium Server  ──HTTP POST──►  Drasi HTTP source  ──►  queries / dashboard
-```
-
-In **Terminal 1**:
-
-**bash / zsh**
+In Terminal 1:
 
 ```bash
 bash scripts/start-demo-http.sh
 ```
 
-**PowerShell**
+The script recreates PostgreSQL, starts Drasi, waits for its HTTP health endpoint, and only then starts Debezium Server with fresh **lab** offsets. This establishes listener readiness before delivery; the health check alone does not verify network reachability from Debezium or the snapshot.
 
-```powershell
-# Prefer Git Bash / WSL for the demo scripts.
-bash scripts/start-demo-http.sh
-```
-
-What this does (see [Minimal Debezium setup](#minimal-debezium-setup-no-magic) for the non-magic version):
-
-1. Starts **PostgreSQL** (logical replication enabled) and seeds 1 building / 3 floors / 9 rooms (`init.sql`).
-2. Starts **Drasi Server** with `server-config-http.yaml` and waits until the HTTP webhook is healthy on port `9080`.
-3. Starts **Debezium Server** (Compose profile `http`) with a **fresh offset volume**, using `database/debezium-server/application.properties` — Postgres connector in, HTTP sink out to `http://host.docker.internal:9080/debezium`.
-
-Order is intentional: Debezium commits snapshot offsets after it finishes reading tables. If it started before Drasi was listening, the snapshot could complete without Drasi ever receiving the rows. `start-demo-http.sh` avoids that by bringing Drasi up first, then Debezium with `--reset-offsets`.
-
-On first start, Drasi downloads plugins (`source/http`, `reaction/dashboard`, `reaction/log`). Debezium takes an **initial snapshot** of existing rows (operation `r`) and then streams live changes. When the log shows Drasi started and Debezium is streaming, open the dashboard:
-
-```text
-http://localhost:3000
-```
-
-You should see every room at comfort **46** (comfortable), the same layout as the Building Comfort tutorial.
-
-Manual two-terminal equivalent:
+The manual equivalent, useful for inspecting each stage, is:
 
 ```bash
-bash scripts/setup-database.sh          # Postgres only
-bash scripts/start-server.sh http       # Terminal 1 — leave running
-# Terminal 2, after Drasi is up:
+bash scripts/setup-database.sh          # Destructive lab reset: PostgreSQL only
+bash scripts/start-server.sh http       # Terminal 1: leave running
+# Terminal 2, after the listener is healthy:
 bash scripts/start-debezium-server.sh --reset-offsets
+docker logs -f debezium-integration-server
 ```
 
-> **Why host.docker.internal?**
->
-> Debezium Server runs **inside Docker**. Drasi Server runs on the **host** (or dev container). The sink URL uses `host.docker.internal` (wired via Docker's `host-gateway`) so the container can reach Drasi's HTTP port `9080`. Override with `DEBEZIUM_SINK_HTTP_URL` in `.env` if your network differs.
+Do not run both the automatic and manual sequences. Compose defaults the sink to `http://host.docker.internal:9080/debezium`; override it with an address reachable from the Debezium container if needed. The local health check cannot prove that container-to-listener route works.
 
-> **Stopping Path 1 before Path 2**
->
-> Press **Ctrl+C** in Terminal 1, then run `bash scripts/cleanup.sh --volumes` so the Debezium Server replication slot and volumes are removed before you start the Kafka path.
-
-## Step 3 of 4: Path 2 — Kafka Connect → Kafka
-**Goal:** Debezium runs as a **Kafka Connect** source connector. Change events land on a Kafka topic; Drasi **pulls** them with `source/kafka`.
-
-```text
-PostgreSQL  ──WAL──►  Debezium Connect  ──►  Kafka topic building.changes  ──►  Drasi Kafka source
-```
-
-Clean up Path 1 if you just ran it, then in **Terminal 1**:
-
-**bash / zsh**
-
-```bash
-bash scripts/cleanup.sh --volumes
-bash scripts/start-demo-kafka.sh
-```
-
-**PowerShell**
-
-```powershell
-bash scripts/cleanup.sh --volumes
-bash scripts/start-demo-kafka.sh
-```
-
-What this does (see [Minimal Debezium setup](#minimal-debezium-setup-no-magic) for the non-magic version):
-
-1. Starts **PostgreSQL**, **Redpanda** (Kafka API on host port `19092`), and **Debezium Connect** (Compose profile `kafka`).
-2. Registers the connector with a single REST call using `database/connect/register-postgres.json`.
-3. A **RegexRouter** SMT folds per-table topics into a single `building.changes` topic.
-4. Runs **Drasi Server** with `server-config-kafka.yaml` (`source/kafka` + dashboard).
-
-Unlike Path 1, Debezium may snapshot **before** Drasi starts. That is fine here: events are durable on the Kafka topic, and Drasi uses `autoOffsetReset: earliest` so it reads the snapshot when it joins the consumer group.
-
-The Kafka source defaults to `bootstrapServers: 127.0.0.1:19092` (not bare `localhost`) so clients that prefer IPv6 for `localhost` still reach Redpanda's IPv4 listener. Override with `KAFKA_BOOTSTRAP_SERVERS` if needed.
-
-This tutorial pins **drasi-server 0.2.3** and **`source/kafka:0.1.7`** (plus matching dashboard/log plugins). That combination is verified on macOS as well as Linux. If you mix a different server build with unpinned plugins, install can fail with an SDK ABI mismatch, or older pairings can abort inside the Kafka consumer.
-
-Wait for:
-
-```text
-Drasi Server started successfully with API on port 8380
-```
-
-Open `http://localhost:3000` again — same dashboard, different transport.
-
-Optional checks from **Terminal 2**:
-
-**bash / zsh**
-
-```bash
-# Connector status
-curl -s http://localhost:8083/connectors/building-comfort-connector/status | jq .
-
-# Drasi source status
-curl -s http://localhost:8380/api/v1/sources/building-facilities | jq .
-```
-
-**PowerShell**
-
-```powershell
-curl -s http://localhost:8083/connectors/building-comfort-connector/status
-curl -s http://localhost:8380/api/v1/sources/building-facilities
-```
-
-## Step 4 of 4: Drive Change
-This step is how you **see Debezium working**. The helper scripts do **not** call Drasi or Debezium. They run ordinary SQL `UPDATE`s against PostgreSQL — the same kind of write your building app would already do.
-
-What happens next:
-
-1. PostgreSQL appends the change to its **WAL** (write-ahead log).
-2. **Debezium** (Server or Connect) reads that WAL entry and emits a change event.
-3. The event reaches Drasi over **HTTP** (Path 1) or **Kafka** (Path 2).
-4. Drasi re-evaluates the comfort queries and the **dashboard** updates.
-
-So yes: the tutorial deliberately changes the database so you can watch those changes flow through Debezium into Drasi.
-
-> **No middle tier — scripts only write SQL**
->
-> There is no API call to Drasi in this step and no hand-crafted event publish. If the dashboard moves after `break-room.sh`, the path Postgres → Debezium → Drasi is working.
-
-### Break a room
-
-**bash / zsh**
+Open `http://localhost:3000` (or the forwarded **Comfort Dashboard** port), wait for nine rooms, and inspect the instance-scoped `building-comfort-ui` results as in [Step 3](#step-3-of-3-verify-database-changes). In Terminal 2:
 
 ```bash
 bash scripts/break-room.sh room_01_01_01
-```
-
-**PowerShell**
-
-```powershell
-docker exec debezium-integration-postgres psql -U drasi_user -d building_comfort -c "UPDATE \"Room\" SET temperature=40, humidity=20, co2=700 WHERE id='room_01_01_01';"
-```
-
-That runs roughly:
-
-```sql
-UPDATE "Room"
-SET temperature = 40, humidity = 20, co2 = 700
-WHERE id = 'room_01_01_01';
-```
-
-Within a second or two, **Room 01** on **Floor 01** leaves the comfortable band, alerts appear, and the building gauge drops — evidence the update traveled through Debezium.
-
-### Reset
-
-**bash / zsh**
-
-```bash
 bash scripts/reset-room.sh room_01_01_01
-# or reset every room:
-bash scripts/reset-room.sh
 ```
 
-**PowerShell**
+These helpers only execute SQL updates; they do not send synthetic CDC. Wait for the room/floor values to change before resetting. For insert/delete verification, use the SQL probe in Step 3 against the lab database, via `docker exec -i debezium-integration-postgres psql -v ON_ERROR_STOP=1 -U drasi_user -d building_comfort`.
 
-```powershell
-docker exec debezium-integration-postgres psql -U drasi_user -d building_comfort -c "UPDATE \"Room\" SET temperature=70, humidity=40, co2=10 WHERE id='room_01_01_01';"
-```
+### Try Connect and Kafka independently
 
-### Custom values and simulation
-
-**bash / zsh**
+Stop Drasi with Ctrl+C, then remove the previous **lab** stack if present:
 
 ```bash
-bash scripts/set-room.sh room_01_02_03 82 40 10
-bash scripts/simulate.sh
+bash scripts/cleanup.sh --volumes
+bash scripts/start-demo-kafka.sh
 ```
 
-**PowerShell**
-
-```powershell
-docker exec debezium-integration-postgres psql -U drasi_user -d building_comfort -c "UPDATE \"Room\" SET temperature=82, humidity=40, co2=10 WHERE id='room_01_02_03';"
-bash scripts/simulate.sh
-```
-
-## How It Works
-### Minimal Debezium setup (no magic)
-The demo scripts look like one command, but they only orchestrate a **small, explicit stack**. Nothing is hidden inside Drasi.
-
-#### Shared pieces (both paths)
-
-| Piece | Where it lives | What it does |
-| ----- | -------------- | ------------ |
-| PostgreSQL 16 | `database/docker-compose.yml` service `postgres` | Source DB with `wal_level=logical` so CDC can read the WAL |
-| Schema + seed | `database/init.sql` | Creates `"Building"` / `"Floor"` / `"Room"`, grants a replication user, seeds 9 comfortable rooms |
-| Drasi Server | `bin/drasi-server` + `server-config-*.yaml` | HTTP or Kafka source, comfort queries, dashboard |
-| Drive scripts | `scripts/break-room.sh`, `reset-room.sh`, … | Plain SQL updates so you can watch live CDC |
-
-Postgres is started with logical replication settings (not Debezium-specific magic):
-
-```yaml
-command:
-  - postgres
-  - -c
-  - wal_level=logical
-  - -c
-  - max_replication_slots=10
-  - -c
-  - max_wal_senders=10
-```
-
-`init.sql` makes tables replication-ready (`REPLICA IDENTITY FULL`) and creates `drasi_user` with `REPLICATION`. Debezium then creates its **own** publication and replication slot when it starts — Drasi does not own the slot in this tutorial.
-
-#### Path 1 — what “Debezium Server” is here
-
-A **single JVM container** (`quay.io/debezium/server:2.7`) that:
-
-1. Runs the PostgreSQL connector against `postgres:5432`
-2. Snapshots existing rows, then tails the WAL
-3. POSTs each change as JSON to Drasi’s HTTP source
-
-Compose profile `http` starts that container and mounts one config file:
-
-```text
-database/debezium-server/application.properties
-```
-
-That file is the whole Server setup in miniature:
-
-- **Source:** `PostgresConnector`, database host/user/password, `table.include.list`, `snapshot.mode=initial`, slot/publication names
-- **Sink:** `debezium.sink.type=http` and `debezium.sink.http.url=…/debezium`
-- **Format:** plain JSON envelopes (no Kafka Connect schema wrapper)
-
-The sink URL uses `host.docker.internal` because Server runs in Docker while Drasi listens on the host/dev container at port `9080`. Docker’s `host-gateway` mapping makes that hostname resolve; override with `DEBEZIUM_SINK_HTTP_URL` if needed.
-
-`start-demo-http.sh` does:
-
-1. `setup-database.sh` — Postgres only + `init.sql`
-2. Starts Drasi with `server-config-http.yaml` and waits for `http://localhost:9080/health`
-3. `start-debezium-server.sh --reset-offsets` — Compose profile `http`, wiped offset volume, then snapshot + stream into Drasi
-
-Do **not** start Debezium Server first and assume retries will re-send a finished snapshot. Use the demo script (or the two-terminal sequence above) so the first snapshot lands in Drasi.
-#### Path 2 — what “Kafka Connect” is here
-
-Three containers, still minimal:
-
-| Service | Image | Role |
-| ------- | ----- | ---- |
-| `kafka` | Redpanda (Kafka API) | Topic log Drasi consumes |
-| `connect` | `quay.io/debezium/connect:2.7` | Connect runtime hosting the Debezium PostgreSQL connector |
-| `postgres` | same as Path 1 | WAL source |
-
-There is no separate ZooKeeper cluster and no hand-installed Connect distribution — the Debezium Connect image **is** the worker. Redpanda speaks the Kafka protocol so Drasi’s `source/kafka` works unchanged.
-
-After Connect’s REST API is up, `setup-database.sh kafka` registers the connector with one POST:
-
-```text
-database/connect/register-postgres.json
-→ POST http://localhost:8083/connectors
-```
-
-That JSON is the Connect equivalent of Server’s properties: connector class, DB connection, tables, snapshot mode, JSON converters, plus a **RegexRouter** SMT so every table’s events land on one topic (`building.changes`) for a single Drasi Kafka source.
-
-`start-demo-kafka.sh` simply:
-
-1. `docker compose --profile kafka up` (Postgres + Redpanda + Connect)
-2. Applies `init.sql`
-3. Registers the connector
-4. Starts Drasi with `server-config-kafka.yaml` (`autoOffsetReset: earliest` so snapshot events already on the topic are read)
-
-#### Mental model
-
-```text
-You write SQL ──► PostgreSQL WAL
-                      │
-          ┌───────────┴───────────┐
-          ▼                       ▼
-   Debezium Server          Debezium on Connect
-   (HTTP sink)              (writes Kafka topic)
-          │                       │
-          ▼                       ▼
-   Drasi HTTP source        Drasi Kafka source
-          └───────────┬───────────┘
-                      ▼
-              Continuous queries → dashboard
-```
-
-Files under `database/` are the “install Debezium” story for this tutorial. The scripts only start those containers and register the connector; they do not embed CDC inside Drasi.
-
-### What stayed the same
-
-Compared with the [Building Comfort tutorial](../building-comfort/):
-
-- Same schema: `"Building"`, `"Floor"`, `"Room"`
-- Same six continuous queries and synthetic joins (`PART_OF_FLOOR`, `PART_OF_BUILDING`)
-- Same dashboard reaction and comfort formula
-- Same “write SQL → see the dashboard move” workflow — but the CDC reader is Debezium instead of Drasi’s native Postgres source
-
-### What changed: the source edge
-
-| Building Comfort (native) | This tutorial |
-| ------------------------- | ------------- |
-| `kind: postgres` source reads the WAL | Debezium reads the WAL |
-| `bootstrap/postgres` loads existing rows | Debezium **snapshot** (`op: r`) loads existing rows |
-| Drasi owns the replication slot | Debezium owns the slot / publication |
-
-Drasi only needs a source that can turn **Debezium JSON envelopes** into graph `SourceChange` events.
-
-### Debezium envelope → graph mapping
-
-Both configs use the shared **source mapping** engine (HTTP webhook mappings and Kafka `mappings:`).
-
-A Debezium row event looks like:
-
-```json
-{
-  "op": "u",
-  "before": { "id": "room_01_01_01", "temperature": 70, "...": "..." },
-  "after":  { "id": "room_01_01_01", "temperature": 40, "...": "..." },
-  "source": { "table": "Room", "schema": "public", "db": "building_comfort" }
-}
-```
-
-The mapping (simplified from the server configs):
-
-```yaml
-mappings:
-  - when:
-      field: source.table
-      regex: "^(Building|Floor|Room)$"
-    operationFrom: payload.op
-    operationMap:
-      c: insert   # create
-      r: insert   # snapshot read
-      u: update
-      d: delete
-    elementType: node
-    template:
-      id: "{{#if payload.after.id}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
-      labels:
-        - "{{payload.source.table}}"
-      properties: "{{payload.after}}"
-```
-
-- **`operationFrom` / `operationMap`** turn Debezium `op` codes into Drasi insert/update/delete.
-- **`source.table`** becomes the node label (`Room`, `Floor`, `Building`) so existing Cypher keeps working.
-- **`properties: "{{payload.after}}"`** copies the row image; deletes use `before` only for the element id.
-- Snapshot rows (`r`) are inserts — that's how initial state appears without a separate bootstrap provider.
-
-### Path 1 config: HTTP source
-
-`server-config-http.yaml` listens for POSTs and maps the body:
-
-```yaml
-sources:
-  - kind: http
-    id: building-facilities
-    host: "0.0.0.0"
-    port: 9080
-    webhooks:
-      routes:
-        - path: /debezium
-          methods: [POST]
-          mappings:
-            # ... Debezium envelope mapping ...
-```
-
-Debezium Server (`database/debezium-server/application.properties`):
-
-```properties
-debezium.sink.type=http
-debezium.sink.http.url=http://host.docker.internal:9080/debezium
-debezium.source.connector.class=io.debezium.connector.postgresql.PostgresConnector
-debezium.source.table.include.list=public.Building,public.Floor,public.Room
-debezium.source.snapshot.mode=initial
-debezium.format.value=json
-```
-
-### Path 2 config: Kafka source
-
-Connect registers a connector that writes JSON (no schema wrapper) and routes all tables to one topic:
-
-```json
-"transforms": "route",
-"transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
-"transforms.route.regex": "building\\.public\\.(.*)",
-"transforms.route.replacement": "building.changes"
-```
-
-Drasi consumes that topic. Plugin refs are pinned next to the server binary pin:
-
-```yaml
-plugins:
-  - ref: source/kafka:0.1.7
-  - ref: reaction/dashboard:0.1.5
-  - ref: reaction/log:0.2.7
-
-sources:
-  - kind: kafka
-    id: building-facilities
-    bootstrapServers: "127.0.0.1:19092"
-    topic: building.changes
-    groupId: drasi-building-comfort
-    nodeLabel: Room
-    autoOffsetReset: earliest
-    mappings:
-      # ... same Debezium envelope mapping ...
-```
-
-`autoOffsetReset: earliest` matters after a fresh connector snapshot: Drasi reads the snapshot events already on the topic when it starts.
-
-> **Plugin ABI pins**
->
-> `drasi-server` **0.2.3** expects plugins built for host SDK ABI **0.13** (the loader rejects 0.14). The pins above are the newest kafka/dashboard/log/http builds that match 0.2.3. Path 1 uses `source/http:0.2.11` with the same dashboard/log pins. If you already have older plugins under `~/.drasi/plugins`, delete that directory (or set `DRASI_PLUGINS_DIR` to a fresh folder) before the first start so auto-install can pull the pinned versions.
-
-### Minimal environment layout
-
-| Component | Image / binary | Role |
-| --------- | -------------- | ---- |
-| PostgreSQL 16 | `postgres:16-alpine` | Source of truth + WAL |
-| Debezium Server 2.7 | `quay.io/debezium/server:2.7` | Path 1 runtime |
-| Redpanda | `redpandadata/redpanda` | Path 2 Kafka API |
-| Debezium Connect 2.7 | `quay.io/debezium/connect:2.7` | Path 2 connector host |
-| Drasi Server | downloaded binary | Continuous queries + dashboard |
-
-Compose profiles keep the stacks small:
+This recreates the lab database, starts Redpanda and Debezium Connect, registers the demo connector, then starts Drasi. The fresh retained Kafka history includes the snapshot for Drasi to replay. Check:
 
 ```bash
-docker compose --profile http up -d    # Path 1 extras
-docker compose --profile kafka up -d   # Path 2 extras
+curl --fail-with-body http://localhost:8083/connectors/building-comfort-connector/status
+curl --fail-with-body http://localhost:8380/api/v1/instances/debezium-kafka-server/sources/building-facilities
+curl --fail-with-body http://localhost:8380/api/v1/instances/debezium-kafka-server/queries/building-comfort-ui/results
 ```
 
-### Dashboard
+Use your overridden ports if different. Open the same dashboard and drive the same database writes. Optional helpers are `bash scripts/set-room.sh room_01_02_03 82 40 10` and `bash scripts/simulate.sh`; stop the simulation with Ctrl+C.
 
-Unchanged from Building Comfort — Markdown widgets over the same query ids:
+### What the lab provisions
 
-<img src="images/dashboard-building-view.png" width="820" alt="Building Comfort dashboard grouped by floor">
+| File | Purpose |
+| ---- | ------- |
+| `database/docker-compose.yml` | PostgreSQL 16 with logical replication; profile `http` adds Debezium Server 2.7, profile `kafka` adds Redpanda and Debezium Connect 2.7 |
+| `database/init.sql` | Disposable Building/Floor/Room schema, replication user, full replica identity, and nine seeded rooms |
+| `database/debezium-server/application.properties` | PostgreSQL connector plus native HTTP sink, schema-free JSON and the lab's own file offset store |
+| `database/connect/register-postgres.json` | Connector registered by `POST /connectors`; JSON converters and a **lab-only** RegexRouter combine per-table events into `building.changes` |
+| `server-config-http.yaml`, `server-config-kafka.yaml` | Transport-specific source plus the unchanged six-query/dashboard/log bundle |
 
-### Debug without the database
+The lab's row IDs already include table-specific prefixes; the Drasi mapping additionally namespaces graph IDs by database/schema/table. If you copy the single-topic routing elsewhere, consider **Kafka key collisions too**: topic compaction happens before Drasi and cannot be repaired by prefixing only Drasi IDs. Existing per-table topics are usually the simpler integration.
 
-Path 1 only — POST a synthetic Debezium event (also in `requests.http`):
-
-```bash
-curl -s -X POST http://localhost:9080/debezium \
-  -H 'Content-Type: application/json' \
-  -d '{"op":"u","after":{"id":"room_01_01_01","name":"Room 01","temperature":40,"humidity":20,"co2":700,"floor_id":"floor_01_01"},"before":{"id":"room_01_01_01","name":"Room 01","temperature":70,"humidity":40,"co2":10,"floor_id":"floor_01_01"},"source":{"table":"Room"}}'
-```
+Compared with native [Building Comfort](../building-comfort/), Debezium owns the replication slot/publication and provides snapshot `r` events instead of a Drasi PostgreSQL source/bootstrap. The query and reaction definitions do not teach anything new here; see that tutorial for their explanation.
 
 ## Clean Up
+For an **existing environment**, remove only the test row/configuration you added, stop the dedicated Drasi test process, and coordinate any HTTP sink restoration with its owner. Do not reset connectors, groups, slots, topics, or shared plugins. If your test fails before the delete, remove the test row using your normal database client.
+
+For the **disposable lab only**, stop any simulation and press Ctrl+C in the terminal running Drasi before running:
+
 **bash / zsh**
 
 ```bash
-# Ctrl+C in Terminal 1 first, then:
-bash scripts/cleanup.sh
-
-# Remove containers and data volumes (recommended between Path 1 and Path 2):
-bash scripts/cleanup.sh --volumes
+bash scripts/cleanup.sh             # Remove lab containers, keep volumes
+bash scripts/cleanup.sh --volumes   # Also delete lab data and offsets
 ```
 
 **PowerShell**
 
 ```powershell
+# After stopping Drasi, use Git Bash or WSL:
 bash scripts/cleanup.sh --volumes
 ```
 
 ## Next Steps
 
-- Compare with the native path in [Building Comfort](../building-comfort/) (`kind: postgres`).
-- Point Debezium at **your** database and adjust `table.include.list` + mapping labels.
-- Add middleware (`map` / `jq`) if you need richer graph shaping than row→node.
-- For production Kafka, drop Redpanda for your managed cluster and keep the same `source/kafka` mappings.
+- Apply the verified mapping to your existing queries and reactions; preserve their label/property contracts.
+- Use [Building Comfort](../building-comfort/) for the complete query/dashboard explanation, or [Getting Started](../getting-started/) for Drasi configuration basics.
+- Before production use, design and exercise authentication, initial-state loading, state recovery, replay, and duplicate-reaction handling for your chosen route.

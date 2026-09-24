@@ -46,7 +46,7 @@ if [ -f "$TUTORIAL_DIR/.env" ]; then
 fi
 
 BIN=""
-for candidate in "$REPO_ROOT/bin/drasi-server" "$TUTORIAL_DIR/bin/drasi-server" "./bin/drasi-server"; do
+for candidate in "$TUTORIAL_DIR/bin/drasi-server" "$REPO_ROOT/bin/drasi-server" "./bin/drasi-server"; do
     if [ -x "$candidate" ]; then
         BIN="$candidate"
         break
@@ -68,14 +68,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$HOME/.drasi/plugins}"
+PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$TUTORIAL_DIR/.drasi-plugins}"
 mkdir -p "$PLUGINS_DIR"
-
-if ! docker ps 2>/dev/null | grep -q debezium-integration-postgres; then
-    echo "Warning: the debezium-integration-postgres container is not running."
-    echo "Run ./scripts/setup-database.sh $MODE first."
-    echo
-fi
 
 echo "=== Drasi Server Debezium Integration ($MODE) ==="
 echo "  Binary: $BIN"
@@ -86,7 +80,7 @@ echo "  Dashboard: http://localhost:${DASHBOARD_PORT:-3000}"
 if [ "$MODE" = "http" ]; then
     echo "  HTTP CDC:  http://localhost:${HTTP_SOURCE_PORT:-9080}/debezium"
 else
-    echo "  Kafka:     ${KAFKA_BOOTSTRAP_SERVERS:-localhost:19092} topic=${KAFKA_TOPIC:-building.changes}"
+    echo "  Kafka:     ${KAFKA_BOOTSTRAP_SERVERS:-127.0.0.1:19092} topic=${KAFKA_TOPIC:-building.changes}"
 fi
 echo "  API docs:  http://localhost:${SERVER_PORT:-8380}/api/v1/docs/"
 echo

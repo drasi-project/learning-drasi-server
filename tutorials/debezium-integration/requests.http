@@ -7,21 +7,23 @@
 @dashboardUrl = http://localhost:3000
 @httpSource = http://localhost:9080
 @connectUrl = http://localhost:8083
+# For Kafka, change to debezium-kafka-server.
+@instanceId = debezium-http-server
 
 ### Health check
 GET {{baseUrl}}/health
 
 ### List sources
-GET {{baseUrl}}/api/v1/sources
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/sources
 
 ### Get building-facilities source
-GET {{baseUrl}}/api/v1/sources/building-facilities
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/sources/building-facilities
 
 ### Per-room comfort levels
-GET {{baseUrl}}/api/v1/queries/building-comfort-ui/results
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/queries/building-comfort-ui/results
 
 ### Room alerts
-GET {{baseUrl}}/api/v1/queries/room-alert/results
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/queries/room-alert/results
 
 ### List dashboards
 GET {{dashboardUrl}}/api/dashboards
@@ -32,7 +34,8 @@ GET {{connectUrl}}/connectors
 ### Kafka Connect connector status (Path 2)
 GET {{connectUrl}}/connectors/building-comfort-connector/status
 
-### Simulate a Debezium-shaped HTTP event (Path 1 debug)
+### Mapping smoke test only: bypasses database/CDC and changes Drasi state.
+# Use only with an isolated test source, not an existing environment.
 POST {{httpSource}}/debezium
 Content-Type: application/json
 

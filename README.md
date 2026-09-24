@@ -8,6 +8,7 @@ Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-ser
 | --- | --- | --- |
 | [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Open the **Drasi Server - Getting Started Tutorial** dev container (or a Codespace) and follow [tutorials/getting-started](tutorials/getting-started) |
 | [building-comfort](tutorials/building-comfort) | Smart-building comfort monitoring (PostgreSQL CDC, six comfort/alert queries with synthetic joins, the dashboard reaction) | Open the **Drasi Server - Building Comfort Tutorial** dev container and follow [tutorials/building-comfort](tutorials/building-comfort) |
+| [debezium-integration](tutorials/debezium-integration) | Feed an existing Debezium deployment into Drasi over HTTP or directly from Kafka | Follow the integration guide, or choose the **Drasi Server - Debezium Integration Tutorial** dev container for the optional disposable lab |
 
 See [tutorials](tutorials) for the full list of tutorials.
 

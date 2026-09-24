@@ -17,7 +17,7 @@
 # =============================================================================
 # Same Building Comfort queries and dashboard. Debezium runs on Kafka Connect,
 # writes change events to the building.changes topic, and Drasi pulls them with
-# the Kafka source. A RegexRouter SMT folds per-table topics into one topic.
+# the Kafka source. A lab-only RegexRouter folds per-table topics into one topic.
 # =============================================================================
 
 apiVersion: drasi.io/v1
@@ -29,8 +29,7 @@ persistConfig: false
 
 autoInstallPlugins: true
 # Pin plugins to the SDK ABI that ships with drasi-server 0.2.3 (host ABI 0.13).
-# Unpinned "latest" can pull kafka 0.1.8+ (ABI 0.14) or older 0.1.3 (crashes on
-# some macOS hosts with 0.2.0-era binaries).
+# Kafka 0.1.8 requires ABI 0.14; keep this matched set rather than using latest.
 plugins:
   - ref: source/kafka:0.1.7
   - ref: reaction/dashboard:0.1.5
@@ -44,7 +43,7 @@ sources:
     id: building-facilities
     autoStart: true
     # Prefer 127.0.0.1 over "localhost" — on some hosts localhost resolves to
-# IPv6 first and rdkafka then fails topic metadata against Redpanda's IPv4 listener.
+    # IPv6 first and rdkafka then fails topic metadata against Redpanda's IPv4 listener.
     bootstrapServers: "${KAFKA_BOOTSTRAP_SERVERS:-127.0.0.1:19092}"
     topic: "${KAFKA_TOPIC:-building.changes}"
     groupId: "${KAFKA_GROUP_ID:-drasi-building-comfort}"
@@ -62,7 +61,7 @@ sources:
           d: delete
         elementType: node
         template:
-          id: "{{#if payload.after.id}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
+          id: "{{payload.source.db}}:{{payload.source.schema}}:{{payload.source.table}}:{{#if payload.after}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
           labels:
             - "{{payload.source.table}}"
           properties: "{{payload.after}}"

@@ -15,9 +15,7 @@
 
 # Path 1 demo: PostgreSQL → Drasi HTTP source → Debezium Server snapshot/stream.
 #
-# Order matters: Debezium Server commits offsets after a successful snapshot.
-# If it starts before Drasi is listening, the snapshot can be "completed" without
-# Drasi ever receiving the rows. This script therefore:
+# Disposable lab only. Start the listener before attempting snapshot delivery:
 #   1. Starts PostgreSQL + seed data
 #   2. Starts Drasi Server (HTTP webhook on :9080)
 #   3. Waits for the webhook health endpoint
@@ -34,7 +32,7 @@ bash "$SCRIPT_DIR/setup-database.sh"
 
 # Resolve drasi-server binary the same way start-server.sh does.
 BIN=""
-for candidate in "$REPO_ROOT/bin/drasi-server" "$TUTORIAL_DIR/bin/drasi-server" "./bin/drasi-server"; do
+for candidate in "$TUTORIAL_DIR/bin/drasi-server" "$REPO_ROOT/bin/drasi-server" "./bin/drasi-server"; do
     if [ -x "$candidate" ]; then
         BIN="$candidate"
         break
@@ -56,26 +54,29 @@ if [ -f "$TUTORIAL_DIR/.env" ]; then
     set +a
 fi
 
-PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$HOME/.drasi/plugins}"
+PLUGINS_DIR="${DRASI_PLUGINS_DIR:-$TUTORIAL_DIR/.drasi-plugins}"
 mkdir -p "$PLUGINS_DIR"
 CONFIG_FILE="${CONFIG_FILE:-$TUTORIAL_DIR/server-config-http.yaml}"
 HTTP_PORT="${HTTP_SOURCE_PORT:-9080}"
 SERVER_PORT="${SERVER_PORT:-8380}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-3000}"
 
-LOG_FILE="${DRASI_LOG_FILE:-/tmp/drasi-debezium-http.log}"
-PID_FILE="${DRASI_PID_FILE:-/tmp/drasi-debezium-http.pid}"
+mkdir -p "$TUTORIAL_DIR/data"
+LOG_FILE="${DRASI_LOG_FILE:-$TUTORIAL_DIR/data/drasi-http.log}"
+DRASI_PID=""
+TAIL_PID=""
 
 cleanup() {
-    if [ -f "$PID_FILE" ]; then
-        pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-        if [ -n "$pid" ]; then
-            kill "$pid" 2>/dev/null || true
-        fi
-        rm -f "$PID_FILE"
+    if [ -n "$TAIL_PID" ]; then
+        kill "$TAIL_PID" 2>/dev/null || true
+    fi
+    if [ -n "$DRASI_PID" ]; then
+        kill "$DRASI_PID" 2>/dev/null || true
     fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 echo
 echo "=== Starting Drasi Server (HTTP source) in the background ==="
@@ -87,8 +88,7 @@ echo "  Log file:   $LOG_FILE"
 echo
 
 "$BIN" --config "$CONFIG_FILE" --plugins-dir "$PLUGINS_DIR" >"$LOG_FILE" 2>&1 &
-echo $! >"$PID_FILE"
-DRASI_PID="$(cat "$PID_FILE")"
+DRASI_PID=$!
 
 echo "Waiting for HTTP source health on :${HTTP_PORT} ..."
 READY=0
@@ -128,4 +128,3 @@ echo "=============================================="
 tail -n +1 -f "$LOG_FILE" &
 TAIL_PID=$!
 wait "$DRASI_PID"
-kill "$TAIL_PID" 2>/dev/null || true

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Cleanup Script — stops Drasi Server and tears down tutorial containers.
+# Cleanup Script — tears down disposable tutorial containers.
 
 set -e
 
@@ -21,12 +21,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATABASE_DIR="$SCRIPT_DIR/../database"
 REMOVE_VOLUMES="${1:-}"
 
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$SCRIPT_DIR/../.env"
+    set +a
+fi
+
 echo "=== Drasi Server Debezium Integration - Cleanup ==="
 echo
 
-echo "Stopping Drasi Server processes..."
-pkill -f "drasi-server.*debezium" 2>/dev/null || true
-pkill -f "drasi-server.*server-config-(http|kafka)" 2>/dev/null || true
+echo "Stop Drasi and any simulation with Ctrl+C in their terminals first."
+echo "This script only removes the disposable debezium-integration Compose stack."
 
 if command -v docker-compose &> /dev/null; then
     COMPOSE_CMD="docker-compose"

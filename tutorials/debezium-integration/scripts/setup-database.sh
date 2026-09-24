@@ -28,7 +28,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATABASE_DIR="$SCRIPT_DIR/../database"
 PROFILE="${1:-}"
 
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$SCRIPT_DIR/../.env"
+    set +a
+fi
+
 echo "=== Drasi Server Debezium Integration - Database Setup ==="
+echo "WARNING: disposable lab only. This deletes this Compose project's volumes,"
+echo "reseeds its tables, and replaces its demo connector. Never use on existing infrastructure."
 echo
 
 if ! command -v docker &> /dev/null; then

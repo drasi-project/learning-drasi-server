@@ -7,3 +7,4 @@ bin/
 # Server runtime artifacts
 server.log
 data/
+.drasi-plugins/

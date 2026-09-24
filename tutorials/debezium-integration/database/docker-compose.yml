@@ -64,8 +64,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # application.properties is the source of truth; these override the sink URL
-      # so Codespaces / Linux Docker can reach Drasi on the host.
+      # Override with an address reachable from this container. host-gateway
+      # reaches the Docker host, not necessarily a sibling dev container.
       DEBEZIUM_SINK_HTTP_URL: "${DEBEZIUM_SINK_HTTP_URL:-http://host.docker.internal:9080/debezium}"
     volumes:
       - ./debezium-server/application.properties:/debezium/conf/application.properties:ro

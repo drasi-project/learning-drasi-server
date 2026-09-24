@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Start (or restart) Debezium Server after Drasi's HTTP source is listening.
-# Optionally wipe the offset volume so the initial snapshot is re-sent.
+# Disposable lab only: start Debezium Server after Drasi is listening.
+# Optionally wipe the lab offset volume so the initial snapshot is re-sent.
 #
 #   bash scripts/start-debezium-server.sh
 #   bash scripts/start-debezium-server.sh --reset-offsets
@@ -24,6 +24,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATABASE_DIR="$SCRIPT_DIR/../database"
 RESET_OFFSETS=0
+
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$SCRIPT_DIR/../.env"
+    set +a
+fi
 
 for arg in "$@"; do
     case "$arg" in
@@ -63,7 +70,7 @@ fi
 echo "HTTP source is up."
 
 if [ "$RESET_OFFSETS" -eq 1 ]; then
-    echo "Resetting Debezium Server offsets so the next start re-snapshots..."
+    echo "WARNING: deleting disposable lab offsets so the next start re-snapshots."
     $COMPOSE_CMD --profile http stop debezium-server >/dev/null 2>&1 || true
     $COMPOSE_CMD --profile http rm -f debezium-server >/dev/null 2>&1 || true
     docker volume rm debezium-integration_debezium_server_data >/dev/null 2>&1 || true

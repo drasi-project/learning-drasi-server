@@ -49,12 +49,12 @@ sources:
     port: ${HTTP_SOURCE_PORT:-9080}
     timeoutMs: 30000
     webhooks:
-      errorBehavior: accept_and_log
+      errorBehavior: reject
       routes:
         - path: /debezium
           methods: [POST]
           mappings:
-            # Ignore schema-change / heartbeat noise; only map table row events.
+            # Only map these row events; reject unmatched input.
             - when:
                 field: source.table
                 regex: "^(Building|Floor|Room)$"
@@ -67,7 +67,7 @@ sources:
               elementType: node
               template:
                 # Snapshot/create/update use after; delete uses before.
-                id: "{{#if payload.after.id}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
+                id: "{{payload.source.db}}:{{payload.source.schema}}:{{payload.source.table}}:{{#if payload.after}}{{payload.after.id}}{{else}}{{payload.before.id}}{{/if}}"
                 labels:
                   - "{{payload.source.table}}"
                 # Whole row image → node properties (null on pure deletes — OK).
