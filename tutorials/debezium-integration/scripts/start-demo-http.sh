@@ -32,7 +32,10 @@ bash "$SCRIPT_DIR/setup-database.sh"
 
 # Resolve drasi-server binary the same way start-server.sh does.
 BIN=""
-for candidate in "$TUTORIAL_DIR/bin/drasi-server" "$REPO_ROOT/bin/drasi-server" "./bin/drasi-server"; do
+for candidate in \
+    "$TUTORIAL_DIR/bin/drasi-server" "$TUTORIAL_DIR/bin/drasi-server.exe" \
+    "$REPO_ROOT/bin/drasi-server" "$REPO_ROOT/bin/drasi-server.exe" \
+    "./bin/drasi-server" "./bin/drasi-server.exe"; do
     if [ -x "$candidate" ]; then
         BIN="$candidate"
         break
@@ -41,8 +44,11 @@ done
 if [ -z "$BIN" ]; then
     if command -v drasi-server &> /dev/null; then
         BIN="drasi-server"
+    elif command -v drasi-server.exe &> /dev/null; then
+        BIN="drasi-server.exe"
     else
-        echo "Error: drasi-server binary not found. Run ./scripts/download.sh first."
+        echo "Error: drasi-server binary not found."
+        echo "Run ./scripts/download.sh first (or download.ps1 on Windows)."
         exit 1
     fi
 fi
@@ -98,7 +104,7 @@ for i in $(seq 1 90); do
         tail -n 40 "$LOG_FILE" || true
         exit 1
     fi
-    if curl -sf "http://127.0.0.1:${HTTP_PORT}/health" >/dev/null 2>&1; then
+    if curl -sf --connect-timeout 2 --max-time 5 "http://127.0.0.1:${HTTP_PORT}/health" >/dev/null 2>&1; then
         READY=1
         break
     fi
@@ -116,7 +122,8 @@ echo "HTTP source is healthy."
 bash "$SCRIPT_DIR/start-debezium-server.sh" --reset-offsets
 
 echo
-echo "Debezium is snapshotting into Drasi. Follow either:"
+echo "Debezium's container is running; snapshot/streaming success is not yet verified."
+echo "Check the query results and follow either log to verify delivery:"
 echo "  tail -f $LOG_FILE"
 echo "  docker logs -f debezium-integration-server"
 echo

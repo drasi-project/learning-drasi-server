@@ -8,3 +8,4 @@ bin/
 server.log
 data/
 .drasi-plugins/
+tests/__pycache__/

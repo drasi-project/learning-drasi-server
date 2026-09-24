@@ -62,7 +62,7 @@ cd "$DATABASE_DIR"
 
 HTTP_PORT="${HTTP_SOURCE_PORT:-9080}"
 echo "Checking Drasi HTTP source on localhost:${HTTP_PORT}/health ..."
-if ! curl -sf "http://127.0.0.1:${HTTP_PORT}/health" >/dev/null 2>&1; then
+if ! curl -sf --connect-timeout 2 --max-time 5 "http://127.0.0.1:${HTTP_PORT}/health" >/dev/null 2>&1; then
     echo "Error: Drasi HTTP source is not reachable at http://127.0.0.1:${HTTP_PORT}/health"
     echo "Start Drasi first (bash scripts/start-server.sh http), then re-run this script."
     exit 1
@@ -77,16 +77,50 @@ if [ "$RESET_OFFSETS" -eq 1 ]; then
 fi
 
 echo "Starting Debezium Server (HTTP sink → host:${HTTP_PORT}/debezium)..."
-$COMPOSE_CMD --profile http up -d debezium-server
+fail_startup() {
+    echo "Error: $1" >&2
+    echo "Recent Debezium Server logs:" >&2
+    if ! $COMPOSE_CMD --profile http logs --no-color --tail 40 debezium-server >&2; then
+        echo "Unable to retrieve Debezium Server logs." >&2
+    fi
+    exit 1
+}
+
+if ! $COMPOSE_CMD --profile http up -d debezium-server; then
+    fail_startup "Compose could not start Debezium Server."
+fi
 
 echo "Waiting for Debezium Server container..."
+READY=0
+STATE="missing"
 for i in $(seq 1 30); do
-    if docker ps --filter name=debezium-integration-server --format '{{.Status}}' | grep -q Up; then
-        echo "Debezium Server is up."
-        break
+    if ! CONTAINER_ID=$($COMPOSE_CMD --profile http ps -a -q debezium-server); then
+        fail_startup "Could not identify the Compose Debezium Server container."
+    fi
+    STATE="missing"
+    if [ -n "$CONTAINER_ID" ]; then
+        if ! STATE=$(docker inspect --format '{{.State.Status}}' "$CONTAINER_ID"); then
+            fail_startup "Could not inspect Debezium Server container $CONTAINER_ID."
+        fi
+        case "$STATE" in
+            running)
+                READY=1
+                break
+                ;;
+            created|restarting)
+                ;;
+            *)
+                fail_startup "Debezium Server container is $STATE."
+                ;;
+        esac
     fi
     sleep 1
 done
+
+if [ "$READY" -ne 1 ]; then
+    fail_startup "Timed out waiting for Debezium Server container (last state: $STATE)."
+fi
+echo "Debezium Server container is running; verify snapshot/streaming in the logs and query results."
 
 echo
 echo "Tip: follow snapshot/stream logs with:"

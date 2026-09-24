@@ -369,11 +369,13 @@ curl --fail-with-body "$API/api/v1/instances/$INSTANCE/queries/building-comfort-
 
 Its dashboard is at `http://localhost:3000`. Only the freshly seeded lab has the expected **9 rooms at comfort 46**; after `break-room.sh room_01_01_01`, that room is **4** and its floor is **32**. Arbitrary existing datasets have different counts/values.
 
+`building-comfort-level-calc` weights each floor equally, even when floors have different room counts. The dashboard KPI/gauge instead averages the per-room results to avoid stale aggregate materialization; these room-weighted values match the floor-weighted query for equal-sized floors, but not in general.
+
 > **Known aggregate/result-state limitation with the pinned runtime**
 >
 > The reader walkthrough verified real CDC into the per-room query on both routes, but did **not** establish a fully correct six-query/dashboard demo. After insert/update/delete activity, the management API retained duplicate or stale floor/building aggregate rows on both routes. After Kafka simulation and reset, all nine database and per-room query rows were back at comfort 46, yet `floor-alert` still contained an old 51.6667 alert in both the API and dashboard snapshot. The expected state is three floor rows at 46, one building row at 46, and no alerts.
 >
-> This is a query/result-state discrepancy, not evidence that the database changes failed to reach Drasi. No tutorial mapping/query correction was established, and restarting to clear the display is not a correctness fix. Use the small `room-readings` query to verify the integration separately; do not rely on the bundled aggregate/alert state until the runtime issue is resolved and retested.
+> This pinned-runtime query/result-state discrepancy is tracked in [drasi-project/drasi-core#935](https://github.com/drasi-project/drasi-core/issues/935); it is not evidence that the database changes failed to reach Drasi. The floor-weighting correction in this tutorial is a separate query fix and does not resolve that runtime limitation. Restarting to clear the display is not a correctness fix. Use the small `room-readings` query to verify the integration separately; do not rely on the bundled aggregate/alert state until a compatible runtime release is verified.
 
 A synthetic POST from [`requests.http`](https://github.com/drasi-project/learning-drasi-server/blob/main/tutorials/debezium-integration/requests.http) is a **mapping smoke test only**. It bypasses both the database and Debezium and changes Drasi's view without changing the database. Use it only with an isolated test source; it is not evidence that CDC works.
 
@@ -485,8 +487,10 @@ bash scripts/download.sh
 ```powershell
 cd tutorials/debezium-integration
 powershell -ExecutionPolicy Bypass -File scripts/download.ps1
-# Run the remaining bash helper scripts in Git Bash or WSL.
+# Run the remaining bash helper scripts in Git Bash.
 ```
+
+On Windows, use the PowerShell download with **Git Bash**; the launchers recognize `bin/drasi-server.exe`. If using **WSL**, run `bash scripts/download.sh` inside WSL to download the Linux binary, then run the helpers there. Do not reuse the Windows download as the WSL installation.
 
 Alternatively follow [Build from Source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) and place a compatible binary in this tutorial's `bin/`. The launchers prefer that binary over a repository-root installation.
 
@@ -502,7 +506,7 @@ In Terminal 1:
 bash scripts/start-demo-http.sh
 ```
 
-The script recreates PostgreSQL, starts Drasi, waits for its HTTP health endpoint, and only then starts Debezium Server with fresh **lab** offsets. This establishes listener readiness before delivery; the health check alone does not verify network reachability from Debezium or the snapshot.
+The script recreates PostgreSQL, starts Drasi, waits for its HTTP health endpoint, and only then starts Debezium Server with fresh **lab** offsets. It fails with recent service logs if the exact Compose container cannot reach a running state within the startup checks. This establishes listener/container startup only; neither check verifies network reachability from Debezium, database health, or snapshot/streaming delivery. Verify actual data below before treating the integration as working.
 
 The manual equivalent, useful for inspecting each stage, is:
 
@@ -575,7 +579,7 @@ bash scripts/cleanup.sh --volumes   # Also delete lab data and offsets
 **PowerShell**
 
 ```powershell
-# After stopping Drasi, use Git Bash or WSL:
+# After stopping Drasi, use Git Bash (or your Linux installation inside WSL):
 bash scripts/cleanup.sh --volumes
 ```
 
@@ -584,3 +588,5 @@ bash scripts/cleanup.sh --volumes
 - Apply the verified mapping to your existing queries and reactions; preserve their label/property contracts.
 - Use [Building Comfort](../building-comfort/) for the complete query/dashboard explanation, or [Getting Started](../getting-started/) for Drasi configuration basics.
 - Before production use, design and exercise authentication, initial-state loading, state recovery, replay, and duplicate-reaction handling for your chosen route.
+
+For changes to the lab helpers, run the dependency-free regression checks from the repository root with `python3 -m unittest discover -s tutorials/debezium-integration/tests`. These use mocked commands and do not replace native-platform or end-to-end CDC verification.

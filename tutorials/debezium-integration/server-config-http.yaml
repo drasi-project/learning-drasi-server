@@ -131,10 +131,10 @@ queries:
       MATCH
         (r:Room)-[:PART_OF_FLOOR]->(f:Floor)-[:PART_OF_BUILDING]->(b:Building)
       WITH
-        b,
+        f, b,
         floor( 50 + (r.temperature - 72) + (r.humidity - 42) + CASE WHEN r.co2 > 500 THEN (r.co2 - 500) / 25 ELSE 0 END ) AS RoomComfortLevel
       WITH
-        b,
+        f, b,
         avg(RoomComfortLevel) AS FloorComfortLevel
       WITH
         b,
@@ -331,10 +331,8 @@ reactions:
 
                 {{/groupBy}}
 
-          # Overall building comfort as a single number. Computed as the
-          # average of every room's comfort level (mathematically the same as
-          # the building-comfort-level-calc rollup, but read from the clean
-          # per-room query so the KPI is a single stable value).
+          # Room-weighted KPI from per-room results to avoid stale aggregates.
+          # Matches the floor-weighted rollup for equal floor sizes, not in general.
           - id: building-kpi
             type: kpi
             title: Building Comfort

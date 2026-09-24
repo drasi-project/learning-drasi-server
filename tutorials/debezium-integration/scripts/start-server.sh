@@ -46,7 +46,10 @@ if [ -f "$TUTORIAL_DIR/.env" ]; then
 fi
 
 BIN=""
-for candidate in "$TUTORIAL_DIR/bin/drasi-server" "$REPO_ROOT/bin/drasi-server" "./bin/drasi-server"; do
+for candidate in \
+    "$TUTORIAL_DIR/bin/drasi-server" "$TUTORIAL_DIR/bin/drasi-server.exe" \
+    "$REPO_ROOT/bin/drasi-server" "$REPO_ROOT/bin/drasi-server.exe" \
+    "./bin/drasi-server" "./bin/drasi-server.exe"; do
     if [ -x "$candidate" ]; then
         BIN="$candidate"
         break
@@ -56,6 +59,8 @@ done
 if [ -z "$BIN" ]; then
     if command -v drasi-server &> /dev/null; then
         BIN="drasi-server"
+    elif command -v drasi-server.exe &> /dev/null; then
+        BIN="drasi-server.exe"
     else
         echo "Error: drasi-server binary not found."
         echo "Run ./scripts/download.sh first (or download.ps1 on Windows)."
