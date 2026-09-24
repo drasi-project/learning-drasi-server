@@ -13,9 +13,9 @@ The catch: the orders live in **PostgreSQL** and the vehicles live in **MySQL**,
 
 **Sources** → **Continuous Queries** → **Reactions**
 
-- **Sources** — Connect to your data sources
-- **Continuous Queries** — Define what changes matter
-- **Reactions** — Take action automatically
+- **Sources**: Connect to your data sources
+- **Continuous Queries**: Define what changes matter
+- **Reactions**: Take action automatically
 
 | Step | What You'll Do |
 | ---- | ------------- |
@@ -62,6 +62,28 @@ powershell -ExecutionPolicy Bypass -File scripts/download.ps1
 ```
 
 This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
+
+### Option C: Build from Source
+
+Prefer to compile Drasi Server yourself? Follow the [**Build from Source**](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) installation guide to clone the repository and build the binary.
+
+Once it is built, make the `drasi-server` binary available to this tutorial's helper scripts — either add it to your `PATH`, or copy it into this tutorial's `bin/` directory (the same location [Option B](#step-1-of-4-set-up-your-environment) uses):
+
+**bash / zsh**
+
+```bash
+cd tutorials/curbside-pickup
+mkdir -p bin
+cp /path/to/drasi-server/bin/drasi-server bin/drasi-server
+```
+
+**PowerShell**
+
+```powershell
+cd tutorials/curbside-pickup
+New-Item -ItemType Directory -Force bin | Out-Null
+Copy-Item C:\path\to\drasi-server\bin\drasi-server.exe bin\drasi-server.exe
+```
 
 ## Step 2 of 4: Run the Demo
 Everything runs from a single configuration file, `server-config.yaml`. Start the demo:
