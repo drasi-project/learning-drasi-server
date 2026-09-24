@@ -50,6 +50,11 @@ if ! docker info &> /dev/null; then
     exit 1
 fi
 
+if [ "$PROFILE" = "kafka" ] && ! command -v jq &> /dev/null; then
+    echo "Error: jq is required to check Kafka connector/task readiness."
+    exit 1
+fi
+
 if command -v docker-compose &> /dev/null; then
     COMPOSE_CMD="docker-compose"
 elif docker compose version &> /dev/null 2>&1; then
@@ -110,7 +115,7 @@ if [ "$PROFILE" = "kafka" ]; then
     echo "Waiting for Kafka Connect REST API..."
     RETRY_COUNT=0
     while [ $RETRY_COUNT -lt 40 ]; do
-        if curl -sf "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors" >/dev/null 2>&1; then
+        if curl -sf --max-time 5 "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors" >/dev/null 2>&1; then
             echo "Kafka Connect is ready!"
             break
         fi
@@ -126,16 +131,47 @@ if [ "$PROFILE" = "kafka" ]; then
 
     echo "Registering Debezium PostgreSQL connector..."
     # Delete any previous registration so re-runs are idempotent.
-    curl -sf -X DELETE "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors/building-comfort-connector" >/dev/null 2>&1 || true
-    sleep 1
-    curl -sf -X POST "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors" \
+    curl -sf --max-time 5 -X DELETE "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors/building-comfort-connector" >/dev/null 2>&1 || true
+    curl --fail-with-body --silent --show-error --max-time 15 -X POST "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors" \
         -H "Content-Type: application/json" \
         --data @"$DATABASE_DIR/connect/register-postgres.json"
     echo
-    echo "Connector status:"
-    sleep 3
-    curl -sf "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors/building-comfort-connector/status" || true
-    echo
+    echo "Waiting for the connector, its task, and topic building.changes..."
+    READY=0
+    STATUS=""
+    TOPIC_STATUS=""
+    for i in $(seq 1 60); do
+        if STATUS=$(curl --fail-with-body --silent --show-error --max-time 5 \
+            "http://localhost:${CONNECT_HOST_PORT:-8083}/connectors/building-comfort-connector/status"); then
+            if printf '%s' "$STATUS" | jq -e \
+                '.connector.state == "FAILED" or any(.tasks[]?; .state == "FAILED")' >/dev/null; then
+                echo "Error: Debezium connector/task failed:"
+                printf '%s\n' "$STATUS"
+                exit 1
+            fi
+            if printf '%s' "$STATUS" | jq -e \
+                '.connector.state == "RUNNING" and (.tasks | length > 0) and all(.tasks[]; .state == "RUNNING")' >/dev/null; then
+                if TOPIC_STATUS=$(docker exec debezium-integration-kafka \
+                    rpk topic describe building.changes -X brokers=kafka:9092 \
+                    -X globals.command_timeout=5s -X globals.retry_timeout=3s \
+                    -X globals.request_timeout_overhead=3s 2>&1); then
+                    READY=1
+                    break
+                fi
+            fi
+        fi
+        echo "  Waiting for connector/task and topic... ($i/60)"
+        sleep 2
+    done
+    if [ "$READY" -ne 1 ]; then
+        echo "Error: connector/task and topic did not become ready; Drasi has not been started."
+        printf 'Last connector status: %s\nLast topic status: %s\n' "$STATUS" "$TOPIC_STATUS"
+        echo "Check: docker logs debezium-integration-connect"
+        echo "       docker logs debezium-integration-kafka"
+        exit 1
+    fi
+    printf '%s\n' "$STATUS" | jq .
+    echo "Connector/task running and Kafka topic available."
 fi
 
 echo

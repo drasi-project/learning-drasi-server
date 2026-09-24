@@ -32,8 +32,14 @@ if ! docker ps 2>/dev/null | grep -q "$CONTAINER"; then
     exit 1
 fi
 
-# Pull the live list of room ids from the database.
-mapfile -t ROOMS < <(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -tAc 'SELECT id FROM "Room" ORDER BY id;')
+# Capture SQL failures before populating the array (also works in macOS Bash 3.2).
+ROOM_IDS=$(docker exec "$CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB" -tAc 'SELECT id FROM "Room" ORDER BY id;')
+ROOMS=()
+while IFS= read -r room; do
+    if [ -n "$room" ]; then
+        ROOMS[${#ROOMS[@]}]="$room"
+    fi
+done <<< "$ROOM_IDS"
 
 if [ "${#ROOMS[@]}" -eq 0 ]; then
     echo "Error: no rooms found. Did the database seed correctly?"

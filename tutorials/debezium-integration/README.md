@@ -369,6 +369,12 @@ curl --fail-with-body "$API/api/v1/instances/$INSTANCE/queries/building-comfort-
 
 Its dashboard is at `http://localhost:3000`. Only the freshly seeded lab has the expected **9 rooms at comfort 46**; after `break-room.sh room_01_01_01`, that room is **4** and its floor is **32**. Arbitrary existing datasets have different counts/values.
 
+> **Known aggregate/result-state limitation with the pinned runtime**
+>
+> The reader walkthrough verified real CDC into the per-room query on both routes, but did **not** establish a fully correct six-query/dashboard demo. After insert/update/delete activity, the management API retained duplicate or stale floor/building aggregate rows on both routes. After Kafka simulation and reset, all nine database and per-room query rows were back at comfort 46, yet `floor-alert` still contained an old 51.6667 alert in both the API and dashboard snapshot. The expected state is three floor rows at 46, one building row at 46, and no alerts.
+>
+> This is a query/result-state discrepancy, not evidence that the database changes failed to reach Drasi. No tutorial mapping/query correction was established, and restarting to clear the display is not a correctness fix. Use the small `room-readings` query to verify the integration separately; do not rely on the bundled aggregate/alert state until the runtime issue is resolved and retested.
+
 A synthetic POST from [`requests.http`](https://github.com/drasi-project/learning-drasi-server/blob/main/tutorials/debezium-integration/requests.http) is a **mapping smoke test only**. It bypasses both the database and Debezium and changes Drasi's view without changing the database. Use it only with an isolated test source; it is not evidence that CDC works.
 
 ## How It Works
@@ -446,7 +452,9 @@ These version-specific details come from the pinned [Kafka consumer](https://git
 ### Compatibility and Verification Scope
 The bundled downloads pin **Drasi Server 0.2.3**, with **`source/http:0.2.11`**, **`source/kafka:0.1.7`**, **`reaction/dashboard:0.1.5`**, and **`reaction/log:0.2.7`**. Its runtime loader expects ABI **0.13**, even though its `--version` output reports a different plugin SDK crate version. The next plugin releases (HTTP 0.2.12, Kafka 0.1.8, dashboard 0.1.6, log 0.2.8) were rejected for ABI 0.14. Do not infer compatibility from SDK crate labels or automatically select `latest`.
 
-The Kafka Building Comfort lab was previously exercised end to end on native Apple Silicon macOS with this matched set: nine rooms at 46, followed by the room/floor change to 4/32. An older server/plugin combination aborted; that observation does not establish a Kafka, ABI, or universal platform root cause. HTTP 0.2.11 loads with Server 0.2.3, but full database-to-HTTP CDC was verified only with the earlier Server 0.2.0 combination, not rerun after the version bump. **Full Linux/Codespaces end-to-end behavior has not been verified.**
+A native Apple Silicon macOS reader walkthrough exercised both raw-JSON routes with this matched set: initial data, separately committed database inserts/updates/deletes, query results and log reactions, and the bundled six-query room/floor change from 46 to 4/32 and back. Dashboard HTTP snapshots and live WebSocket reactions were checked, not visual rendering. The optional simulation was also exercised with macOS Bash 3.2. **Full Linux/Codespaces and Windows end-to-end behavior has not been verified.**
+
+The original Kafka lab encountered broker stalls and Connect worker reassignment on a shared Docker host under memory/IO pressure. One run recovered automatically after a five-minute rebalance delay; another left Drasi's consumer stopped after a topic-metadata timeout. The lab now bounds Redpanda's memory allocation and waits for the connector, its task, and the topic before launching Drasi. These are disposable-lab safeguards, not production sizing or a guarantee against host resource pressure. A healthy container or a task marked `RUNNING` alone is not sufficient; verify the connector too and repeat the database-change checks.
 
 Isolated HTTP mapping checks with Server 0.2.3 cover raw and schema-wrapped JSON, create/snapshot/update/delete operations, numeric-zero keys, namespaced IDs, and query/log-reaction changes. These synthetic checks do not exercise Debezium or the database.
 
@@ -461,9 +469,9 @@ Use this appendix if you do not have a Debezium environment. It supplies Postgre
 
 ### Prepare the lab
 
-Choose **Drasi Server - Debezium Integration Tutorial** when reopening the repository in a VS Code dev container or creating a Codespace. The setup installs the Drasi binary and PostgreSQL client; Docker-in-Docker provides the disposable services. Network reachability still needs checking, and the end-to-end limitation above applies.
+Choose **Drasi Server - Debezium Integration Tutorial** when reopening the repository in a VS Code dev container or creating a Codespace. The setup installs the Drasi binary, PostgreSQL client, curl, and jq; Docker-in-Docker provides the disposable services. Network reachability still needs checking, and the end-to-end limitation above applies.
 
-For a local run, install Docker with Compose, bash, and curl, then download the pinned binary from the repository root:
+For a local run, install Docker with Compose, bash (macOS Bash 3.2 is supported), curl, and jq, then download the pinned binary from the repository root:
 
 **bash / zsh**
 
@@ -481,6 +489,8 @@ powershell -ExecutionPolicy Bypass -File scripts/download.ps1
 ```
 
 Alternatively follow [Build from Source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) and place a compatible binary in this tutorial's `bin/`. The launchers prefer that binary over a repository-root installation.
+
+If using this binary for the main-route commands rather than the lab launchers, add it to the current bash/zsh terminal's path with `export PATH="$PWD/bin:$PATH"` from the tutorial directory.
 
 Run all remaining lab commands from `tutorials/debezium-integration/`. Use Terminal 1 for Drasi/demo startup and Terminal 2 for database writes. Defaults are API `8380`, dashboard `3000`, PostgreSQL `5752`, HTTP CDC `9080`, Kafka `19092`, and Connect `8083` (Redpanda also publishes `18081`/`18082`). Copy `.env.example` to `.env` for overrides. If changing ports, update both endpoints, such as `HTTP_SOURCE_PORT` and `DEBEZIUM_SINK_HTTP_URL`, or `KAFKA_HOST_PORT` and `KAFKA_BOOTSTRAP_SERVERS`.
 
@@ -524,7 +534,7 @@ bash scripts/cleanup.sh --volumes
 bash scripts/start-demo-kafka.sh
 ```
 
-This recreates the lab database, starts Redpanda and Debezium Connect, registers the demo connector, then starts Drasi. The fresh retained Kafka history includes the snapshot for Drasi to replay. Check:
+This recreates the lab database, starts Redpanda and Debezium Connect, registers the demo connector, then waits for both the connector and at least one task to be `RUNNING` and for `building.changes` to be available before starting Drasi. The readiness checks are bounded and fail with diagnostics instead of launching Drasi against an unavailable topic. The fresh retained Kafka history includes the snapshot for Drasi to replay. Check:
 
 ```bash
 curl --fail-with-body http://localhost:8083/connectors/building-comfort-connector/status
@@ -533,6 +543,8 @@ curl --fail-with-body http://localhost:8380/api/v1/instances/debezium-kafka-serv
 ```
 
 Use your overridden ports if different. Open the same dashboard and drive the same database writes. Optional helpers are `bash scripts/set-room.sh room_01_02_03 82 40 10` and `bash scripts/simulate.sh`; stop the simulation with Ctrl+C.
+
+The single-core demo broker uses `--memory 512M` to bound its allocation on shared development hosts. Docker still needs headroom for PostgreSQL, Connect, and other workloads. If setup times out, the connector becomes `UNASSIGNED`, or Drasi logs `Failed to fetch topic metadata`, inspect the Connect and broker logs and host resources; do not treat an empty dashboard as a successful snapshot. Once the lab feed is ready again, restart only this tutorial's Drasi process with `bash scripts/start-server.sh kafka` to replay retained history. Do not repeatedly reset the lab or modify unrelated Docker workloads to hide a delivery failure.
 
 ### What the lab provisions
 

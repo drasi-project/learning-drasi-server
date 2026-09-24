@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TUTORIAL_DIR="$REPO_ROOT/tutorials/debezium-integration"
 
-echo "🐘 Installing system dependencies (PostgreSQL client, curl)..."
-sudo apt-get update && sudo apt-get install -y postgresql-client curl
+echo "🐘 Installing system dependencies (PostgreSQL client, curl, jq)..."
+sudo apt-get update && sudo apt-get install -y postgresql-client curl jq
 
 echo "⬇️  Downloading Drasi Server binary..."
 cd "$TUTORIAL_DIR"
