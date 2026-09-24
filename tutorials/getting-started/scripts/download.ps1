@@ -53,7 +53,13 @@ Write-Host ""
 Write-Host "Verifying installations..."
 try {
     & $ServerPath --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "Drasi Server exited with code $LASTEXITCODE"
+    }
     & $SsePath --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "Drasi SSE CLI exited with code $LASTEXITCODE"
+    }
     Write-Host ""
     Write-Host "✅ Drasi Server installed to $ServerPath"
     Write-Host "✅ Drasi SSE CLI installed to $SsePath"

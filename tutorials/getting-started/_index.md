@@ -133,7 +133,20 @@ This tutorial downloads **Drasi Server 0.2.3** and uses the following published 
 
 These pins address plugin-loading compatibility only, not query correctness or completion of every tutorial step. The server's `--version` output reports a package SDK version; the native ABI reported by the plugin loader is the compatibility boundary.
 
-If you build from source, your server must support native host ABI 0.13 to use these plugins; do not assume the latest source checkout is compatible. Use the pinned binary setup if it is not. Obtain this tutorial's current assets using Steps 1–2 of [Download Binary](download-binary/), rather than an older `drasi-server-examples.zip`.
+If you build from source, your server must support native host ABI 0.13 to use these plugins; do not assume the latest source checkout is compatible. Use the pinned binary setup if it is not. From the root of your `drasi-server` source checkout, follow **Step 2 only** of [Download Binary](download-binary/#step-2-download-tutorial-files) to obtain the current tutorial assets rather than an older `drasi-server-examples.zip`. Do not create another `drasi-server` directory inside your checkout. Copy your release build to the path used by this tutorial:
+
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
+mkdir -p bin
+cp target/release/drasi-server bin/drasi-server
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
+New-Item -ItemType Directory -Force bin | Out-Null
+Copy-Item target/release/drasi-server.exe bin/drasi-server.exe
+{{< /tab >}}
+{{< /tabpane >}}
+
+Skip the binary installer in Step 3 if you want to keep your source-built server; install just the SSE CLI as described in Step 5 below.
 {{% /alert %}}
 
 ---
@@ -291,11 +304,7 @@ In **Terminal 1**, run Drasi Server with your new configuration:
 ```
 
 {{% alert title="The first launch downloads plugins — give it a minute" color="info" %}}
-The **first** time you start Drasi Server it downloads and cryptographically verifies the required plugins (Source, Bootstrap, and Reaction) from a container registry. This can pause for up to a minute — longer on a slow connection — while showing only a line such as:
-
-```text
-INFO drasi_host_sdk::registry::resolver: Resolving latest compatible version for ghcr.io/drasi-project/source/postgres...
-```
+The **first** time you start Drasi Server it downloads and cryptographically verifies the pinned plugins (Source, Bootstrap, and Reaction) from a container registry. Downloading and checking signatures can take up to a minute — longer on a slow connection — with pauses between log messages.
 
 This is normal — **do not interrupt it**. Subsequent starts are fast because the plugins are cached locally.
 {{% /alert %}}
@@ -755,7 +764,7 @@ To receive notifications from the SSE Reaction you'll use the **SSE CLI** — a 
 The SSE CLI will enable you to see query result updates from the `message-counts` query as you change the underlying data without needing to view the Drasi Server console or call the REST API repeatedly.
 
 {{% alert title="Built Drasi Server from source?" color="info" %}}
-If you set up your environment by [building from source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/), you won't have the SSE CLI yet. Follow [Install the SSE CLI](https://drasi.io/drasi-server/how-to-guides/installation/install-sse-cli/), selecting the binary from [release 0.2.3](https://github.com/drasi-project/drasi-server/releases/tag/0.2.3), so that `./bin/drasi-sse-cli` is available for the steps below. The other setup methods include it already.
+If you set up your environment by [building from source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/), you won't have the SSE CLI yet. Download the `drasi-sse-cli-*` asset for your OS and architecture from [release 0.2.3](https://github.com/drasi-project/drasi-server/releases/tag/0.2.3). Save it as `bin/drasi-sse-cli` on macOS/Linux and run `chmod +x bin/drasi-sse-cli`, or save the Windows x64 asset as `bin/drasi-sse-cli.exe` and run `Unblock-File bin/drasi-sse-cli.exe` in PowerShell. Use the existing `bin` directory in your source checkout; do not rerun the binary installer, which would replace your source-built server. The other setup methods include the SSE CLI already.
 {{% /alert %}}
 
 In **Terminal 3**, start the SSE CLI to stream changes from the `message-counts` query. You must specify the Drasi Server URL and the Continuous Query ID you want the SSE Reaction to subscribe to:

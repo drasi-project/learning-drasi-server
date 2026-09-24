@@ -82,7 +82,7 @@ You now have Drasi Server accessible at `./bin/drasi-server` from the repository
 
 ### Installing Git
 
-The tutorial uses `git` to clone the Drasi Server repository. If you don't have Git installed, you can install it from the <a href="https://git-scm.com/downloads" target="_blank" rel="noopener noreferrer">Git download page</a>.
+The tutorial uses `git` to clone the Learning Drasi Server repository. If you don't have Git installed, you can install it from the <a href="https://git-scm.com/downloads" target="_blank" rel="noopener noreferrer">Git download page</a>.
 
 To verify Git is installed, run:
 

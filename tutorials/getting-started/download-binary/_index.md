@@ -33,15 +33,16 @@ Download the current tutorial assets from `learning-drasi-server`. These include
 {{< tabpane persist="header" >}}
 {{< tab header="Mac / Linux" lang="bash" >}}
 curl -fsSL https://github.com/drasi-project/learning-drasi-server/archive/refs/heads/main.zip -o learning-drasi-server.zip
-unzip learning-drasi-server.zip -d .
+unzip -o learning-drasi-server.zip -d .
 mkdir -p examples
 cp -R learning-drasi-server-main/tutorials/getting-started examples/
 {{< /tab >}}
 {{< tab header="Windows" lang="powershell" >}}
 Invoke-WebRequest -Uri https://github.com/drasi-project/learning-drasi-server/archive/refs/heads/main.zip -OutFile learning-drasi-server.zip
-Expand-Archive -Path learning-drasi-server.zip -DestinationPath .
+Expand-Archive -Path learning-drasi-server.zip -DestinationPath . -Force
 New-Item -ItemType Directory -Force examples | Out-Null
-Copy-Item -Recurse learning-drasi-server-main/tutorials/getting-started examples/
+New-Item -ItemType Directory -Force examples/getting-started | Out-Null
+Copy-Item -Recurse -Force learning-drasi-server-main/tutorials/getting-started/* examples/getting-started/
 {{< /tab >}}
 {{< /tabpane >}}
 
