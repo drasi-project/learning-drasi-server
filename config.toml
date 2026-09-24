@@ -96,6 +96,14 @@ defaultContentLanguageInSubdir = false
     source = "tutorials/high-risk-containers"
     target = "content/tutorials/high-risk-containers"
 
+  [[module.mounts]]
+    source = "tutorials/otel-observability"
+    target = "content/tutorials/otel-observability"
+    # services/ is application code. bin/ holds the downloaded server, plugins,
+    # and the local drasi-core clone — including dashboard index.html that
+    # Hugo's text/html content policy rejects.
+    excludeFiles = ["services/**", "bin/**"]
+
   # Keep default mounts for the remaining components.
   [[module.mounts]]
     source = "static"
