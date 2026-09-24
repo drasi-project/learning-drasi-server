@@ -11,27 +11,27 @@ Use VS Code Dev Containers for a consistent development environment with all dep
 
 ## Prerequisites
 
-- **Git** — Needed to clone the tutorial repository
+- **Git** — Needed to clone the Drasi Server code
 - **Docker** — Needed to run the Drasi Server Dev Container and the PostgreSQL database used in the tutorial
 - **VS Code** — Needed to run the Drasi Server Dev Container and edit files during the tutorial
 - **VS Code Dev Containers extension** — Needed to run the Drasi Server Dev Container
 
 If you are not sure you have these prerequisites installed, or need help installing them, see the [troubleshooting section](#troubleshooting) at the end of this page for guidance.
 
-## Step 1: Clone the Tutorial Repository
+## Step 1: Clone Drasi Server Repo
 
-Clone the <a href="https://github.com/drasi-project/learning-drasi-server" target="_blank" rel="noopener noreferrer">Learning Drasi Server repository</a> so the setup scripts and plugin pins come from the same tutorial revision. In a terminal, run:
+Clone the <a href="https://github.com/drasi-project/drasi-server" target="_blank" rel="noopener noreferrer">Drasi Server repository</a>. In a terminal, run:
 
 ```bash
-git clone https://github.com/drasi-project/learning-drasi-server.git
+git clone https://github.com/drasi-project/drasi-server.git
 ```
 
 ## Step 2: Open Drasi Server in a VS Code Dev Container
 
-Once the cloning is complete, change to the newly created `learning-drasi-server` folder and open it in VS Code:
+Once the cloning is complete, change to the newly created `drasi-server` folder and open it in VS Code:
 
 ```bash
-cd learning-drasi-server
+cd drasi-server
 code .
 ```
 
@@ -47,10 +47,9 @@ VS Code will display a list of available Dev Container configurations. Select **
 
 The container takes several minutes to build on first run. During this time the setup script will:
 
-1. Download Drasi Server 0.2.3 and its SSE CLI into `./bin/`, matching the tutorial's native plugin ABI 0.13 pins.
+1. Download Drasi Server and put the executable in the `./bin/drasi-server` folder.
 2. Install a PostgreSQL client for use during the tutorial.
 3. Install `curl`, which is used in later tutorial steps.
-4. Copy the current tutorial assets into `./examples/getting-started/`.
 
 Watch the terminal for: **✅ Drasi Server Getting Started tutorial environment is ready!**
 
@@ -67,7 +66,7 @@ Verify that Drasi Server is accessible by running the following command in the t
 You should see output showing the version number, for example:
 
 ```text
-drasi-server 0.2.3
+drasi-server 0.2.0
 ```
 
 If you see a "file not found" error, the build may not have completed. Check the terminal output for errors and try rebuilding the container.

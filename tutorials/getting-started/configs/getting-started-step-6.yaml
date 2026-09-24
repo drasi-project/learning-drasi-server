@@ -24,10 +24,9 @@ persistConfig: true
 persistIndex: false
 autoInstallPlugins: true
 plugins:
-# Native plugin ABI 0.13, matching drasi-server 0.2.3.
-- ref: source/postgres:0.2.10
-- ref: bootstrap/postgres:0.2.13
-- ref: reaction/log:0.2.7
+- ref: source/postgres
+- ref: bootstrap/postgres
+- ref: reaction/log
 sources:
 - kind: postgres
   id: my-postgres

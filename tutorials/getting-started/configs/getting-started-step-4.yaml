@@ -26,10 +26,9 @@ enableUi: true
 pluginRegistry: ghcr.io/drasi-project
 autoInstallPlugins: true
 plugins:
-# Native plugin ABI 0.13, matching drasi-server 0.2.3.
-- ref: source/postgres:0.2.10
-- ref: bootstrap/postgres:0.2.13
-- ref: reaction/log:0.2.7
+- ref: source/postgres
+- ref: bootstrap/postgres
+- ref: reaction/log
 verifyPlugins: true
 hotReloadPlugins: false
 hotReloadDebounceMs: 2000

@@ -119,23 +119,6 @@ Choose your preferred environment for working through the Getting Started tutori
 
 After completing your preferred setup, return here to continue with the tutorial.
 
-{{% alert title="Runtime and plugin versions" color="info" %}}
-This tutorial downloads **Drasi Server 0.2.3** and uses the following published plugins with **native host ABI 0.13**. Keep these versions together: resolving unversioned plugins can select newer binaries requiring ABI 0.14, which this server cannot load.
-
-| Plugin | Version |
-| --- | --- |
-| `source/postgres` | `0.2.10` |
-| `bootstrap/postgres` | `0.2.13` |
-| `reaction/log` | `0.2.7` |
-| `reaction/sse` | `0.3.6` |
-| `source/http` | `0.2.11` |
-| `bootstrap/scriptfile` | `0.2.13` |
-
-These pins address plugin-loading compatibility only, not query correctness or completion of every tutorial step. The server's `--version` output reports a package SDK version; the native ABI reported by the plugin loader is the compatibility boundary.
-
-If you build from source, your server must support native host ABI 0.13 to use these plugins; do not assume the latest source checkout is compatible. Use the pinned binary setup if it is not. Obtain this tutorial's current assets using Steps 1–2 of [Download Binary](download-binary/), rather than an older `drasi-server-examples.zip`.
-{{% /alert %}}
-
 ---
 
 ## Step 2 of 7: Set Up the Tutorial Database {#database}
@@ -732,7 +715,7 @@ To install the SSE Reaction plugin on your Drasi Server from the Drasi plugin re
 curl -X POST http://localhost:8080/api/v1/plugins/install \
   -H "Content-Type: application/json" \
   -d '{
-     "ref": "reaction/sse:0.3.6",
+     "ref": "reaction/sse",
      "registry": "ghcr.io/drasi-project"
   }'
 {{< /tab >}}
@@ -740,7 +723,7 @@ curl -X POST http://localhost:8080/api/v1/plugins/install \
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/plugins/install `
   -ContentType "application/json" `
   -Body '{
-    "ref": "reaction/sse:0.3.6",
+    "ref": "reaction/sse",
     "registry": "ghcr.io/drasi-project"
   }'
 {{< /tab >}}
@@ -755,7 +738,7 @@ To receive notifications from the SSE Reaction you'll use the **SSE CLI** — a 
 The SSE CLI will enable you to see query result updates from the `message-counts` query as you change the underlying data without needing to view the Drasi Server console or call the REST API repeatedly.
 
 {{% alert title="Built Drasi Server from source?" color="info" %}}
-If you set up your environment by [building from source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/), you won't have the SSE CLI yet. Follow [Install the SSE CLI](https://drasi.io/drasi-server/how-to-guides/installation/install-sse-cli/), selecting the binary from [release 0.2.3](https://github.com/drasi-project/drasi-server/releases/tag/0.2.3), so that `./bin/drasi-sse-cli` is available for the steps below. The other setup methods include it already.
+If you set up your environment by [building from source](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/), you won't have the SSE CLI yet. Install it now by following [Install the SSE CLI](https://drasi.io/drasi-server/how-to-guides/installation/install-sse-cli/) so that `./bin/drasi-sse-cli` is available for the steps below. The other setup methods include it already.
 {{% /alert %}}
 
 In **Terminal 3**, start the SSE CLI to stream changes from the `message-counts` query. You must specify the Drasi Server URL and the Continuous Query ID you want the SSE Reaction to subscribe to:
@@ -1082,7 +1065,7 @@ In **Terminal 2**, install the HTTP Source plugin:
 curl -X POST http://localhost:8080/api/v1/plugins/install \
   -H "Content-Type: application/json" \
   -d '{
-     "ref": "source/http:0.2.11",
+     "ref": "source/http",
      "registry": "ghcr.io/drasi-project"
   }'
 {{< /tab >}}
@@ -1090,7 +1073,7 @@ curl -X POST http://localhost:8080/api/v1/plugins/install \
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/plugins/install `
   -ContentType "application/json" `
   -Body '{
-    "ref": "source/http:0.2.11",
+    "ref": "source/http",
     "registry": "ghcr.io/drasi-project"
   }'
 {{< /tab >}}
@@ -1103,7 +1086,7 @@ Then install the ScriptFile Bootstrap plugin:
 curl -X POST http://localhost:8080/api/v1/plugins/install \
   -H "Content-Type: application/json" \
   -d '{
-     "ref": "bootstrap/scriptfile:0.2.13",
+     "ref": "bootstrap/scriptfile",
      "registry": "ghcr.io/drasi-project"
   }'
 {{< /tab >}}
@@ -1111,7 +1094,7 @@ curl -X POST http://localhost:8080/api/v1/plugins/install \
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/plugins/install `
   -ContentType "application/json" `
   -Body '{
-    "ref": "bootstrap/scriptfile:0.2.13",
+    "ref": "bootstrap/scriptfile",
     "registry": "ghcr.io/drasi-project"
   }'
 {{< /tab >}}

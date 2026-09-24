@@ -3,8 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-# Keep the server release aligned with this tutorial's host ABI 0.13 plugin pins.
-$RepoUrl = "https://github.com/drasi-project/drasi-server/releases/download/0.2.3"
+$RepoUrl = "https://github.com/drasi-project/drasi-server/releases/latest/download"
 $InstallDir = "bin"
 
 # Check architecture

@@ -44,11 +44,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Check generated docs and plugin pins
-        run: |
-          python3 -B scripts/render-tutorials.py --check
-          python3 -B -m unittest discover -s tutorials/getting-started/tests -v
-
       - name: Prepare evaluation workspace
         run: |
           # The tutorial docs reference paths under `examples/getting-started/...`,

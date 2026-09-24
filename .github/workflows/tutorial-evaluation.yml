@@ -56,11 +56,6 @@ jobs:
       - name: Checkout this repo
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Check generated docs and plugin pins
-        run: |
-          python3 -B scripts/render-tutorials.py --check
-          python3 -B -m unittest discover -s tutorials/getting-started/tests -v
-
       - name: Prepare evaluation workspace
         run: |
           # The tutorial docs reference paths under `examples/<tutorial>/...`,

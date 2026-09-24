@@ -20,13 +20,13 @@ That's it! Docker, Rust, and all dependencies are pre-installed in the Codespace
 
 Click the button below to create a new Codespace:
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/drasi-project/learning-drasi-server)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/drasi-project/drasi-server)
 
 When prompted to select a **Dev Container Configuration**, choose **Drasi Server - Getting Started Tutorial**.
 
 Or manually:
 
-1. Go to [github.com/drasi-project/learning-drasi-server](https://github.com/drasi-project/learning-drasi-server)
+1. Go to [github.com/drasi-project/drasi-server](https://github.com/drasi-project/drasi-server)
 2. Click the green **Code** button
 3. Select the **Codespaces** tab
 4. Click the **...** menu and select **New with options...**
@@ -37,10 +37,9 @@ Or manually:
 
 The Codespace takes a few minutes to initialize. During this time the setup script will:
 
-1. Download Drasi Server 0.2.3 and its SSE CLI into `./bin/`, matching the tutorial's native plugin ABI 0.13 pins.
+1. Download Drasi Server and put the executable in the `./bin/drasi-server` folder.
 2. Install a PostgreSQL client for use during the tutorial.
 3. Install `curl`, which is used in later tutorial steps.
-4. Copy the current tutorial assets into `./examples/getting-started/` so the configs and plugin pins match this tutorial revision.
 
 Watch the terminal for: **✅ Drasi Server Getting Started tutorial environment is ready!**
 
@@ -59,7 +58,7 @@ Verify that Drasi Server is accessible:
 You should see output showing the version number, for example:
 
 ```text
-drasi-server 0.2.3
+drasi-server 0.2.0
 ```
 
 ## ✅ Setup Complete
