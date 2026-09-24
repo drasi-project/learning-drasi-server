@@ -96,6 +96,10 @@ defaultContentLanguageInSubdir = false
     source = "tutorials/high-risk-containers"
     target = "content/tutorials/high-risk-containers"
 
+  [[module.mounts]]
+    source = "tutorials/debezium-integration"
+    target = "content/tutorials/debezium-integration"
+
   # Keep default mounts for the remaining components.
   [[module.mounts]]
     source = "static"

@@ -1,0 +1,9 @@
+# Downloaded Drasi Server binary
+bin/
+
+# Local environment overrides
+.env
+
+# Server runtime artifacts
+server.log
+data/
