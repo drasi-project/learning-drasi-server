@@ -8,6 +8,7 @@ Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-ser
 | --- | --- | --- |
 | [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Open the **Drasi Server - Getting Started Tutorial** dev container (or a Codespace) and follow [tutorials/getting-started](tutorials/getting-started) |
 | [building-comfort](tutorials/building-comfort) | Smart-building comfort monitoring (PostgreSQL CDC, six comfort/alert queries with synthetic joins, the dashboard reaction) | Open the **Drasi Server - Building Comfort Tutorial** dev container and follow [tutorials/building-comfort](tutorials/building-comfort) |
+| [debezium-integration](tutorials/debezium-integration) | Feed an existing Debezium deployment into Drasi over HTTP or directly from Kafka | Follow the integration guide, or choose the **Drasi Server - Debezium Integration Tutorial** dev container for the optional disposable lab |
 | [otel-observability](tutorials/otel-observability) | Correlate Kubernetes rollouts, OTel health, and a PostgreSQL SLO policy (native OTel source, Collector, dashboard) | Open the **Drasi Server - OTel Observability Tutorial** dev container and follow [tutorials/otel-observability](tutorials/otel-observability) |
 
 See [tutorials](tutorials) for the full list of tutorials.
@@ -22,6 +23,8 @@ From the repository root:
 	- **Drasi Server - Getting Started Tutorial** — opens [tutorials/getting-started](tutorials/getting-started).
 	- **Drasi Server - Building Comfort Tutorial** — installs everything for
 	  [tutorials/building-comfort](tutorials/building-comfort) (PostgreSQL client + Drasi Server binary).
+	- **Drasi Server - Debezium Integration Tutorial** — prepares the
+	  [optional disposable Building Comfort lab](tutorials/debezium-integration/README.md#optional-appendix-disposable-building-comfort-lab) for trying Debezium over HTTP or Kafka.
 	- **Drasi Server - OTel Observability Tutorial** — installs everything for
 	  [tutorials/otel-observability](tutorials/otel-observability) (k3d, kubectl, PostgreSQL client, mock store images).
 4. Follow the README in the matching tutorial folder.

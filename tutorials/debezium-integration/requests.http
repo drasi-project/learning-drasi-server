@@ -1,0 +1,65 @@
+# Copyright 2025 The Drasi Authors.
+#
+# Drasi Server Debezium Integration - HTTP Requests
+# Use with the VS Code REST Client extension (humao.rest-client).
+
+@baseUrl = http://localhost:8380
+@dashboardUrl = http://localhost:3000
+@httpSource = http://localhost:9080
+@connectUrl = http://localhost:8083
+# For Kafka, change to debezium-kafka-server.
+@instanceId = debezium-http-server
+
+### Health check
+GET {{baseUrl}}/health
+
+### List sources
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/sources
+
+### Get building-facilities source
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/sources/building-facilities
+
+### Per-room comfort levels
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/queries/building-comfort-ui/results
+
+### Room alerts
+GET {{baseUrl}}/api/v1/instances/{{instanceId}}/queries/room-alert/results
+
+### List dashboards
+GET {{dashboardUrl}}/api/dashboards
+
+### Kafka Connect connectors (Path 2)
+GET {{connectUrl}}/connectors
+
+### Kafka Connect connector status (Path 2)
+GET {{connectUrl}}/connectors/building-comfort-connector/status
+
+### Mapping smoke test only: bypasses database/CDC and changes Drasi state.
+# Use only with an isolated test source, not an existing environment.
+POST {{httpSource}}/debezium
+Content-Type: application/json
+
+{
+  "op": "u",
+  "before": {
+    "id": "room_01_01_01",
+    "name": "Room 01",
+    "temperature": 70,
+    "humidity": 40,
+    "co2": 10,
+    "floor_id": "floor_01_01"
+  },
+  "after": {
+    "id": "room_01_01_01",
+    "name": "Room 01",
+    "temperature": 40,
+    "humidity": 20,
+    "co2": 700,
+    "floor_id": "floor_01_01"
+  },
+  "source": {
+    "table": "Room",
+    "schema": "public",
+    "db": "building_comfort"
+  }
+}
