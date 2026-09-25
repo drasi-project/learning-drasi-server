@@ -20,6 +20,8 @@ Drasi consumes Kafka directly. **There is no Kafka sink connector to install.**
 
 The examples use the `Room` table from [Building Comfort](../building-comfort/) to make the mapping concrete. Adapt the table, key, labels, and query properties to your own captured table. The full six-query/dashboard example remains in the bundled [HTTP configuration](server-config-http.yaml) and [Kafka configuration](server-config-kafka.yaml); this tutorial focuses on the integration.
 
+**Optional lab dashboard:** After starting either bundled demo in the [optional disposable lab](#optional-appendix-disposable-building-comfort-lab), open the Building Comfort dashboard at <http://localhost:3000/> or the forwarded **Comfort Dashboard** port. If you changed `DASHBOARD_PORT`, use that port instead. Confirm that all nine seeded rooms appear, then run the lab's room-change helpers and observe the updates. Loading the page alone does not confirm CDC delivery. The minimal integration examples below use a log reaction and do not start a dashboard.
+
 | Step | What You'll Do |
 | ---- | -------------- |
 | **[Step 1: Prepare your event and mapping](#step-1-of-3-prepare-your-event-and-mapping)** | Inspect a real event, choose identities, and plan initial state |
@@ -520,7 +522,7 @@ docker logs -f debezium-integration-server
 
 Do not run both the automatic and manual sequences. Compose defaults the sink to `http://host.docker.internal:9080/debezium`; override it with an address reachable from the Debezium container if needed. The local health check cannot prove that container-to-listener route works.
 
-Open `http://localhost:3000` (or the forwarded **Comfort Dashboard** port), wait for nine rooms, and inspect the instance-scoped `building-comfort-ui` results as in [Step 3](#step-3-of-3-verify-database-changes). In Terminal 2:
+Open the Building Comfort dashboard at <http://localhost:3000/> (or the forwarded **Comfort Dashboard** port; use your `DASHBOARD_PORT` override if different). Confirm that all nine seeded rooms appear and inspect the instance-scoped `building-comfort-ui` results as in [Step 3](#step-3-of-3-verify-database-changes). Loading the page alone does not confirm CDC delivery; observe the database-driven changes below too. In Terminal 2:
 
 ```bash
 bash scripts/break-room.sh room_01_01_01
@@ -546,7 +548,7 @@ curl --fail-with-body http://localhost:8380/api/v1/instances/debezium-kafka-serv
 curl --fail-with-body http://localhost:8380/api/v1/instances/debezium-kafka-server/queries/building-comfort-ui/results
 ```
 
-Use your overridden ports if different. Open the same dashboard and drive the same database writes. Optional helpers are `bash scripts/set-room.sh room_01_02_03 82 40 10` and `bash scripts/simulate.sh`; stop the simulation with Ctrl+C.
+Use your overridden ports if different. Open the Building Comfort dashboard at <http://localhost:3000/> (or the forwarded **Comfort Dashboard** port; use your `DASHBOARD_PORT` override if different). Confirm that all nine seeded rooms appear, then drive the same database writes and observe the updates to verify CDC delivery. Optional helpers are `bash scripts/set-room.sh room_01_02_03 82 40 10` and `bash scripts/simulate.sh`; stop the simulation with Ctrl+C.
 
 The single-core demo broker uses `--memory 512M` to bound its allocation on shared development hosts. Docker still needs headroom for PostgreSQL, Connect, and other workloads. If setup times out, the connector becomes `UNASSIGNED`, or Drasi logs `Failed to fetch topic metadata`, inspect the Connect and broker logs and host resources; do not treat an empty dashboard as a successful snapshot. Once the lab feed is ready again, restart only this tutorial's Drasi process with `bash scripts/start-server.sh kafka` to replay retained history. Do not repeatedly reset the lab or modify unrelated Docker workloads to hide a delivery failure.
 

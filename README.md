@@ -23,6 +23,8 @@ From the repository root:
 	- **Drasi Server - Getting Started Tutorial** — opens [tutorials/getting-started](tutorials/getting-started).
 	- **Drasi Server - Building Comfort Tutorial** — installs everything for
 	  [tutorials/building-comfort](tutorials/building-comfort) (PostgreSQL client + Drasi Server binary).
+	- **Drasi Server - Debezium Integration Tutorial** — prepares the
+	  [optional disposable Building Comfort lab](tutorials/debezium-integration/README.md#optional-appendix-disposable-building-comfort-lab) for trying Debezium over HTTP or Kafka.
 	- **Drasi Server - OTel Observability Tutorial** — installs everything for
 	  [tutorials/otel-observability](tutorials/otel-observability) (k3d, kubectl, PostgreSQL client, mock store images).
 4. Follow the README in the matching tutorial folder.
