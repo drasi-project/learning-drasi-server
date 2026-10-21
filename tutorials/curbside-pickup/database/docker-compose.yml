@@ -82,7 +82,9 @@ services:
     volumes:
       - curbside_mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      # First init uses a socket-only temporary server; require a TCP query.
+      # mysqladmin ping can succeed even when authentication is denied.
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysql -h 127.0.0.1 -uroot -D \"$$MYSQL_DATABASE\" -e 'SELECT 1'"]
       interval: 5s
       timeout: 5s
       retries: 12
