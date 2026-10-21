@@ -33,7 +33,11 @@ if ! docker ps 2>/dev/null | grep -q "$CONTAINER"; then
 fi
 
 # Pull the live list of room ids from the database.
-mapfile -t ROOMS < <(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -tAc 'SELECT id FROM "Room" ORDER BY id;')
+ROOM_IDS=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -tAc 'SELECT id FROM "Room" ORDER BY id;')
+ROOMS=()
+while IFS= read -r room; do
+    [ -z "$room" ] || ROOMS+=("$room")
+done <<< "$ROOM_IDS"
 
 if [ "${#ROOMS[@]}" -eq 0 ]; then
     echo "Error: no rooms found. Did the database seed correctly?"
