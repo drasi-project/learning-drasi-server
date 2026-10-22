@@ -1,0 +1,28 @@
+{
+  "name": "building-comfort-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "drasi_user",
+    "database.password": "drasi_password",
+    "database.dbname": "building_comfort",
+    "topic.prefix": "building",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium_kafka_building",
+    "publication.name": "dbz_kafka_building_pub",
+    "publication.autocreate.mode": "filtered",
+    "table.include.list": "public.Building,public.Floor,public.Room",
+    "snapshot.mode": "initial",
+    "tombstones.on.delete": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false",
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "building\\.public\\.(.*)",
+    "transforms.route.replacement": "building.changes"
+  }
+}

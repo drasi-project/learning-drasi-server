@@ -1,0 +1,82 @@
+{
+    "name": "Drasi Server - Debezium Integration Tutorial",
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm@sha256:9e35ebf156350ba25b117da6869907034b6e2437b1891e3a43395af0b7d3eda4",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "29",
+            "moby": false
+        },
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true
+        }
+    },
+    "postCreateCommand": "bash ../../.devcontainer/debezium-integration/post-create.sh",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/tutorials/debezium-integration",
+    "runArgs": [
+        "--privileged",
+        "--init",
+        "--ipc=host"
+    ],
+    "forwardPorts": [
+        8380,
+        3000,
+        5752,
+        9080,
+        19092,
+        8083
+    ],
+    "portsAttributes": {
+        "8380": {
+            "label": "Drasi Server API",
+            "onAutoForward": "notify"
+        },
+        "3000": {
+            "label": "Comfort Dashboard",
+            "onAutoForward": "notify"
+        },
+        "5752": {
+            "label": "PostgreSQL",
+            "onAutoForward": "silent"
+        },
+        "9080": {
+            "label": "Drasi HTTP CDC source",
+            "onAutoForward": "silent"
+        },
+        "19092": {
+            "label": "Kafka (Redpanda)",
+            "onAutoForward": "silent"
+        },
+        "8083": {
+            "label": "Kafka Connect REST",
+            "onAutoForward": "silent"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "humao.rest-client"
+            ],
+            "settings": {
+                "editor.formatOnSave": true
+            }
+        }
+    },
+    "remoteUser": "vscode",
+    "remoteEnv": {
+        "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+    },
+    "containerEnv": {
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5752",
+        "POSTGRES_HOST_PORT": "5752",
+        "SERVER_PORT": "8380",
+        "DASHBOARD_PORT": "3000",
+        "HTTP_SOURCE_PORT": "9080",
+        "DEBEZIUM_SINK_HTTP_URL": "http://host.docker.internal:9080/debezium",
+        "KAFKA_BOOTSTRAP_SERVERS": "127.0.0.1:19092",
+        "KAFKA_HOST_PORT": "19092",
+        "CONNECT_HOST_PORT": "8083"
+    }
+}

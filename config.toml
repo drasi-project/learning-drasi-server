@@ -97,6 +97,10 @@ defaultContentLanguageInSubdir = false
     target = "content/tutorials/high-risk-containers"
 
   [[module.mounts]]
+    source = "tutorials/debezium-integration"
+    target = "content/tutorials/debezium-integration"
+
+  [[module.mounts]]
     source = "tutorials/otel-observability"
     target = "content/tutorials/otel-observability"
     # services/ is application code. bin/ holds the downloaded server, plugins,
