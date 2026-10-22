@@ -3,7 +3,8 @@
 
 $ErrorActionPreference = "Stop"
 
-$RepoUrl = "https://github.com/drasi-project/drasi-server/releases/latest/download"
+# Keep the server release aligned with this tutorial's host ABI 0.13 plugin pins.
+$RepoUrl = "https://github.com/drasi-project/drasi-server/releases/download/0.2.3"
 $InstallDir = "bin"
 
 # Check architecture
@@ -52,7 +53,13 @@ Write-Host ""
 Write-Host "Verifying installations..."
 try {
     & $ServerPath --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "Drasi Server exited with code $LASTEXITCODE"
+    }
     & $SsePath --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "Drasi SSE CLI exited with code $LASTEXITCODE"
+    }
     Write-Host ""
     Write-Host "✅ Drasi Server installed to $ServerPath"
     Write-Host "✅ Drasi SSE CLI installed to $SsePath"
