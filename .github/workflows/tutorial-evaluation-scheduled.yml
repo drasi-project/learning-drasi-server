@@ -72,6 +72,13 @@ jobs:
           configFile: ${{ matrix.devcontainer }}
           push: never
           runCmd: |
+            set -e
+            ATTEMPT_DIR=evaluation-attempts/attempt-1
+            mkdir -p evaluation-attempts
+            mkdir "$ATTEMPT_DIR" "$ATTEMPT_DIR/bin"
+            cp bin/drasi-server bin/drasi-sse-cli "$ATTEMPT_DIR/bin/"
+            cp -R examples tutorial-docs prompt.md "$ATTEMPT_DIR/"
+            cd "$ATTEMPT_DIR"
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -87,8 +94,7 @@ jobs:
               --deny-tool 'shell(rm -rf /*)' \
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
-              --allow-url 127.0.0.1 \
-              --model claude-opus-4.7 || true
+              --allow-url 127.0.0.1 || true
             REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
             if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
               exit 1
@@ -97,10 +103,12 @@ jobs:
       - name: Clean up before retry (attempt 2)
         if: steps.attempt1.outcome == 'failure'
         run: |
-          echo "Attempt 1 failed. Removing all containers and images to force a fresh devcontainer build..."
-          docker rm -f $(docker ps -aq) 2>/dev/null || true
-          docker system prune -af --volumes 2>/dev/null || true
-          sleep 10
+          echo "Attempt 1 failed. Removing this evaluation's devcontainer and tutorial database..."
+          CONTAINERS=$(docker ps -aq --filter "label=devcontainer.local_folder=$GITHUB_WORKSPACE")
+          for container in $CONTAINERS; do
+            docker rm -f "$container"
+          done
+          docker compose -f examples/getting-started/database/docker-compose.yml down --volumes --remove-orphans
 
       - name: Run evaluation (attempt 2)
         id: attempt2
@@ -114,6 +122,13 @@ jobs:
           configFile: ${{ matrix.devcontainer }}
           push: never
           runCmd: |
+            set -e
+            ATTEMPT_DIR=evaluation-attempts/attempt-2
+            mkdir -p evaluation-attempts
+            mkdir "$ATTEMPT_DIR" "$ATTEMPT_DIR/bin"
+            cp bin/drasi-server bin/drasi-sse-cli "$ATTEMPT_DIR/bin/"
+            cp -R examples tutorial-docs prompt.md "$ATTEMPT_DIR/"
+            cd "$ATTEMPT_DIR"
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -129,8 +144,7 @@ jobs:
               --deny-tool 'shell(rm -rf /*)' \
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
-              --allow-url 127.0.0.1 \
-              --model claude-opus-4.7 || true
+              --allow-url 127.0.0.1 || true
             REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
             if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
               exit 1
@@ -139,10 +153,12 @@ jobs:
       - name: Clean up before retry (attempt 3)
         if: steps.attempt2.outcome == 'failure'
         run: |
-          echo "Attempt 2 failed. Removing all containers and images to force a fresh devcontainer build..."
-          docker rm -f $(docker ps -aq) 2>/dev/null || true
-          docker system prune -af --volumes 2>/dev/null || true
-          sleep 10
+          echo "Attempt 2 failed. Removing this evaluation's devcontainer and tutorial database..."
+          CONTAINERS=$(docker ps -aq --filter "label=devcontainer.local_folder=$GITHUB_WORKSPACE")
+          for container in $CONTAINERS; do
+            docker rm -f "$container"
+          done
+          docker compose -f examples/getting-started/database/docker-compose.yml down --volumes --remove-orphans
 
       - name: Run evaluation (attempt 3)
         id: attempt3
@@ -155,6 +171,13 @@ jobs:
           configFile: ${{ matrix.devcontainer }}
           push: never
           runCmd: |
+            set -e
+            ATTEMPT_DIR=evaluation-attempts/attempt-3
+            mkdir -p evaluation-attempts
+            mkdir "$ATTEMPT_DIR" "$ATTEMPT_DIR/bin"
+            cp bin/drasi-server bin/drasi-sse-cli "$ATTEMPT_DIR/bin/"
+            cp -R examples tutorial-docs prompt.md "$ATTEMPT_DIR/"
+            cd "$ATTEMPT_DIR"
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -170,8 +193,7 @@ jobs:
               --deny-tool 'shell(rm -rf /*)' \
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
-              --allow-url 127.0.0.1 \
-              --model claude-opus-4.7 || true
+              --allow-url 127.0.0.1 || true
             REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
             if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
               exit 1
@@ -179,11 +201,16 @@ jobs:
 
       - name: Check evaluation status
         if: always()
+        env:
+          ATTEMPT_DIR: evaluation-attempts/attempt-${{ steps.attempt3.outcome != 'skipped' && steps.attempt3.outcome != '' && '3' || steps.attempt2.outcome != 'skipped' && steps.attempt2.outcome != '' && '2' || '1' }}
         run: |
-          REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+          REPORT=""
+          if [ -d "$ATTEMPT_DIR" ]; then
+            REPORT=$(find "$ATTEMPT_DIR" -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
+          fi
 
           if [ -z "$REPORT" ]; then
-            echo "::error::No report.md found in evaluation directory"
+            echo "::error::No report.md found for $ATTEMPT_DIR"
             exit 1
           fi
 
@@ -223,7 +250,7 @@ jobs:
         with:
           name: evaluation-results-${{ matrix.tutorial }}-${{ github.run_id }}
           path: |
-            evaluation-*/
+            evaluation-attempts/attempt-*/evaluation-*/
             tutorial-docs/
             prompt.md
 
