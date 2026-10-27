@@ -13,8 +13,8 @@
 # limitations under the License.
 
 # In-cluster OpenTelemetry Collector. Mock services export here; the Collector
-# forwards the stream to Drasi Server on the host. setup-cluster.sh rewrites
-# host.k3d.internal to a reachable address when that alias is missing (DinD).
+# forwards the stream to Drasi Server on the host. scripts/demo.py renders the
+# owned namespace and reachable host endpoint before applying this template.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -71,7 +71,7 @@ spec:
     spec:
       containers:
         - name: otel-collector
-          image: otel/opentelemetry-collector:0.136.0
+          image: docker.io/otel/opentelemetry-collector:0.136.0
           imagePullPolicy: IfNotPresent
           args:
             - --config=/etc/otelcol/relay.yaml

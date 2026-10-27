@@ -7,3 +7,5 @@ bin/
 # Server runtime artifacts
 server.log
 data/
+.runtime/
+scripts/__pycache__/

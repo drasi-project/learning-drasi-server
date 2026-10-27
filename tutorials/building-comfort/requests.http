@@ -52,8 +52,8 @@ GET {{instanceUrl}}/sources/building-facilities
 ### List all queries
 GET {{instanceUrl}}/queries
 
-### Per-room comfort levels (the building view feed)
-GET {{instanceUrl}}/queries/building-comfort-ui/results
+### Shared room comfort (feeds floor rollups, room alerts and the building view)
+GET {{instanceUrl}}/queries/room-comfort/results
 
 ### Overall building comfort level
 GET {{instanceUrl}}/queries/building-comfort-level-calc/results

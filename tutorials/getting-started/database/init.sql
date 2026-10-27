@@ -32,8 +32,7 @@ $$;
 GRANT CREATE ON DATABASE getting_started TO drasi_user;
 GRANT ALL PRIVILEGES ON DATABASE getting_started TO drasi_user;
 
--- Drop existing table if exists
-DROP TABLE IF EXISTS "Message" CASCADE;
+-- Apply only to a new, owned database. Re-running must fail, not erase messages.
 
 -- Message table matching Platform tutorial schema
 -- Stores messages with sender and content
@@ -83,16 +82,8 @@ SELECT * FROM (VALUES
 ) AS data("From", "Message")
 WHERE NOT EXISTS (SELECT 1 FROM "Message");
 
--- Create replication slot for CDC (if not exists)
--- The slot captures only changes made AFTER this point.
--- Existing table data is retrieved via bootstrap when queries start.
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'drasi_slot') THEN
-        PERFORM pg_create_logical_replication_slot('drasi_slot', 'pgoutput');
-    END IF;
-END
-$$;
+-- scripts/demo.py creates drasi_slot in a separate session after this schema
+-- and seed data have committed. Setup never drops a slot or reseeds existing data.
 
 -- Show the summary
 SET client_min_messages = NOTICE;
@@ -101,6 +92,6 @@ BEGIN
     RAISE NOTICE 'Getting Started database initialized successfully!';
     RAISE NOTICE 'Tables: Message';
     RAISE NOTICE 'Publication: drasi_pub';
-    RAISE NOTICE 'Replication slot: drasi_slot';
+    RAISE NOTICE 'Next: create drasi_slot in a separate session';
 END
 $$;

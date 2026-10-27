@@ -15,7 +15,6 @@
 """Build and run Building Comfort with matching local ComputationGraph artifacts."""
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -27,13 +26,16 @@ import socket
 import subprocess
 import sys
 import time
-import tomllib
 import urllib.error
 import urllib.request
 
 
 TUTORIAL = Path(__file__).resolve().parents[1]
-WORKSPACE = TUTORIAL.parents[2]
+sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
+import local_build
+from local_build import sha256
+
+
 INSTANCE = "building-comfort-server"
 PLUGINS = (
     "drasi-source-postgres",
@@ -42,7 +44,7 @@ PLUGINS = (
     "drasi-reaction-log",
 )
 QUERIES = (
-    "building-comfort-ui", "building-comfort-level-calc",
+    "room-comfort", "building-comfort-level-calc",
     "floor-comfort-level-calc", "room-alert", "floor-alert", "building-alert",
 )
 
@@ -83,88 +85,12 @@ def run(argv, *, capture=False, stdin=None, cwd=TUTORIAL):
     ).stdout
 
 
-def sha256(path):
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
 def build():
-    server = Path(os.environ.get("DRASI_SERVER_REPO", WORKSPACE / "drasi-server")).resolve()
-    core = server.parent / "drasi-core"
-    manifest = server / "Cargo.toml"
-    if not manifest.is_file() or not (core / "lib/Cargo.toml").is_file():
-        raise RuntimeError(
-            "Build requires existing sibling drasi-server/ and drasi-core/ checkouts. "
-            "Use their ComputationGraph branches; this script does not clone or switch branches."
-        )
-    dependency = tomllib.loads(manifest.read_text())["dependencies"]["drasi-lib"]
-    if "path" not in dependency or (server / dependency["path"]).resolve() != core / "lib":
-        raise RuntimeError("Server must use the sibling drasi-core/lib path dependency")
-    state = runtime_dir()
-    if (state / "server.lock").exists():
-        raise RuntimeError("Stop this demo before rebuilding; server.lock is present")
-    target = Path(os.environ.get("CARGO_TARGET_DIR", server / "target")).resolve()
-    common = ["--locked", "--target-dir", target]
-    run(["cargo", "build", "--manifest-path", manifest, *common, "--bin", "drasi-server"],
-        cwd=server)
-    packages = [item for package in PLUGINS for item in ("-p", package)]
-    run(["cargo", "build", "--manifest-path", core / "Cargo.toml", *common,
-         *packages, "--lib", "--features", "dynamic-plugin"], cwd=core)
-    extension = ".dll" if sys.platform == "win32" else ".dylib" if sys.platform == "darwin" else ".so"
-    prefix = "" if sys.platform == "win32" else "lib"
-    binary = "drasi-server.exe" if sys.platform == "win32" else "drasi-server"
-    files = {"server": target / "debug" / binary}
-    files.update({package: target / "debug" / (prefix + package.replace("-", "_") + extension)
-                  for package in PLUGINS})
-    # Copy a complete, versioned set rather than loading whichever libraries
-    # happen to be present in the shared Cargo target or global plugin cache.
-    hashes = {name: sha256(path) for name, path in files.items()}
-    identity = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
-    bundle = state / "builds" / identity
-    (bundle / "plugins").mkdir(parents=True, exist_ok=True)
-    artifacts = {}
-    for name, source in files.items():
-        destination = (bundle if name == "server" else bundle / "plugins") / source.name
-        if not destination.exists():
-            shutil.copy2(source, destination)
-        if sha256(destination) != hashes[name]:
-            raise RuntimeError(f"Artifact copy/hash mismatch: {destination}")
-        artifacts[name] = {"path": str(destination), "sha256": hashes[name]}
-    provenance = {
-        "runtime": "computationGraph", "artifacts": artifacts,
-        "rustc": run(["rustc", "--version"], capture=True).strip(),
-        "repositories": {
-            name: {
-                "revision": run(["git", "-C", path, "rev-parse", "HEAD"], capture=True).strip(),
-                "status": run(["git", "-C", path, "status", "--short"], capture=True),
-            } for name, path in (("drasi-server", server), ("drasi-core", core))
-        },
-    }
-    temporary = state / "build.json.tmp"
-    temporary.write_text(json.dumps(provenance, indent=2) + "\n")
-    temporary.replace(state / "build.json")
-    print(f"Built Server and all four plugins. Build record: {state / 'build.json'}")
+    local_build.build(runtime_dir(), PLUGINS)
 
 
 def verified_build():
-    path = runtime_dir() / "build.json"
-    if not path.is_file():
-        raise RuntimeError("No local build record. Run python3 scripts/demo.py build first.")
-    record = json.loads(path.read_text())
-    if record["runtime"] != "computationGraph":
-        raise RuntimeError("Build record does not identify the ComputationGraph runtime")
-    artifacts = record["artifacts"]
-    if set(artifacts) != {"server", *PLUGINS}:
-        raise RuntimeError("Build record must contain Server and exactly the four required plugins")
-    for artifact in artifacts.values():
-        path = Path(artifact["path"])
-        if not path.is_file() or sha256(path) != artifact["sha256"]:
-            raise RuntimeError(f"Missing or changed local artifact: {path}; rebuild the demo")
-    plugins = Path(artifacts[PLUGINS[0]]["path"]).parent
-    expected = {Path(artifacts[name]["path"]) for name in PLUGINS}
-    if set(plugins.iterdir()) != expected:
-        raise RuntimeError(f"Unexpected files in the private plugin directory: {plugins}")
-    return Path(artifacts["server"]["path"]), plugins
+    return local_build.verified_build(runtime_dir(), PLUGINS)
 
 
 def engine():

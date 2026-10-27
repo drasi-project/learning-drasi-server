@@ -87,8 +87,8 @@ instances:
 # Its ordinary result nodes feed floor averages, then building averages.
 # Each alert query consumes the corresponding level's result nodes.
     queries:
-  # Query 1: per-room comfort level (drives the building dashboard view).
-      - id: building-comfort-ui
+  # Query 1: shared room comfort and hierarchy for rollups, alerts and display.
+      - id: room-comfort
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -145,7 +145,7 @@ instances:
             r.BuildingName AS BuildingName,
             avg(r.ComfortLevel) AS ComfortLevel
         inputs:
-          - building-comfort-ui
+          - room-comfort
 
   # Query 3: overall building comfort (avg of floor averages, not room-weighted).
       - id: building-comfort-level-calc
@@ -166,6 +166,8 @@ instances:
       - id: room-alert
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: RoomAlert
         query: |
           MATCH (r:RoomComfort)
           WHERE r.ComfortLevel < 40 OR r.ComfortLevel > 50
@@ -174,12 +176,14 @@ instances:
             r.RoomName AS RoomName,
             r.ComfortLevel AS ComfortLevel
         inputs:
-          - building-comfort-ui
+          - room-comfort
 
   # Query 5: floors whose average comfort is outside 40-50.
       - id: floor-alert
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: FloorAlert
         query: |
           MATCH (f:FloorComfort)
           WHERE f.ComfortLevel < 40 OR f.ComfortLevel > 50
@@ -194,6 +198,8 @@ instances:
       - id: building-alert
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: BuildingAlert
         query: |
           MATCH (b:BuildingComfort)
           WHERE b.ComfortLevel < 40 OR b.ComfortLevel > 50
@@ -216,7 +222,7 @@ instances:
         id: building-comfort-dashboard
         autoStart: true
         queries:
-          - building-comfort-ui
+          - room-comfort
           - building-comfort-level-calc
           - floor-comfort-level-calc
           - room-alert
@@ -239,7 +245,7 @@ instances:
                 title: Building Comfort
                 grid: {x: 0, y: 0, w: 8, h: 10}
                 config:
-                  queryId: building-comfort-ui
+                  queryId: room-comfort
                   template: |
                     # {{#if count}}{{rows.0.BuildingName}}{{else}}Waiting for data...{{/if}}
 

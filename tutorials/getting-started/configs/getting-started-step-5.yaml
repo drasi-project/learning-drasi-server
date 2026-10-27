@@ -1,97 +1,56 @@
-# Copyright 2026 The Drasi Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# Drasi Server Configuration
-#
-# Edit this file to customize your configuration.
-
-host: 0.0.0.0
-port: 8080
+# Copyright 2026 The Drasi Authors.
+# Licensed under the Apache License, Version 2.0.
+apiVersion: drasi.io/v1
+host: 127.0.0.1
+port: ${SERVER_PORT:-8180}
 logLevel: info
 persistConfig: true
-autoInstallPlugins: true
-plugins:
-  - ref: source/postgres
-  - ref: bootstrap/postgres
-  - ref: reaction/log
+enableUi: false
+autoInstallPlugins: false
 instances:
-  - id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
+  - id: getting-started-server
     persistIndex: false
     sources:
       - kind: postgres
         id: my-postgres
         autoStart: true
-        bootstrapProvider:
-          kind: postgres
-        host:
-          kind: EnvironmentVariable
-          name: DB_HOST
-          default: localhost
-        port: 5432
+        host: 127.0.0.1
+        port: ${POSTGRES_PORT:-5532}
         database: getting_started
         user: drasi_user
         password: drasi_password
-        tables:
-          - Message
+        tables: [Message]
         slotName: drasi_slot
         publicationName: drasi_pub
-        sslMode: prefer
+        sslMode: disable
         tableKeys:
           - table: Message
-            keyColumns:
-              - MessageId
+            keyColumns: [MessageId]
+        bootstrapProvider:
+          kind: postgres
     queries:
       - id: all-messages
         autoStart: true
+        inputs: [my-postgres]
+        result: {label: Message}
         query: |
           MATCH (m:Message)
           RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
         queryLanguage: GQL
-        middleware: []
-        inputs:
-          - component: my-postgres
-            nodes: []
-            relations: []
-            pipeline: []
-        enableBootstrap: true
       - id: hello-world-senders
         autoStart: true
+        inputs: [all-messages]
+        result: {label: HelloWorldSender}
         query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
         queryLanguage: Cypher
-        middleware: []
-        inputs:
-          - component: my-postgres
-            nodes: []
-            relations: []
-            pipeline: []
-        enableBootstrap: true
       - id: message-counts
         autoStart: true
+        inputs: [all-messages]
+        result: {label: MessageCount}
         query: MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count
         queryLanguage: Cypher
-        middleware: []
-        inputs:
-          - component: my-postgres
-            nodes: []
-            relations: []
-            pipeline: []
-        enableBootstrap: true
     reactions:
       - kind: log
         id: log-reaction
-        queries:
-          - all-messages
-          - hello-world-senders
         autoStart: true
-        routes: {}
+        queries: [all-messages, hello-world-senders]

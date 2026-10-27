@@ -1,0 +1,15 @@
+{
+  "id": "messages-with-location",
+  "autoStart": true,
+  "inputs": ["all-messages", "location-tracker"],
+  "result": {"label": "LocatedMessage"},
+  "query": "MATCH (m:Message)-[:FROM_USER]->(u:UserLocation) RETURN m.MessageId AS Id, m.Message AS Message, m.From AS Sender, u.location AS Location, u.status AS Status",
+  "queryLanguage": "Cypher",
+  "joins": [{
+    "id": "FROM_USER",
+    "keys": [
+      {"label": "Message", "property": "From"},
+      {"label": "UserLocation", "property": "name"}
+    ]
+  }]
+}

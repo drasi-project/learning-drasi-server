@@ -4,120 +4,88 @@ title: "Curbside Pickup"
 linkTitle: "Curbside Pickup"
 weight: 40
 description: >
-  Build a no-code, real-time dashboard over two different databases - a PostgreSQL orders store and a MySQL vehicles store - joined by license plate, with a small browser console to drive the changes.
+  Build a real-time dashboard over PostgreSQL orders and MySQL vehicles, with a shared computation graph join and a browser console to drive the changes.
 ---
 
-Imagine a store running curbside pickup. The **retail team** manages customer orders in one database and marks an order *ready* when it's prepared. Independently, the **physical operations team** tracks pickup vehicles in *another* database, and a driver sets their location to *Curbside* when they arrive. The two systems never talk to each other.
+Imagine a store running curbside pickup. The **retail team** manages customer orders in PostgreSQL and marks an order *ready* when it is prepared. Independently, the **physical operations team** tracks vehicles in MySQL, and a driver sets their location to *Curbside* when they arrive. The two systems never talk to each other.
 
-You want a single live dashboard with six panels:
+You want one live dashboard with six panels:
 
-- an **Orders · Preparing** panel and an **Orders · Ready** panel, so an order visibly moves from one to the other the moment it's marked *ready*,
-- a **Vehicles · Parking** panel and a **Vehicles · Curbside** panel, so a car moves between them as the driver pulls up, plus the two situations that matter:
-- a **Matched Orders** panel that lights up the instant an order is *ready* **and** its driver is at the curbside, so staff know exactly which order to carry out, and
-- a **Delayed Orders** panel that flags drivers who have been waiting at the curbside too long while their order still isn't ready.
+- 🍕 **Orders · Preparing** and **Orders · Ready**, so an order moves between panels when staff mark it ready.
+- 🚗 **Vehicles · Parking** and **Vehicles · Curbside**, so a car moves between panels as the driver pulls up.
+- 📦 **Matched Orders**, showing ready orders whose drivers are at the curbside.
+- ⚠️ **Delayed Orders**, flagging drivers waiting at the curbside for more than 10 seconds while their orders are not ready.
 
-The catch: the orders live in **PostgreSQL** and the vehicles live in **MySQL**, and what you care about - a *ready* order whose driver has *arrived* - only exists when you combine a fact from each. Building this the traditional way means **polling both databases**, and that's where it gets awkward. Do you poll the orders, and for each *ready* one go look up its vehicle in the other database? Then a car pulling up to the curbside changes nothing until your *next* orders poll happens to re-check it - you react to order changes but sit blind to vehicle changes between polls. Flip it around and poll the vehicles instead, and now you're blind to an order flipping to *ready*. Either way you get reactivity from **one** side and stale, interval-delayed lookups on the other, and the more sources you add the worse the fan-out of cross-database queries gets. This tutorial builds it on **Drasi Server** instead: two sources, six continuous queries (two of which join across both databases), and the built-in **dashboard reaction** - **no application code to write**. Drasi watches the change feed of *both* databases at once, so a change on **either** side re-evaluates the join immediately - no polling, no blind side. A small browser-based **operations console** stands in for the two operations teams so you can drive the changes yourself and watch every SQL statement as it runs.
+Polling one database and looking up rows in the other leaves a blind spot between polls. Drasi watches **both change feeds** instead. A PostgreSQL order change or a MySQL vehicle change updates the same cross-database join immediately. The computation graph calculates that join **once**, then feeds separate delivery and delay queries. The built-in dashboard reaction displays the six panels automatically; there is no dashboard application code to write.
 
-<div class="flow-diagram">
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-database"></i>
-    </div>
-    <div class="flow-step__label">Sources</div>
-    <div class="flow-step__description">Connect to your data sources</div>
-  </div>
-
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-filter"></i>
-    </div>
-    <div class="flow-step__label">Continuous Queries</div>
-    <div class="flow-step__description">Define what changes matter</div>
-  </div>
-
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-bolt"></i>
-    </div>
-    <div class="flow-step__label">Reactions</div>
-    <div class="flow-step__description">Take action automatically</div>
-  </div>
-</div>
+A small **operations console** stands in for the two teams. You click its buttons to make real database changes, and it shows every SQL `UPDATE` and which database received it.
 
 | Step | What You'll Do |
 | ---- | ------------- |
-| **[Step 1: Set Up Your Environment](#setup)** | Open the dev container (or install the tools locally) |
-| **[Step 2: Run the Demo](#run)** | One command starts both databases, Drasi Server, and the operations console |
+| **[Step 1: Set Up Your Environment](#setup)** | Build matching local Server/Core and plugins |
+| **[Step 2: Run the Demo](#run)** | Start both databases, Drasi Server, and the operations console |
 | **[Step 3: Open the Dashboard](#dashboard)** | Watch all six panels update live |
-| **[Step 4: Drive Change](#drive)** | Use the browser console to change orders and vehicles, and watch Drasi react |
-| **[How It Works](#how)** | Understand the two sources, the cross-database join, and the six queries |
+| **[Step 4: Drive Change](#drive)** | Change orders and vehicles in the browser |
+| **[How It Works](#how)** | Understand CDC, the shared join, query chaining, and timers |
 
 {{% alert title="Before you begin" color="info" %}}
-- **One terminal:** a single command starts the databases, Drasi Server, and the operations console together; it stays in the foreground. You drive changes from your **browser**.
-- **Working directory:** run every command from the tutorial directory (`tutorials/curbside-pickup/`). The dev container opens there automatically; if you're running locally, `cd tutorials/curbside-pickup` first.
-- **Command tabs:** commands are shown in tabs (*bash / zsh* and *PowerShell*). Use the one for your shell. The dev container and Codespaces use *bash*.
-- **Ports:** the Drasi Server API is on `8480`, the dashboard is on `3000`, the operations console is on `3001`, PostgreSQL is published on `5742`, and MySQL on `3309`.
+- Run commands from `tutorials/curbside-pickup/`.
+- One foreground command runs Server and the operations console. You drive changes in your browser.
+- Default ports: API `8480`, dashboard `3000`, console `3001`, PostgreSQL `5742`, MySQL `3309`.
+- This tutorial uses the existing sibling `drasi-server/` and `drasi-core/` checkouts. It does not download released Drasi binaries or plugins, clone repositories, or switch branches.
 {{% /alert %}}
 
 ## Step 1 of 4: Set Up Your Environment {#setup}
 
-This tutorial needs **Docker** (it runs PostgreSQL and MySQL) and **Node.js 18+** (for the operations console). The easiest way to get everything is the **dev container**.
+The workspace must contain these three existing checkouts:
 
-### Option A: Dev Container or GitHub Codespaces (recommended)
+```text
+workspace/
+  drasi-core/
+  drasi-server/
+  learning-drasi-server/
+```
 
-1. Open this repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
-2. When prompted for a configuration, choose **Drasi Server - Curbside Pickup Tutorial**.
-3. Wait for the container to finish. Its setup script downloads the Drasi Server binary and installs the console's dependencies.
+Server must reference `../drasi-core/lib` as a local path dependency. Use the matching ComputationGraph versions already checked out in this workspace. A Server binary alone is insufficient: its **five dynamic plugins** must be rebuilt against the same local Core/SDK.
 
-That's it. Skip ahead to [Step 2](#run).
+### Option A: Local Dev Container
+
+Open `learning-drasi-server` in VS Code, run **Reopen in Container**, and choose **Drasi Server - Curbside Pickup Tutorial**. The configuration mounts the parent workspace so the existing Core and Server checkouts are visible. Setup installs build prerequisites, Podman/Compose and the console dependencies, then builds matching local Server and plugins.
+
+The container opens in this tutorial directory. Continue to [Step 2](#run). A Codespace created from only `learning-drasi-server` does **not** provide the required sibling sources; setup fails explicitly rather than downloading a different Drasi release.
 
 ### Option B: Run Locally
 
-You'll need **Docker**, **Node.js 18+**, and **bash** (the helper scripts use it; on Windows use Git Bash or WSL, or use the PowerShell tabs). From the repository root, move into the tutorial directory and download the Drasi Server binary:
+You need **Podman with a working Compose provider**, **Python 3.11+**, **Node.js 18+ with npm**, and **Rust 1.95.0** with the native build dependencies required by the local Server/Core checkouts. On macOS or Windows, start your Podman machine first. On Windows, use a supported Rust native toolchain, or WSL with the same sibling checkout layout.
+
+From `learning-drasi-server`, enter the tutorial and build:
 
 {{< tabpane persist="header" >}}
 {{< tab header="bash / zsh" lang="bash" >}}
 cd tutorials/curbside-pickup
-bash scripts/download.sh
+(cd webui && npm ci)
+RUSTUP_TOOLCHAIN=1.95.0 CARGO_BUILD_JOBS=1 python3 scripts/demo.py build
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
 cd tutorials/curbside-pickup
-powershell -ExecutionPolicy Bypass -File scripts/download.ps1
+Push-Location webui
+npm ci
+Pop-Location
+$env:RUSTUP_TOOLCHAIN = "1.95.0"
+$env:CARGO_BUILD_JOBS = "1"
+python scripts/demo.py build
 {{< /tab >}}
 {{< /tabpane >}}
 
-This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
+The shared source-build helper builds Server and `source/postgres`, `bootstrap/postgres`, `source/mysql`, `bootstrap/mysql`, and `reaction/dashboard`. It records provenance and artifact hashes in `.runtime/build.json` and copies the complete build into a private, content-addressed bundle. Startup verifies that bundle; it does not search `PATH`, reuse an old `bin/`, or load the global plugin cache. Rebuild after changing Server or Core.
 
-### Option C: Build from Source
+Build dependencies may need to be fetched the first time. For an already provisioned offline workspace, set `CARGO_NET_OFFLINE=true`. Serialize builds when sharing a Cargo target directory with another tutorial or agent.
 
-Prefer to compile Drasi Server yourself? Follow the [**Build from Source**](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) installation guide to clone the repository and build the binary.
-
-Once it is built, make the `drasi-server` binary available to this tutorial's helper scripts — either add it to your `PATH`, or copy it into this tutorial's `bin/` directory (the same location [Option B](#setup) uses):
-
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-cd tutorials/curbside-pickup
-mkdir -p bin
-cp /path/to/drasi-server/bin/drasi-server bin/drasi-server
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-cd tutorials/curbside-pickup
-New-Item -ItemType Directory -Force bin | Out-Null
-Copy-Item C:\path\to\drasi-server\bin\drasi-server.exe bin\drasi-server.exe
-{{< /tab >}}
-{{< /tabpane >}}
+To change ports, copy `.env.example` to `.env` and edit it before starting. Each database's `*_PORT` and `*_HOST_PORT` must match. To run another isolated copy, also choose a distinct `COMPOSE_PROJECT_NAME`, a distinct `DRASI_DEMO_DIR`, and five free ports. The provided database identities and demo credentials match the seed SQL; these local demonstration credentials are not a production security configuration.
 
 ## Step 2 of 4: Run the Demo {#run}
 
-Everything runs from a single configuration file, `server-config.yaml`. Start the demo:
+The graph and dashboard are defined in [`server-config.yaml`](server-config.yaml). Start the complete demo:
 
 {{< tabpane persist="header" >}}
 {{< tab header="bash / zsh" lang="bash" >}}
@@ -128,84 +96,91 @@ powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
 {{< /tab >}}
 {{< /tabpane >}}
 
-The `start-demo` script does three things:
+The helper:
 
-1. **Starts the databases.** PostgreSQL comes up with logical replication enabled and the `orders` table seeded (three orders, all *preparing*). MySQL comes up with **ROW-based binary logging** (and GTID mode) enabled on the `vehicles` table (three vehicles, all *Parking*) - the plates match the orders.
-2. **Runs Drasi Server** in the foreground with the full configuration.
-3. **Starts the operations console** (a small Node.js app) in the background on port `3001`, so you have everything you need from this one command.
+1. Verifies the matching local artifact bundle, then starts **owned, labeled** PostgreSQL and MySQL containers. It initializes empty databases with three preparing orders and three parked vehicles. Re-running it **preserves existing database rows** rather than deleting volumes or reseeding.
+2. Starts Drasi Server with plugin auto-install disabled and only the five verified local plugin files. Signature verification is bypassed specifically for these locally built development plugins, not registry downloads.
+3. Starts the operations console and waits for this instance's ComputationGraph, both sources, all seven queries, the dashboard reaction, and both console database connections to be ready.
 
-On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/mysql`, `bootstrap/mysql`, `reaction/dashboard`) from `ghcr.io/drasi-project` and caches them under `~/.drasi/plugins`, connects to both databases, bootstraps the existing rows, starts the six continuous queries, and starts the dashboard. When you see a line like the following, it's ready:
+Wait for:
 
 ```text
-Drasi Server started successfully with API on port 8480
+Curbside Pickup READY: ComputationGraph; two sources, seven queries, six panels.
 ```
 
-Leave this running. Everything else happens in your **browser**.
+Leave this terminal running. An API listener alone is not proof that the graph or databases are ready.
 
-{{% alert title="Stopping and resetting" color="info" %}}
-Press **Ctrl+C** in the terminal to stop the server and the operations console together. To remove the database containers when you're completely done, run `bash scripts/cleanup.sh` (bash) or `powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1` (PowerShell). Add `--volumes` to also delete the database data.
+{{% alert title="Stopping, restarting, and cleanup" color="info" %}}
+Press **Ctrl+C** to stop Server and the console together. The databases and their data remain. Run the same start command to resume from current database contents.
+
+An already-open dashboard reconnects automatically after Server restarts. It replaces every panel with a fresh snapshot, including clearing rows that disappeared while disconnected, then resumes live changes. You do not need to reload the page.
+
+Use `bash scripts/cleanup.sh` (or `powershell -File scripts/cleanup.ps1`) after stopping the demo to remove only its owned containers/network while keeping volumes. Add `--volumes` only when you explicitly want to delete this run's database data. Cleanup never kills other Server processes and refuses resources with a different ownership label.
 {{% /alert %}}
+
+### What startup restores
+
+Each source bootstraps current table rows and then streams live CDC. Query chaining propagates those rows through the shared join and the two decisions. A newly opened dashboard obtains current query snapshots and receives subsequent changes.
+
+This demo has **no durable graph state or event-replay guarantee**. Database volumes persist, but in-memory results and temporal timers are reconstructed on Server restart. The displayed vehicle-change timestamp after bootstrap is an observation timestamp, not a durable record of the driver's original arrival time. Do not treat this configuration as exactly-once delivery, historical replay, or timer continuity across downtime.
 
 ## Step 3 of 4: Open the Dashboard {#dashboard}
 
-Drasi Server's dashboard reaction hosts the live dashboard; there's no separate app to build or run. **Wait until the terminal prints `Drasi Server started successfully`** (the first run takes a little longer while the plugins download), then open it in your browser:
+After the readiness message, open:
 
 ```text
 http://localhost:3000
 ```
 
-In the dev container or Codespaces, port `3000` is forwarded automatically. Open the seeded **Curbside Pickup** dashboard. It has six Markdown panels: the four list panels sit side by side on the top row, with the two join panels below:
+Open the seeded **Curbside Pickup** dashboard. The six Markdown panels are arranged in two rows: the four orders/vehicles lists above, with matched and delayed orders below. The dev container forwards the dashboard port automatically.
 
-- 🍕 **Orders · Preparing** and 🍕 **Orders · Ready** - every order in PostgreSQL, split by status. An order appears in exactly one of the two, and jumps from *Preparing* to *Ready* the instant its status changes.
-- 🚗 **Vehicles · Parking** and 🚗 **Vehicles · Curbside** - every vehicle in MySQL, split by location. A vehicle moves from *Parking* to *Curbside* the instant its location changes.
-- 📦 **Matched Orders** - orders that are *ready* whose driver is at the *Curbside* (the `delivery` query).
-- ⚠️ **Delayed Orders** - drivers who have waited at the curbside for more than 10 seconds while their order is still being prepared (the `delay` query).
-
-At bootstrap all three orders are *preparing* and all three vehicles are in *Parking*, so those two panels list every row while their **Ready** and **Curbside** counterparts start empty. The **Matched Orders** and **Delayed Orders** panels also start **empty** - no order is *ready* and no vehicle is at the *Curbside* yet - and fill in as you drive changes. Every panel updates the instant the data changes, with no refreshing; because each panel is backed by a filtered continuous query, a row simply disappears from one panel and reappears in the other as it changes.
+On a **fresh database**, all three orders are in **Orders · Preparing** and all three vehicles are in **Vehicles · Parking**. **Orders · Ready**, **Vehicles · Curbside**, **Matched Orders**, and **Delayed Orders** start empty. On restart, panels reflect the preserved database state instead.
 
 <img src="images/dashboard.png" width="900" alt="The Curbside Pickup dashboard with six Markdown panels: orders preparing, orders ready, vehicles parking, vehicles curbside, matched orders, and delayed orders">
 
+Every panel updates without a browser refresh. A row leaving one filtered query disappears from its panel and appears in the other.
+
 ## Step 4 of 4: Drive Change {#drive}
 
-You drive changes from an **operations console** - the small browser app that `start-demo` launched alongside Drasi Server. It connects directly to both databases and, as you make changes, prints **every SQL statement it runs and which database it hit**, so you can see exactly what Drasi is reacting to. Open it in your browser:
+Open the operations console in another tab or window:
 
 ```text
 http://localhost:3001
 ```
 
-It has two panels - **Retail Operations** (the PostgreSQL `orders` table) and **Physical Operations** (the MySQL `vehicles` table) - and a live SQL log beneath them. Each row has a button that toggles it: *mark ready →* / *to Curbside →* and back. As you click, the SQL log fills in, colour-coded by database.
+It has **Retail Operations** (PostgreSQL orders), **Physical Operations** (MySQL vehicles), and a color-coded SQL log. Each row has a button: *mark ready →* or *to Curbside →*, and a corresponding button to move it back. Keep the dashboard visible alongside it.
 
-<img src="images/web-console.png" width="900" alt="The browser operations console: a Retail Operations (PostgreSQL) panel of orders and a Physical Operations (MySQL) panel of vehicles, each row with a toggle button, and a colour-coded SQL log below showing the UPDATE statements and which database they hit">
-
-Keep the dashboard (`http://localhost:3000`) open in another tab or window so you can watch it react as you drive changes here.
+<img src="images/web-console.png" width="900" alt="The operations console with order and vehicle toggle buttons and a color-coded SQL log">
 
 ### Trigger a delivery
 
-Mark order **A1234** (Sophia Carter) *ready*. The console logs:
+Mark the order with plate **A1234** (Sophia Carter, order 1) **ready**. The console logs:
 
 ```text
 [PostgreSQL] UPDATE orders SET status='ready' WHERE id=1;
 ```
 
-Watch the dashboard: order **A1234** immediately leaves the 🍕 **Orders · Preparing** panel and appears in 🍕 **Orders · Ready**. Now move vehicle **A1234** to *Curbside*:
+Order A1234 leaves **Orders · Preparing** and appears in **Orders · Ready**. Now move vehicle **A1234** to **Curbside**:
 
 ```text
 [MySQL] UPDATE vehicles SET location='Curbside' WHERE plate='A1234';
 ```
 
-The vehicle jumps from 🚗 **Vehicles · Parking** to 🚗 **Vehicles · Curbside**, and within about a second the 📦 **Matched Orders** panel reacts: order **A1234** appears with its driver and vehicle. Nothing polled anything - Drasi saw the PostgreSQL change through logical replication and the MySQL change through the binary log, and re-evaluated the cross-database join.
+The vehicle moves from **Vehicles · Parking** to **Vehicles · Curbside**, and **Matched Orders** gains order 1 with its driver and blue Toyota Camry. The PostgreSQL and MySQL changes both flow through the same pickup join, then the delivery decision.
 
-Move the vehicle back to *Parking* and the row disappears from **Matched Orders**: the order is no longer matched to a waiting driver.
+Move the vehicle back to **Parking**. It returns to that list, and the matched order disappears. Try the opposite order of actions too: first return the order to **preparing**, bring A1234 to the curb, then mark its order ready. A change from either database can complete the match.
 
 ### Trigger a delay
 
-Now reproduce the *other* scenario. Pick a vehicle whose order is **not** ready - say **B5678** (Mason Rivera) - and move it to *Curbside*, but **leave order B5678 as *preparing***. Nothing happens immediately. After **10 seconds** the **Delayed Orders** panel lights up: order **B5678** appears, flagging that the driver has been waiting too long.
+Move **B5678** (Mason Rivera's vehicle) to **Curbside**, but leave order B5678 **preparing**. The vehicle changes panels immediately. **Delayed Orders** stays empty initially, then shows order 2 after the condition has held for about **10 seconds**, without another database write.
 
-This is the interesting one. Drasi doesn't poll to find slow orders - the **continuous query schedules its own future re-evaluation** for the moment the 10-second threshold is crossed, and fires exactly then. If you mark the order *ready* (or send the driver back to *Parking*) before the 10 seconds elapse, the alert never appears.
+`drasi.trueFor` schedules a future re-evaluation; no polling query is needed to discover the delay. Mark the order ready: its delayed entry disappears and a matched entry appears. Move the vehicle back to Parking to clear the match.
+
+Also try canceling a wait: keep an order preparing, bring its vehicle to the curb, and send it back to Parking **before 10 seconds elapse**. No delayed entry should appear at the old deadline. Marking the order ready before the deadline cancels the delay too.
 
 ### Reset
 
-Return everything to the starting state (all orders *preparing*, all vehicles *Parking*):
+Return all orders to preparing and all vehicles to Parking:
 
 {{< tabpane persist="header" >}}
 {{< tab header="bash / zsh" lang="bash" >}}
@@ -216,614 +191,81 @@ powershell -ExecutionPolicy Bypass -File scripts/reset.ps1
 {{< /tab >}}
 {{< /tabpane >}}
 
+Preparing and Parking list all three rows again. The other four panels clear. Reset makes ordinary SQL changes, so you see the dashboard react without restarting it.
+
 ## How It Works {#how}
 
-Everything you just ran is described by the single `server-config.yaml`. Here's what each part does.
+### Two sources in one computation graph
 
-### Two Sources
+`retail-ops` reads PostgreSQL logical replication; `physical-ops` reads MySQL's binary log. PostgreSQL enables logical replication and publishes `orders`. MySQL enables ROW-based binlogs, full row images/metadata, and GTID mode, and grants the demo user replication privileges. Their bootstrap providers load existing rows.
 
-The queries join data from two different databases, so the configuration declares two sources.
+Each `orders` row becomes an `orders` node; each `vehicles` row becomes a `vehicles` node. These ordinary source plugins participate in the **same ComputationGraph** as queries. Sources, queries, and transformers use the graph-change v1 data contract; a query can consume another query's output just as it consumes source nodes.
 
-**PostgreSQL** holds the orders and streams changes via **logical replication (CDC)**:
+### Share the cross-database join
 
-```yaml
-sources:
-  - kind: postgres
-    id: retail-ops
-    # ... connection settings ...
-    tables:
-      - orders
-    tableKeys:
-      - table: orders
-        keyColumns:
-          - id
-    bootstrapProvider:
-      kind: postgres
-```
-
-**MySQL** holds the vehicles and streams changes via its **binary log (binlog)**. The Drasi source reads the binlog directly, so `database/docker-compose.yml` starts MySQL with ROW-based logging, full row images/metadata, and GTID mode, and `database/mysql-init.sql` grants the Drasi user the replication privileges it needs:
+`pickup-state` connects the two sources by plate using a synthetic relationship. There is no cross-database foreign key:
 
 ```yaml
-  - kind: mysql
-    id: physical-ops
-    # ... connection settings ...
-    sslMode: disabled
-    tables:
-      - vehicles
-    tableKeys:
-      - table: vehicles
-        keyColumns:
-          - plate
-    bootstrapProvider:
-      kind: mysql
-      # ... the MySQL bootstrap provider takes its own connection settings ...
+- id: pickup-state
+  autoStart: true
+  queryLanguage: Cypher
+  inputs:
+    - component: retail-ops
+      nodes: [orders]
+    - component: physical-ops
+      nodes: [vehicles]
+  result:
+    label: Pickup
+  joins:
+    - id: PICKUP_BY
+      keys:
+        - label: orders
+          property: plate
+        - label: vehicles
+          property: plate
+  query: |
+    MATCH (o:orders)-[:PICKUP_BY]->(v:vehicles)
+    RETURN o.id AS orderId, o.status AS orderStatus,
+           o.customer_name AS customerName,
+           v.location AS vehicleLocation,
+           drasi.changeDateTime(v) AS waitingSinceTimestamp
 ```
 
-Each table row becomes a graph node. The `orders` table becomes `orders` nodes and the `vehicles` table becomes `vehicles` nodes, matching the `(o:orders)` and `(v:vehicles)` patterns in the queries.
+This abbreviated projection shows the key idea; the runnable configuration also carries the driver, vehicle description, and delivery timestamp needed by the panels. The explicit `result.label: Pickup` defines the label downstream queries match. Result identity comes from the graph; the order ID remains a display field.
 
-### The Synthetic Join
-
-There is no foreign key between the two databases - they're completely separate systems. Drasi creates the relationship in the query with a **synthetic join**, matching a vehicle to an order whenever their `plate` values are equal:
+`delivery` and `delay` both declare:
 
 ```yaml
-joins:
-  - id: PICKUP_BY
-    keys:
-      - label: vehicles
-        property: plate
-      - label: orders
-        property: plate
+inputs:
+  - component: pickup-state
 ```
 
-The queries then walk that relationship with `(o:orders)-[:PICKUP_BY]->(v:vehicles)` as if it were a real graph edge - across two different databases.
+The downstream `MATCH (p:Pickup)` selects the label. Do not add the ordinary Source-plugin `nodes` subscription setting to a query-to-query input; it is not accepted for native graph producers.
 
-### The Six Continuous Queries
-
-Four of the queries are simple single-source lists, filtered by state, that feed the split **Orders** and **Vehicles** panels. Because each one matches only part of the table, a row leaves one query's result and joins the other's the instant its status or location changes - which is exactly what makes it hop between panels on the dashboard. `orders-preparing` and `orders-ready` split the PostgreSQL orders by status:
+Delivery matches `Pickup` nodes whose `orderStatus = 'ready'` and `vehicleLocation = 'Curbside'`. Delay uses:
 
 ```cypher
-MATCH
-  (o:orders)
-WHERE o.status <> 'ready'          // orders-ready uses: o.status = 'ready'
-RETURN
-  o.id AS orderId,
-  o.customer_name AS customerName,
-  o.driver_name AS driverName,
-  o.plate AS plate,
-  o.status AS status
+MATCH (p:Pickup)
+WHERE drasi.trueFor(
+  p.orderStatus <> 'ready' AND p.vehicleLocation = 'Curbside',
+  duration({ seconds: 10 }))
+RETURN p.orderId AS orderId,
+       p.customerName AS customerName,
+       p.waitingSinceTimestamp AS waitingSinceTimestamp
 ```
 
-and `vehicles-parking` and `vehicles-curbside` split the MySQL vehicles by location:
+Both conditions are inside `trueFor`, so a ready order or a departing vehicle cancels the pending wait. The shared join carries the original vehicle observation timestamp as a property rather than asking for the downstream query node's change time.
 
-```cypher
-MATCH
-  (v:vehicles)
-WHERE v.location = 'Parking'        // vehicles-curbside uses: v.location = 'Curbside'
-RETURN
-  v.plate AS plate,
-  v.make AS make,
-  v.model AS model,
-  v.color AS color,
-  v.location AS location
-```
+The four list queries still read their respective source tables directly. In total there are **seven queries**, but only **six visible panels**: one reusable join plus the original six panel results. The extra graph stage removes two independent copies of the join; it does not add a new user workflow.
 
-The other two join across both databases. **Delivery** returns an order whenever it is *ready* and its driver's vehicle is at the *Curbside*. Because every order starts *preparing* and every vehicle starts *Parking*, a row can only appear once real changes move an order to ready and a vehicle to curbside, so the dashboard starts empty and fills in as changes are driven live:
+### Dashboard and operations console
 
-```cypher
-MATCH
-  (o:orders)-[:PICKUP_BY]->(v:vehicles)
-WHERE o.status = 'ready'
-AND v.location = 'Curbside'
-RETURN
-  o.id AS orderId,
-  o.driver_name AS driverName,
-  o.plate AS vehicleId,
-  v.make AS vehicleMake,
-  v.model AS vehicleModel,
-  v.color AS vehicleColor,
-  v.location AS vehicleLocation,
-  drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) AS readyTimestamp
-```
+The ordinary **dashboard reaction** remains query-aware: its `queries` list names the six panel queries, not `pickup-state`. Each widget names a query and renders its current rows using a Handlebars template. The matching local dashboard plugin sends an authoritative snapshot and subsequent live changes over the same WebSocket, using exact revision boundaries so overlapping changes cannot overwrite newer rows. Reconnecting replaces stale panel state rather than accumulating on top of it. No custom SSE client or producer-specific sink is needed.
 
-**Delay** returns an order whose driver has been at the *Curbside* for more than 10 seconds while the order still isn't *ready*. It uses **`drasi.trueFor`**, which schedules a future re-evaluation and fires the moment the condition has held for the given duration, so the order appears exactly when the 10-second threshold is crossed:
+The operations console is separate from Drasi. Its Express server runs real, parameterized SQL updates. It polls its own `/api/state` to reflect the two operational tables, but **the Drasi dashboard does not poll those databases**: its updates are CDC-driven. This distinction lets you inspect and change the source systems while observing a genuinely continuous dashboard.
 
-```cypher
-MATCH
-  (o:orders)-[:PICKUP_BY]->(v:vehicles)
-WHERE o.status <> 'ready'
-AND drasi.trueFor(v.location = 'Curbside', duration({ seconds: 10 }))
-RETURN
-  o.id AS orderId,
-  o.customer_name AS customerName,
-  drasi.changeDateTime(v) AS waitingSinceTimestamp
-```
+The complete executable configuration is [`server-config.yaml`](server-config.yaml); keeping it in one file avoids a second copy of the graph drifting out of sync with the walkthrough.
 
-{{% alert title="How the timing works" color="info" %}}
-Both the PostgreSQL and MySQL sources stamp every change with the wall-clock time it happened, which `drasi.changeDateTime()` exposes. `drasi.trueFor` uses that timestamp to anchor its 10-second timer - so the delay query fires exactly when a curbside vehicle has waited long enough - and the delay panel reports it as `waitingSinceTimestamp`, with no extra timestamp columns or application bookkeeping required.
-{{% /alert %}}
+### Check the running demo
 
-### The Dashboard Reaction
-
-A single dashboard reaction subscribes to all six queries and seeds one **Curbside Pickup** dashboard on first start. It lays out six Markdown (`text`) widgets on a 12-column grid; each widget names one query and renders that query's rows with a Handlebars template - no KPIs or tables to configure, just a list. Here's the reaction envelope plus one representative widget (the other five follow the same shape):
-
-```yaml
-reactions:
-  - kind: dashboard
-    id: curbside-dashboard
-    queries:
-      - orders-preparing
-      - orders-ready
-      - vehicles-parking
-      - vehicles-curbside
-      - delivery
-      - delay
-    port: 3000
-    predefinedDashboards:
-      - id: curbside-pickup
-        name: Curbside Pickup
-        gridOptions:
-          columns: 12
-          rowHeight: 60
-          margin: 10
-        widgets:
-          # The four list panels sit side by side on the top row (w: 3 each);
-          # the two join panels (delivery, delay) span the row below (w: 6).
-          - id: orders-preparing
-            type: text
-            title: 🍕 Orders · Preparing
-            grid: { x: 0, y: 0, w: 3, h: 4 }
-            config:
-              queryId: orders-preparing
-              # Handlebars: loop the query's `rows` into a Markdown list.
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - 🍕 Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}`
-                {{/each}}
-                {{else}}
-                _No orders being prepared._
-                {{/if}}
-          # - orders-ready, vehicles-parking, vehicles-curbside (top row) ...
-          # - delivery, delay (bottom row, w: 6 each) ...
-```
-
-Each `text` widget's `template` loops over its query's `rows` and prints a Markdown bullet per result (or the `{{else}}` placeholder when empty); when a query's result set changes, the reaction pushes the update to the browser. That's the whole UI - no front-end code to write or host.
-
-### Driving Change
-
-The operations console (`webui/`) is a small Node.js app - a tiny [Express](https://expressjs.com/) server serving a static page - that connects straight to PostgreSQL and MySQL and runs ordinary `UPDATE` statements, the same kind your real retail and physical-operations apps would run. `start-demo` launches it alongside Drasi Server and stops it again on Ctrl+C. It's a convenience for the tutorial, not part of Drasi: Drasi reacts to the database changes however they're made.
-
-## Putting It All Together
-
-The sections above walked through the configuration one piece at a time. Here
-is the complete `server-config.yaml` that `start-demo` actually runs - both
-sources, all six continuous queries, and the full dashboard reaction in a
-single file:
-
-```yaml
-# =============================================================================
-# Drasi Server - Curbside Pickup Tutorial
-# =============================================================================
-# Powers a single real-time dashboard over two independent databases:
-#   - retail-ops   : a PostgreSQL "orders" table (Retail Operations)
-#   - physical-ops : a MySQL "vehicles" table (Physical Operations)
-#
-# Six continuous queries feed the dashboard. Four are simple filtered lists
-# (orders-preparing, orders-ready, vehicles-parking, vehicles-curbside) that
-# split the orders and vehicles by state so a row moves between panels as it
-# changes; two join the orders to the vehicles by license plate:
-#   - delivery : an order is 'ready' AND its driver's vehicle is at 'Curbside'
-#   - delay    : a driver has waited at 'Curbside' for over 10s while the order
-#                is still being prepared (uses the temporal drasi.trueFor)
-#
-# The dashboard reaction renders all six, live, in one "Curbside Pickup"
-# dashboard at http://localhost:3000 - no application code to write.
-# =============================================================================
-
-apiVersion: drasi.io/v1
-id: curbside-pickup-server
-host: "${SERVER_HOST:-0.0.0.0}"
-port: ${SERVER_PORT:-8480}
-logLevel: "${LOG_LEVEL:-info}"
-persistConfig: false
-
-# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
-# startup. No manual build step is required.
-autoInstallPlugins: true
-plugins:
-  - ref: source/postgres
-  - ref: bootstrap/postgres
-  - ref: source/mysql
-  - ref: bootstrap/mysql
-  - ref: reaction/dashboard
-
-# =============================================================================
-# Sources
-# =============================================================================
-sources:
-  # Retail Operations - PostgreSQL source: the customer orders.
-  - kind: postgres
-    id: retail-ops
-    autoStart: true
-
-    host: "${POSTGRES_HOST:-localhost}"
-    port: ${POSTGRES_PORT:-5742}
-    database: "${POSTGRES_DATABASE:-RetailOperations}"
-    user: "${POSTGRES_USER:-drasi_user}"
-    password: "${POSTGRES_PASSWORD:-drasi_password}"
-    sslMode: prefer
-
-    # Table to monitor. Lower-case/unquoted so the node label matches (o:orders).
-    tables:
-      - orders
-
-    # The publication is created by database/postgres-init.sql; the slot is
-    # created automatically by the source on startup (with a consistent
-    # snapshot), so the seeded rows are bootstrapped once and not double-counted.
-    slotName: drasi_curbside_slot
-    publicationName: drasi_curbside_pub
-
-    # Primary key, so Drasi can track row identity across changes.
-    tableKeys:
-      - table: orders
-        keyColumns:
-          - id
-
-    # Bootstrap provider loads the existing orders on startup.
-    bootstrapProvider:
-      kind: postgres
-
-  # Physical Operations - MySQL source: the pickup vehicles.
-  # The MySQL source captures changes by streaming the binary log (binlog), so
-  # database/docker-compose.yml starts MySQL with ROW-based logging, full row
-  # images/metadata and GTID mode.
-  - kind: mysql
-    id: physical-ops
-    autoStart: true
-
-    host: "${MYSQL_HOST:-localhost}"
-    port: ${MYSQL_PORT:-3309}
-    database: "${MYSQL_DATABASE:-PhysicalOperations}"
-    user: "${MYSQL_USER:-drasi_user}"
-    password: "${MYSQL_PASSWORD:-drasi_password}"
-    # The tutorial MySQL container does not enable TLS; disable it so the source
-    # connects in plaintext (the client otherwise negotiates TLS and fails).
-    sslMode: disabled
-
-    # Table to monitor. The node label is the table name `vehicles`, matching
-    # (v:vehicles) in the queries.
-    tables:
-      - vehicles
-
-    # Primary key, so Drasi can track row identity across changes.
-    tableKeys:
-      - table: vehicles
-        keyColumns:
-          - plate
-
-    # Bootstrap provider loads the existing vehicles on startup. Unlike the
-    # PostgreSQL bootstrap provider (which reuses the source connection), the
-    # MySQL bootstrap provider takes its own connection settings. Note it does
-    # not accept an sslMode field.
-    bootstrapProvider:
-      kind: mysql
-      host: "${MYSQL_HOST:-localhost}"
-      port: ${MYSQL_PORT:-3309}
-      database: "${MYSQL_DATABASE:-PhysicalOperations}"
-      user: "${MYSQL_USER:-drasi_user}"
-      password: "${MYSQL_PASSWORD:-drasi_password}"
-      tables:
-        - vehicles
-      tableKeys:
-        - table: vehicles
-          keyColumns:
-            - plate
-
-# =============================================================================
-# Continuous Queries
-# =============================================================================
-# Six queries feed the dashboard:
-#   - orders-preparing  : orders not yet ready (the "Preparing" panel)
-#   - orders-ready      : orders ready for pickup (the "Ready" panel)
-#   - vehicles-parking  : vehicles in the lot (the "Parking" panel)
-#   - vehicles-curbside : vehicles at the curb (the "Curbside" panel)
-#   - delivery          : matched orders - ready AND at the curbside
-#   - delay             : delayed orders - at the curbside too long while not ready
-# delivery and delay declare the synthetic PICKUP_BY join, matching a vehicle to
-# an order by license plate (vehicles.plate == orders.plate).
-queries:
-  # orders-preparing: orders still being prepared (status != 'ready'). As soon as
-  # an order becomes 'ready' it drops out of this result and appears in
-  # orders-ready - so the order visibly moves between the two dashboard panels.
-  - id: orders-preparing
-    autoStart: true
-    queryLanguage: Cypher
-    inputs:
-      - component: retail-ops
-        nodes:
-          - orders
-    query: |
-      MATCH
-        (o:orders)
-      WHERE o.status <> 'ready'
-      RETURN
-        o.id AS id,
-        o.id AS orderId,
-        o.customer_name AS customerName,
-        o.driver_name AS driverName,
-        o.plate AS plate,
-        o.status AS status
-
-  # orders-ready: orders that are ready for pickup (status = 'ready').
-  - id: orders-ready
-    autoStart: true
-    queryLanguage: Cypher
-    inputs:
-      - component: retail-ops
-        nodes:
-          - orders
-    query: |
-      MATCH
-        (o:orders)
-      WHERE o.status = 'ready'
-      RETURN
-        o.id AS id,
-        o.id AS orderId,
-        o.customer_name AS customerName,
-        o.driver_name AS driverName,
-        o.plate AS plate,
-        o.status AS status
-
-  # vehicles-parking: vehicles still in the parking lot (location = 'Parking').
-  # When a driver pulls up to the curb the vehicle drops out of this result and
-  # appears in vehicles-curbside - so the car visibly moves between the panels.
-  - id: vehicles-parking
-    autoStart: true
-    queryLanguage: Cypher
-    inputs:
-      - component: physical-ops
-        nodes:
-          - vehicles
-    query: |
-      MATCH
-        (v:vehicles)
-      WHERE v.location = 'Parking'
-      RETURN
-        v.plate AS id,
-        v.plate AS plate,
-        v.make AS make,
-        v.model AS model,
-        v.color AS color,
-        v.location AS location
-
-  # vehicles-curbside: vehicles waiting at the curb (location = 'Curbside').
-  - id: vehicles-curbside
-    autoStart: true
-    queryLanguage: Cypher
-    inputs:
-      - component: physical-ops
-        nodes:
-          - vehicles
-    query: |
-      MATCH
-        (v:vehicles)
-      WHERE v.location = 'Curbside'
-      RETURN
-        v.plate AS id,
-        v.plate AS plate,
-        v.make AS make,
-        v.model AS model,
-        v.color AS color,
-        v.location AS location
-
-  # delivery: orders that are READY whose driver has ARRIVED at the curbside.
-  - id: delivery
-    autoStart: true
-    queryLanguage: Cypher
-    inputs:
-      - component: physical-ops
-        nodes:
-          - vehicles
-      - component: retail-ops
-        nodes:
-          - orders
-    joins:
-      - id: PICKUP_BY
-        keys:
-          - label: vehicles
-            property: plate
-          - label: orders
-            property: plate
-    query: |
-      MATCH
-        (o:orders)-[:PICKUP_BY]->(v:vehicles)
-      WHERE o.status = 'ready'
-      AND v.location = 'Curbside'
-      RETURN
-        o.id AS id,
-        o.id AS orderId,
-        o.status AS orderStatus,
-        o.driver_name AS driverName,
-        o.plate as vehicleId,
-        v.make as vehicleMake,
-        v.model as vehicleModel,
-        v.color as vehicleColor,
-        v.location as vehicleLocation,
-        drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) as readyTimestamp
-
-  # delay: a driver is at the curbside but the order is NOT yet ready, and they
-  # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
-  # re-evaluation so the row appears the instant the threshold is crossed.
-  - id: delay
-    autoStart: true
-    queryLanguage: Cypher
-    inputs:
-      - component: physical-ops
-        nodes:
-          - vehicles
-      - component: retail-ops
-        nodes:
-          - orders
-    joins:
-      - id: PICKUP_BY
-        keys:
-          - label: vehicles
-            property: plate
-          - label: orders
-            property: plate
-    # drasi.trueFor anchors its timer to the change's effective_from, which both
-    # the PostgreSQL and MySQL sources populate with the wall-clock time of the
-    # change. The row appears the instant the vehicle has been at 'Curbside' for
-    # 10 seconds while the order is still not ready.
-    query: |
-      MATCH
-        (o:orders)-[:PICKUP_BY]->(v:vehicles)
-      WHERE o.status <> 'ready'
-      AND drasi.trueFor(v.location = 'Curbside', duration({ seconds: 10 }))
-      RETURN
-        o.id AS orderId,
-        o.customer_name AS customerName,
-        drasi.changeDateTime(v) AS waitingSinceTimestamp
-
-# =============================================================================
-# Reactions
-# =============================================================================
-reactions:
-  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
-  # A single "Curbside Pickup" dashboard is seeded with six Markdown (text)
-  # widgets arranged in two rows:
-  #   🍕 Orders Preparing | 🍕 Orders Ready | 🚗 Vehicles Parking | 🚗 Vehicles Curbside
-  #   📦 Matched Orders                     | ⚠️  Delayed Orders
-  # Because the "preparing/ready" and "parking/curbside" panels are driven by
-  # filtered continuous queries, an order or vehicle disappears from one panel
-  # and appears in the other the instant its status/location changes.
-  - kind: dashboard
-    id: curbside-dashboard
-    autoStart: true
-    queries:
-      - orders-preparing
-      - orders-ready
-      - vehicles-parking
-      - vehicles-curbside
-      - delivery
-      - delay
-    host: "${DASHBOARD_HOST:-0.0.0.0}"
-    port: ${DASHBOARD_PORT:-3000}
-    heartbeatIntervalMs: 15000
-    predefinedDashboards:
-      - id: curbside-pickup
-        name: Curbside Pickup
-        gridOptions:
-          columns: 12
-          rowHeight: 60
-          margin: 10
-        widgets:
-          # Orders being prepared (Retail Operations / PostgreSQL).
-          - id: orders-preparing
-            type: text
-            title: 🍕 Orders · Preparing
-            grid: { x: 0, y: 0, w: 3, h: 4 }
-            config:
-              queryId: orders-preparing
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - 🍕 Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}`
-                {{/each}}
-                {{else}}
-                _No orders being prepared._
-                {{/if}}
-
-          # Orders ready for pickup (Retail Operations / PostgreSQL).
-          - id: orders-ready
-            type: text
-            title: 🍕 Orders · Ready
-            grid: { x: 3, y: 0, w: 3, h: 4 }
-            config:
-              queryId: orders-ready
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - ✅ Order **{{this.orderId}}** — {{this.customerName}} — plate `{{this.plate}}`
-                {{/each}}
-                {{else}}
-                _No orders ready for pickup._
-                {{/if}}
-
-          # Vehicles in the parking lot (Physical Operations / MySQL).
-          - id: vehicles-parking
-            type: text
-            title: 🚗 Vehicles · Parking
-            grid: { x: 6, y: 0, w: 3, h: 4 }
-            config:
-              queryId: vehicles-parking
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - 🚗 `{{this.plate}}` — {{this.color}} {{this.make}} {{this.model}}
-                {{/each}}
-                {{else}}
-                _No vehicles in the parking lot._
-                {{/if}}
-
-          # Vehicles waiting at the curb (Physical Operations / MySQL).
-          - id: vehicles-curbside
-            type: text
-            title: 🚗 Vehicles · Curbside
-            grid: { x: 9, y: 0, w: 3, h: 4 }
-            config:
-              queryId: vehicles-curbside
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - 🚙 `{{this.plate}}` — {{this.color}} {{this.make}} {{this.model}}
-                {{/each}}
-                {{else}}
-                _No vehicles at the curb._
-                {{/if}}
-
-          # Matched orders (delivery query): ready AND at the curbside.
-          - id: matched-orders
-            type: text
-            title: 📦 Matched Orders (ready + at curbside)
-            grid: { x: 0, y: 4, w: 6, h: 4 }
-            config:
-              queryId: delivery
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - 📦 Order **{{this.orderId}}** — driver **{{this.driverName}}** — {{this.vehicleColor}} {{this.vehicleMake}} {{this.vehicleModel}} (`{{this.vehicleId}}`) at the **Curbside**
-                {{/each}}
-                {{else}}
-                ⏳ _No orders ready with a driver at the curbside._
-                {{/if}}
-
-          # Delayed orders (delay query): waiting at the curbside for over 10s.
-          - id: delayed-orders
-            type: text
-            title: ⚠️ Delayed Orders (waiting > 10s, not ready)
-            grid: { x: 6, y: 4, w: 6, h: 4 }
-            config:
-              queryId: delay
-              template: |
-                {{#if count}}
-                {{#each rows}}
-                - ⚠️ Order **{{this.orderId}}** — **{{this.customerName}}** — waiting since {{this.waitingSinceTimestamp}}
-                {{/each}}
-                {{else}}
-                ✅ _No delayed orders._
-                {{/if}}
-```
-
-## Clean Up
-
-When you're done, stop Drasi Server and the operations console with **Ctrl+C** in the terminal, then remove the database containers:
-
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-bash scripts/cleanup.sh --volumes
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1 --volumes
-{{< /tab >}}
-{{< /tabpane >}}
+`python3 scripts/demo.py check` verifies this instance's runtime identity and the required running components. `python3 scripts/verify_demo.py --allow-reset` additionally exercises the documented database changes, panel snapshots, timer threshold, cancellation, deletion, and reinsertion against an **isolated disposable run**. It changes and resets demo rows; do not run it against data you want to keep unchanged. Browser checks should also confirm the actual rendered panels update without refreshing.

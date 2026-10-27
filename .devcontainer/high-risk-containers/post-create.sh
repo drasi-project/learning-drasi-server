@@ -1,34 +1,28 @@
-#!/bin/bash
-# Post-create script for the Drasi Server High Risk Containers tutorial
-
-set -e
-
-echo "🔧 Initializing Drasi Server High Risk Containers tutorial environment..."
-
-# Resolve the tutorial directory from this script's location so the script works
-# regardless of the current working directory.
+#!/usr/bin/env bash
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TUTORIAL_DIR="$REPO_ROOT/tutorials/high-risk-containers"
 
-# Install system dependencies (PostgreSQL client for the helper scripts).
-echo "🐘 Installing system dependencies (PostgreSQL client)..."
-sudo apt-get update && sudo apt-get install -y postgresql-client
-
-# Install k3d (kubectl is provided by the kubectl-helm-minikube dev container
-# feature). k3d runs a lightweight k3s Kubernetes cluster inside Docker.
-if ! command -v k3d &> /dev/null; then
-    echo "☸️  Installing k3d..."
-    curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | sudo bash
+if [ ! -f "$REPO_ROOT/../drasi-server/Cargo.toml" ] || [ ! -f "$REPO_ROOT/../drasi-core/lib/Cargo.toml" ]; then
+    echo "Existing sibling drasi-server and drasi-core checkouts are required; no release fallback."
+    exit 1
 fi
 
-# Download the pre-built Drasi Server binary into the tutorial directory.
-# Invoke via `bash` so we don't depend on the executable bit, which can be lost
-# on Windows bind-mounts where chmod is not permitted on the mounted filesystem.
-echo "⬇️  Downloading Drasi Server binary..."
-cd "$TUTORIAL_DIR"
-bash scripts/download.sh
+sudo apt-get update
+sudo apt-get install -y build-essential cmake clang libclang-dev pkg-config \
+    libjq-dev libssl-dev protobuf-compiler python3 postgresql-client
 
-echo ""
-echo "✅ Drasi Server High Risk Containers tutorial environment is ready!"
-echo "   Next: follow README.md (you are already in tutorials/high-risk-containers)"
+case "$(uname -m)" in
+    x86_64) architecture=amd64; checksum=dbaa79a76ace7f4ca230a1ff41dc7d8a5036a8ad0309e9c54f9bf3836dbe853e ;;
+    aarch64) architecture=arm64; checksum=0b8110f2229631af7402fb828259330985918b08fefd38b7f1b788a1c8687216 ;;
+    *) echo "Unsupported k3d architecture: $(uname -m)"; exit 1 ;;
+esac
+temporary="$(mktemp)"
+trap 'rm -f "$temporary"' EXIT
+curl -fL "https://github.com/k3d-io/k3d/releases/download/v5.8.3/k3d-linux-$architecture" -o "$temporary"
+echo "$checksum  $temporary" | sha256sum --check
+sudo install -m 0755 "$temporary" /usr/local/bin/k3d
+
+cd "$REPO_ROOT/tutorials/high-risk-containers"
+python3 scripts/demo.py build
+echo "Matching local Server/Core/plugins built. Follow README.md to start the owned demo."

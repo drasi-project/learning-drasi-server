@@ -14,7 +14,8 @@
 
 # Three mock store services. Deployment.metadata.labels.version is promoted to
 # a top-level `version` property so the validated Cypher can return d.version.
-# Images are built locally and imported into k3d (imagePullPolicy: Never).
+# scripts/demo.py renders unique image names and the owned namespace, then
+# imports the locally built images into k3d (imagePullPolicy: Never).
 ---
 apiVersion: apps/v1
 kind: Deployment

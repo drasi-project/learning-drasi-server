@@ -73,8 +73,8 @@ $$;
 -- Seed the initial set of high risk images. These match the running Pods:
 --   my-app:0.1   -> Security Risk    (my-app-1 runs this image, so it is flagged)
 --   redis:6.2.3  -> Compliance Issue (no Pod runs it yet, so it stays dormant)
--- Seeding happens BEFORE the replication slot is created so the existing rows
--- are loaded via bootstrap and not replayed as change events.
+-- Initial seeding happens before the replication slot is created. The runner
+-- executes this script only for an empty database, never on ordinary restarts.
 INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation")
 SELECT * FROM (VALUES
     (1, 'ghcr.io/drasi-project/my-app:0.1', 'Security Risk', 'Update to latest version'),
@@ -82,9 +82,9 @@ SELECT * FROM (VALUES
 ) AS d("Id", "Image", "Reason", "Mitigation")
 WHERE NOT EXISTS (SELECT 1 FROM "RiskyImage");
 
--- Create the replication slot AFTER seeding. The slot captures only changes
--- made after this point; existing rows are retrieved via bootstrap when the
--- query starts, so the seed data is not double-counted.
+-- Create the replication slot after seeding; bootstrap retrieves existing rows.
+-- These ordinary adapters do not provide a durable query checkpoint or a
+-- coordinated exported PostgreSQL snapshot/WAL handoff.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'drasi_high_risk_containers_slot') THEN

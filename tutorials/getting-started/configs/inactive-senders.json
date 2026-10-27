@@ -1,0 +1,8 @@
+{
+  "id": "inactive-senders",
+  "autoStart": true,
+  "inputs": ["my-postgres"],
+  "result": {"label": "InactiveSender"},
+  "query": "MATCH (m:Message) WITH m.From AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }) OR drasi.trueLater(LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }), LastMessageTimestamp + duration({ seconds: 20 })) RETURN MessageFrom, LastMessageTimestamp",
+  "queryLanguage": "Cypher"
+}

@@ -15,12 +15,16 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import demo
 import verify_demo
+
+
+POST_CREATE = demo.TUTORIAL.parents[1] / ".devcontainer/building-comfort/post-create.sh"
 
 
 class DemoTests(unittest.TestCase):
@@ -51,6 +55,11 @@ class DemoTests(unittest.TestCase):
     def test_requires_build_no_path_fallback(self):
         with self.assertRaisesRegex(RuntimeError, "No local build"):
             demo.verified_build()
+
+    def test_build_delegates_private_state_and_exact_plugins(self):
+        with patch.object(demo.local_build, "build") as build:
+            demo.build()
+            build.assert_called_once_with(self.directory.resolve(), demo.PLUGINS)
 
     def test_exact_matching_build(self):
         self.build_record()
@@ -212,6 +221,11 @@ class DemoTests(unittest.TestCase):
                   "building_id": "b", "building_name": "HQ", "temperature": 28,
                   "humidity": 40, "co2": 10}]
         result = verify_demo.expected_results(rooms)
+        self.assertEqual(result["room-comfort"], [
+            {"RoomId": "r", "RoomName": "Office", "FloorId": "f", "FloorName": "Ground",
+             "BuildingId": "b", "BuildingName": "HQ", "Temperature": 28,
+             "Humidity": 40, "CO2": 10, "ComfortLevel": 4},
+        ])
         self.assertEqual(result["room-alert"], [
             {"RoomId": "r", "RoomName": "Office", "ComfortLevel": 4},
         ])
@@ -222,6 +236,75 @@ class DemoTests(unittest.TestCase):
             {"BuildingId": "b", "BuildingName": "HQ", "ComfortLevel": 4},
         ])
         self.assertTrue(all(not rows for rows in verify_demo.expected_results([]).values()))
+
+    def test_tutorial_tenth_room_keeps_equal_floor_weight(self):
+        rooms = [
+            {"id": f"{floor}-{room}", "name": str(room),
+             "floor_id": floor, "floor_name": floor,
+             "building_id": "b", "building_name": "Building",
+             "temperature": 70, "humidity": 40, "co2": 10}
+            for floor in ("f1", "f2", "f3") for room in range(3)
+        ]
+        rooms.append(dict(rooms[0], id="extra", name="Extra", temperature=82))
+        result = verify_demo.expected_results(rooms)
+        self.assertEqual(len(result["room-comfort"]), 10)
+        self.assertEqual(
+            [row["ComfortLevel"] for row in result["floor-comfort-level-calc"]],
+            [49, 46, 46],
+        )
+        self.assertEqual(result["building-comfort-level-calc"][0]["ComfortLevel"], 47)
+        self.assertEqual(
+            sum(row["ComfortLevel"] for row in result["room-comfort"]) / 10, 47.2,
+        )
+        self.assertEqual([row["RoomId"] for row in result["room-alert"]], ["extra"])
+        self.assertEqual(result["floor-alert"], [])
+        self.assertEqual(result["building-alert"], [])
+
+    def run_post_create(self, *, lockfile):
+        repository = self.directory / "learning-drasi-server"
+        script = repository / ".devcontainer/building-comfort/post-create.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text(POST_CREATE.read_text())
+        (repository / "tutorials/building-comfort").mkdir(parents=True)
+        for name in ("drasi-server/Cargo.toml", "drasi-core/lib/Cargo.toml"):
+            manifest = self.directory / name
+            manifest.parent.mkdir(parents=True)
+            manifest.touch()
+        lock = self.directory / "drasi-core/Cargo.lock"
+        if lockfile:
+            lock.write_text("existing lockfile\n")
+        commands = self.directory / "commands"
+        commands.mkdir()
+        for name, body in (
+            ("sudo", "#!/bin/sh\nexit 0\n"),
+            ("python3", '#!/bin/sh\nprintf "BUILD: %s %s\\n" "$1" "$2"\n'),
+        ):
+            executable = commands / name
+            executable.write_text(body)
+            executable.chmod(0o755)
+        result = subprocess.run(
+            ["/bin/bash", str(script)], cwd=self.directory,
+            env=dict(os.environ, PATH=f"{commands}:/usr/bin:/bin"),
+            capture_output=True, text=True, check=False,
+        )
+        return result, lock
+
+    def test_devcontainer_missing_lockfile_has_actionable_error(self):
+        result, lock = self.run_post_create(lockfile=False)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Core's workspace Cargo.lock is required", result.stdout)
+        self.assertIn(
+            "RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml",
+            result.stdout,
+        )
+        self.assertNotIn("BUILD:", result.stdout)
+        self.assertFalse(lock.exists())
+
+    def test_devcontainer_keeps_lockfile_and_uses_tutorial_build(self):
+        result, lock = self.run_post_create(lockfile=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("BUILD: scripts/demo.py build", result.stdout)
+        self.assertEqual(lock.read_text(), "existing lockfile\n")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,6 @@
 {
     "name": "Drasi Server - OTel Observability Tutorial",
-    // Ubuntu 24.04 (glibc 2.39). The source/kubernetes and bootstrap/kubernetes
-    // plugins are built against glibc 2.39, so the older Debian bookworm base
-    // (glibc 2.36) fails to load them with "GLIBC_2.39 not found".
+    // Build Server and every plugin inside this same Linux environment.
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04@sha256:d94c97dd9cacf183d0a6fd12a8e87b526e9e928307674ae9c94139139c0c6eae",
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
@@ -10,6 +8,9 @@
             "moby": false
         },
         "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/rust:1": {
+            "version": "1.95.0"
+        },
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true,
             "configureZshAsDefaultShell": true
@@ -19,6 +20,7 @@
         }
     },
     "postCreateCommand": "bash ../../.devcontainer/otel-observability/post-create.sh",
+    "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind",
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/tutorials/otel-observability",
     "runArgs": [
         "--privileged",
@@ -29,8 +31,8 @@
         8380,
         3000,
         5732,
-        4317,
         14317,
+        14318,
         18080
     ],
     "portsAttributes": {
@@ -70,12 +72,21 @@
         "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
     },
     "containerEnv": {
+        "CONTAINER_ENGINE": "docker",
+        "DOCKER_HOST": "unix:///var/run/docker.sock",
+        "DRASI_DEMO_DIR": "/home/vscode/.cache/drasi-otel-observability/runtime",
+        "CARGO_TARGET_DIR": "/home/vscode/.cache/drasi-otel-observability/target",
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "SERVER_HOST": "0.0.0.0",
+        "DASHBOARD_HOST": "0.0.0.0",
         "POSTGRES_HOST": "localhost",
         "POSTGRES_PORT": "5732",
-        "POSTGRES_HOST_PORT": "5732",
         "SERVER_PORT": "8380",
         "DASHBOARD_PORT": "3000",
         "CHECKOUT_CONTROL_PORT": "18080",
-        "OTEL_GRPC_BIND": "0.0.0.0:14317"
+        "OTEL_GRPC_PORT": "14317",
+        "OTEL_HTTP_PORT": "14318"
     }
 }

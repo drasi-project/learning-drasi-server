@@ -1,4 +1,4 @@
-# Downloaded Drasi Server binary and generated kubeconfig
+# Old release downloads (not used by the local-build tutorial)
 bin/
 
 # Local environment overrides
@@ -7,3 +7,5 @@ bin/
 # Server runtime artifacts
 server.log
 data/
+.runtime/
+__pycache__/

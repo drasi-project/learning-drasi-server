@@ -22,7 +22,7 @@
 # Six continuous queries feed the dashboard. Four are simple filtered lists
 # (orders-preparing, orders-ready, vehicles-parking, vehicles-curbside) that
 # split the orders and vehicles by state so a row moves between panels as it
-# changes; two join the orders to the vehicles by license plate:
+# changes; two consume the shared pickup-state join by license plate:
 #   - delivery : an order is 'ready' AND its driver's vehicle is at 'Curbside'
 #   - delay    : a driver has waited at 'Curbside' for over 10s while the order
 #                is still being prepared (uses the temporal drasi.trueFor)
@@ -32,20 +32,13 @@
 # =============================================================================
 
 apiVersion: drasi.io/v1
-host: "${SERVER_HOST:-0.0.0.0}"
+host: "${SERVER_HOST:-127.0.0.1}"
 port: ${SERVER_PORT:-8480}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
 
-# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
-# startup. No manual build step is required.
-autoInstallPlugins: true
-plugins:
-  - ref: source/postgres
-  - ref: bootstrap/postgres
-  - ref: source/mysql
-  - ref: bootstrap/mysql
-  - ref: reaction/dashboard
+# scripts/demo.py loads only the hash-checked local Server/Core build bundle.
+autoInstallPlugins: false
 
 # =============================================================================
 # Sources
@@ -141,8 +134,7 @@ instances:
 #   - vehicles-curbside : vehicles at the curb (the "Curbside" panel)
 #   - delivery          : matched orders - ready AND at the curbside
 #   - delay             : delayed orders - at the curbside too long while not ready
-# delivery and delay declare the synthetic PICKUP_BY join, matching a vehicle to
-# an order by license plate (vehicles.plate == orders.plate).
+# pickup-state declares PICKUP_BY once and emits Pickup nodes for both decisions.
     queries:
   # orders-preparing: orders still being prepared (status != 'ready'). As soon as
   # an order becomes 'ready' it drops out of this result and appears in
@@ -228,10 +220,12 @@ instances:
             v.color AS color,
             v.location AS location
 
-  # delivery: orders that are READY whose driver has ARRIVED at the curbside.
-      - id: delivery
+  # Calculate the cross-database join once, then fan out to both decisions.
+      - id: pickup-state
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: Pickup
         inputs:
           - component: physical-ops
             nodes:
@@ -249,19 +243,40 @@ instances:
         query: |
           MATCH
             (o:orders)-[:PICKUP_BY]->(v:vehicles)
-          WHERE o.status = 'ready'
-          AND v.location = 'Curbside'
           RETURN
             o.id AS id,
             o.id AS orderId,
             o.status AS orderStatus,
+            o.customer_name AS customerName,
             o.driver_name AS driverName,
-            o.plate as vehicleId,
-            v.make as vehicleMake,
-            v.model as vehicleModel,
-            v.color as vehicleColor,
-            v.location as vehicleLocation,
-            drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) as readyTimestamp
+            o.plate AS vehicleId,
+            v.make AS vehicleMake,
+            v.model AS vehicleModel,
+            v.color AS vehicleColor,
+            v.location AS vehicleLocation,
+            drasi.changeDateTime(v) AS waitingSinceTimestamp,
+            drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) AS readyTimestamp
+
+  # delivery: orders that are READY whose driver has ARRIVED at the curbside.
+      - id: delivery
+        autoStart: true
+        queryLanguage: Cypher
+        inputs:
+          - component: pickup-state
+        query: |
+          MATCH (p:Pickup)
+          WHERE p.orderStatus = 'ready' AND p.vehicleLocation = 'Curbside'
+          RETURN
+            p.orderId AS id,
+            p.orderId AS orderId,
+            p.orderStatus AS orderStatus,
+            p.driverName AS driverName,
+            p.vehicleId AS vehicleId,
+            p.vehicleMake AS vehicleMake,
+            p.vehicleModel AS vehicleModel,
+            p.vehicleColor AS vehicleColor,
+            p.vehicleLocation AS vehicleLocation,
+            p.readyTimestamp AS readyTimestamp
 
   # delay: a driver is at the curbside but the order is NOT yet ready, and they
   # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
@@ -270,32 +285,18 @@ instances:
         autoStart: true
         queryLanguage: Cypher
         inputs:
-          - component: physical-ops
-            nodes:
-              - vehicles
-          - component: retail-ops
-            nodes:
-              - orders
-        joins:
-          - id: PICKUP_BY
-            keys:
-              - label: vehicles
-                property: plate
-              - label: orders
-                property: plate
-    # drasi.trueFor anchors its timer to the change's effective_from, which both
-    # the PostgreSQL and MySQL sources populate with the wall-clock time of the
-    # change. The row appears the instant the vehicle has been at 'Curbside' for
-    # 10 seconds while the order is still not ready.
+          - component: pickup-state
+    # Evaluate both conditions inside trueFor so either reversal cancels the
+    # timer. Preserve the vehicle timestamp as data across the query boundary.
         query: |
-          MATCH
-            (o:orders)-[:PICKUP_BY]->(v:vehicles)
-          WHERE o.status <> 'ready'
-          AND drasi.trueFor(v.location = 'Curbside', duration({ seconds: 10 }))
+          MATCH (p:Pickup)
+          WHERE drasi.trueFor(
+            p.orderStatus <> 'ready' AND p.vehicleLocation = 'Curbside',
+            duration({ seconds: 10 }))
           RETURN
-            o.id AS orderId,
-            o.customer_name AS customerName,
-            drasi.changeDateTime(v) AS waitingSinceTimestamp
+            p.orderId AS orderId,
+            p.customerName AS customerName,
+            p.waitingSinceTimestamp AS waitingSinceTimestamp
 
 # =============================================================================
 # Reactions
@@ -319,7 +320,7 @@ instances:
           - vehicles-curbside
           - delivery
           - delay
-        host: "${DASHBOARD_HOST:-0.0.0.0}"
+        host: "${DASHBOARD_HOST:-127.0.0.1}"
         port: ${DASHBOARD_PORT:-3000}
         heartbeatIntervalMs: 15000
         predefinedDashboards:

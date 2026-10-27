@@ -20,6 +20,7 @@
 
 @baseUrl = http://localhost:8380
 @dashboardUrl = http://localhost:3000
+@instance = {{baseUrl}}/api/v1/instances/high-risk-containers-server
 
 ### ==========================================================================
 ### Health & Info
@@ -31,38 +32,47 @@ GET {{baseUrl}}/health
 ### List API versions
 GET {{baseUrl}}/api/versions
 
+### Exact instance/runtime identity (not by itself pipeline readiness)
+GET {{instance}}/runtime
+
+### Graph lifecycle, dependencies, waiting/failure observations
+GET {{instance}}/computation
+
 ### ==========================================================================
 ### Sources
 ### ==========================================================================
 
 ### List all sources
-GET {{baseUrl}}/api/v1/sources
+GET {{instance}}/sources
 
 ### Get the PostgreSQL (RiskyImage) source status
-GET {{baseUrl}}/api/v1/sources/devops
+GET {{instance}}/sources/devops
 
 ### Get the Kubernetes source status
-GET {{baseUrl}}/api/v1/sources/k8s
+GET {{instance}}/sources/k8s
 
 ### ==========================================================================
 ### Continuous Query
 ### ==========================================================================
 
 ### List all queries
-GET {{baseUrl}}/api/v1/queries
+GET {{instance}}/queries
+
+### Shared inventory: graph-change v1 nodes labeled ContainerImage
+GET {{instance}}/queries/pod-containers/results
 
 ### Running high risk containers (the dashboard feed)
-GET {{baseUrl}}/api/v1/queries/high-risk-containers/results
+GET {{instance}}/queries/high-risk-containers/results
 
 ### ==========================================================================
 ### Reactions
 ### ==========================================================================
 
 ### List all reactions
-GET {{baseUrl}}/api/v1/reactions
+GET {{instance}}/reactions
 
 ### Get the dashboard reaction status
-GET {{baseUrl}}/api/v1/reactions/high-risk-containers-dashboard
+GET {{instance}}/reactions/high-risk-containers-dashboard
 
 ### Open the dashboard in a browser instead: {{dashboardUrl}}
 ### The seeded "High Risk Containers" dashboard is available via the dashboard API:

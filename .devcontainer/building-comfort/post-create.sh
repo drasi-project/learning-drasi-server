@@ -24,6 +24,13 @@ sudo apt-get install -y build-essential cmake clang libclang-dev pkg-config \
 
 echo "Building matching ComputationGraph Server and plugins..."
 cd "$TUTORIAL_DIR"
+if [ ! -f "$REPO_ROOT/../drasi-core/Cargo.lock" ]; then
+    echo "Core's workspace Cargo.lock is required for the locked build."
+    echo "From this tutorial directory, run:"
+    echo "  RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml"
+    echo "Then rerun: bash ../../.devcontainer/building-comfort/post-create.sh"
+    exit 1
+fi
 python3 scripts/demo.py build
 
 echo ""

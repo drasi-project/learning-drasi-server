@@ -1,453 +1,421 @@
 <!-- DO NOT EDIT. Generated from _index.md by scripts/render-tutorials.py. Edit _index.md and run `python3 scripts/render-tutorials.py`. -->
 
-OpenTelemetry collects signals. Observability backends store and visualize them. Operators still have to decide whether a deployment, a latency spike, and a downstream dependency are *the same incident*.
+OpenTelemetry collects signals. Operators still need to decide whether a rollout,
+a latency spike, and a downstream dependency describe the same incident.
 
-This tutorial builds that correlation layer on **Drasi Server**. Three mock store services (`frontend`, `checkout`, `payments`) run in a local Kubernetes cluster and export OTLP through an in-cluster Collector. Drasi watches the checkout Deployment, the live p99 gauge, and a PostgreSQL SLO policy — and emits **Added** / **Removed** when a sustained regression becomes true or false. There is no application code in the loop, and **no bespoke web UI**: the built-in **dashboard reaction** is the demo.
+This tutorial builds that correlation layer on **Drasi Server**. Three mock store
+services (`frontend`, `checkout`, `payments`) run in Kubernetes and export real
+request timings and CLIENT spans through an in-cluster OTel Collector. Drasi
+watches their Deployments, live p99 gauges, and a PostgreSQL SLO policy. The
+dashboard shows an alert **Added** when a regression persists and **Removed**
+when it recovers. You change the originating systems, not Drasi's result data.
 
-**What you'll build:** a running Drasi Server assembled from Drasi's three core building blocks:
+**Sources → shared health queries → alert queries → dashboard and log reactions**
 
-**Sources** → **Continuous Queries** → **Reactions**
+The Server and every plugin are built from the existing sibling `drasi-server/`
+and `drasi-core/` checkouts. The only runtime is ComputationGraph. It connects the
+existing source and reaction interfaces as well as query-to-query graph data;
+there is no execution-mode flag or separate compatibility runtime.
 
-- **Sources**: Kubernetes, OTel, and PostgreSQL
-- **Continuous Queries**: Correlate rollout, health, and policy
-- **Reactions**: Dashboard and console log
-
-| Step | What You'll Do | Time |
-| ---- | ------------- | ---- |
-| **[Step 1: Set Up Your Environment](#step-1-of-4-set-up-your-environment)** | Open the dev container (or install the tools locally) | 5 min |
-| **[Step 2: Run the Demo](#step-2-of-4-run-the-demo)** | One command starts Kubernetes, PostgreSQL, and Drasi Server | 5 min |
-| **[Step 3: Open the Dashboard](#step-3-of-4-open-the-dashboard)** | Watch checkout v41 stay healthy | 2 min |
-| **[Step 4: Drive Change](#step-4-of-4-drive-change)** | `kubectl` a rollout, `UPDATE` the SLO, stop heartbeats | 8 min |
-| **[How It Works](#how-it-works)** | Understand the three sources, the virtual joins, and the queries | 5 min |
-| **[Optional: Discord](#optional-discord-alerts)** | Push SLO and heartbeat changes to a webhook | 5 min |
+| Step | What you do |
+| --- | --- |
+| [Set up](#step-1-of-4-set-up-your-environment) | Build matching local Server and plugins |
+| [Run](#step-2-of-4-run-the-demo) | Start an owned cluster, Collector, store services, and PostgreSQL |
+| [Observe](#step-3-of-4-open-the-dashboard) | Open the built-in dashboard and inspect the live graph |
+| [Drive change](#step-4-of-4-drive-change) | Roll checkout, edit its SLO policy, and interrupt its heartbeat |
+| [How it works](#how-it-works) | Follow shared health and heartbeat results through the query graph |
+| [Optional Discord alerts](#optional-discord-alerts) | Deliver the same alert changes to a webhook |
 
 > **Before you begin**
 >
-> - **Terminals:** you'll use two. **Terminal 1** runs the demo (it stays in the foreground). Use **Terminal 2** to change Kubernetes, PostgreSQL, and the mock services with `kubectl`, SQL, and `curl`.
-> - **Working directory:** run every command from the tutorial directory (`tutorials/otel-observability/`). The dev container opens there automatically; if you're running locally, `cd tutorials/otel-observability` first.
-> - **Command tabs:** commands are shown in tabs (*bash / zsh* and *PowerShell*). Use the one for your shell. The dev container and Codespaces use *bash*.
-> - **Ports:** the Drasi Server API is on `8380`, the dashboard is on `3000`, PostgreSQL is on `5732`, the OTel source is on `14317`, the checkout control API is on `18080`, and the k3d Kubernetes API is on `6551`.
-> - **What this is not:** Drasi is not replacing Prometheus, Grafana, Loki, or a tracing backend. It keeps a bounded live graph for correlation.
+> Use two terminals in `tutorials/otel-observability/`: Terminal 1 runs Server in the
+> foreground; Terminal 2 changes the store. Python **3.11+** is required. Commands
+> below use `python3`; in PowerShell use `python` if that is your interpreter name.
+> The existing `.sh` and `.ps1` entry points call the same Python helper.
+>
+> Default ports are API `8380`, dashboard `3000`, PostgreSQL `5732`, Drasi OTLP/gRPC
+> `14317`, Drasi OTLP/HTTP `14318`, checkout control `18080`, and Kubernetes API
+> `6551`. Copy `.env.example` to `.env` before starting if any are already occupied.
+> Each run owns its generated resource names and checks ports before creation.
 
 ## Step 1 of 4: Set Up Your Environment
-This tutorial needs **Docker** (it runs PostgreSQL, builds three mock service images, and starts a local Kubernetes cluster), plus **k3d** and **kubectl**. The easiest way to get everything is the **dev container**.
+### Local checkouts
 
-### Option A: Dev Container or GitHub Codespaces (recommended)
+Use this layout, with the current matching ComputationGraph branches already
+checked out:
 
-1. Open this repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
-2. When prompted for a configuration, choose **Drasi Server - OTel Observability Tutorial**.
-3. Wait for the container to finish. Its setup script installs the PostgreSQL client, `kubectl`, and `k3d`, and downloads the Drasi Server binary.
+```text
+workspace/
+  drasi-core/
+  drasi-server/
+  learning-drasi-server/
+```
 
-That's it. Skip ahead to [Step 2](#step-2-of-4-run-the-demo).
+Server's `drasi-lib` dependency must point at the sibling `drasi-core/lib`.
+The helper never clones a repository, changes branches, downloads a released
+Server, or installs registry plugins. It rebuilds the Server and the PostgreSQL,
+Kubernetes, OTel, dashboard, log, and optional HTTP plugin libraries together.
 
-### Option B: Run Locally
+Install the Server/Core build prerequisites documented in those repositories
+(Rust **1.95**, C/C++ tools, CMake, Clang/libclang, libjq, OpenSSL, pkg-config,
+and protoc), plus **Podman**, **kubectl**, and **k3d 5.8+**. Podman must be running.
+k3d uses Podman's Docker-compatible API, not just the Podman CLI connection.
 
-You'll need **Docker** (for PostgreSQL, image builds, and k3d), [**k3d**](https://k3d.io/#installation), [**kubectl**](https://kubernetes.io/docs/tasks/tools/), and **bash** (the helper scripts use it; on Windows use Git Bash or WSL, or use the PowerShell tabs). From the repository root, move into the tutorial directory and download the Drasi Server binary:
+On macOS, get the socket path without changing any global settings:
 
-**bash / zsh**
+```bash
+podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'
+```
+
+Put `DOCKER_HOST=unix:///the/returned/socket/path` in this tutorial's `.env`.
+On Linux, use the socket of your running Podman API service. k3d's Podman support
+is experimental: this tutorial requires a functioning privileged k3d cluster,
+not merely a working `podman ps`. If networking cannot reach the host, set
+`COLLECTOR_DRASI_ENDPOINT` to the host address reachable **from the cluster**.
+Do not use `localhost` there; that would refer to the Collector itself.
+
+From the learning repository:
 
 ```bash
 cd tutorials/otel-observability
-bash scripts/download.sh
+python3 scripts/demo.py build
+python3 scripts/demo.py verify-build
 ```
 
-**PowerShell**
+Builds copy the complete matched artifact set into a private, hash-checked bundle
+under `.runtime/`. Startup verifies those hashes and rejects extra/missing plugin
+files. Unsigned **local development artifacts only** bypass signature checks;
+automatic registry fallback is disabled. Rebuild after changing Server or Core.
+Do not reuse a Darwin bundle inside Linux (or vice versa).
 
-```powershell
-cd tutorials/otel-observability
-powershell -ExecutionPolicy Bypass -File scripts/download.ps1
-```
+### Local dev container
 
-This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
+Choose **Drasi Server - OTel Observability Tutorial** in VS Code. It mounts the
+**parent directory**, so the same sibling checkouts must already exist. Setup
+installs build prerequisites and checksum-verifies k3d, then builds matching
+Linux Server/plugin artifacts. Its isolated Docker-in-Docker engine is selected
+explicitly; it does not need Docker Desktop. Native local execution defaults to
+Podman. Container build outputs, selected plugin bundles, kubeconfig, and ownership
+records live in the container-local `/home/vscode/.cache/drasi-otel-observability/`
+directory, separate from native host `.runtime/` files. The container also selects
+its own Docker API socket rather than inheriting a host Podman socket from `.env`.
 
-> **Pinned versions**
->
-> This tutorial pins **Drasi Server 0.2.2** and the published **`source/otel:0.1.0`** plugin (plugin-sdk 0.11, signed).
+A standalone Codespace containing only `learning-drasi-server` is insufficient.
+There is deliberately no released-binary fallback for a missing sibling checkout.
 
 ## Step 2 of 4: Run the Demo
-Everything runs from a single configuration file, `server-config.yaml`. In **Terminal 1**, start the demo:
-
-**bash / zsh**
+In **Terminal 1**:
 
 ```bash
-bash scripts/start-demo.sh
+python3 scripts/demo.py start-demo
 ```
 
-**PowerShell**
+The helper:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
+1. Creates a uniquely named k3d cluster with a **private kubeconfig**, without
+   updating the user's kubeconfig or changing its current context.
+2. Builds checkout **v41** and **v42**, frontend, and payments from `services/`,
+   imports those images, and deploys them with the actual in-cluster Collector.
+3. Starts a uniquely named, ownership-labeled PostgreSQL container and volume.
+   It seeds the checkout / `latency_p99_ms` / **750 ms** policy only in a new
+   database. Existing policy values and replication state are not reset.
+4. Starts the local Server with `server-config.yaml`, verifies the exact
+   `otel-observability-server` instance reports `runtime: "computationGraph"`
+   and `running: true`, then checks component and dashboard readiness.
+
+The helper renders the owned kubeconfig path and namespace into
+`.runtime/server-config.generated.yaml`: the Kubernetes plugin exposes those
+fields as plain strings, not environment-aware `ConfigValue` fields. Other
+supported environment references are resolved by Server and its plugin DTOs.
+
+Wait for **OTel READY**. This confirms the runtime and dashboard, not that all
+telemetry has arrived. OTLP has no bootstrap dump; allow the next Collector
+exports to populate the health and dependency views.
+
+The Collector receives app OTLP/HTTP at `otel-collector:4318` and forwards
+OTLP/gRPC to Drasi. Its generated endpoint is printed during setup. If data
+does not arrive, inspect it and the Collector logs:
+
+```bash
+python3 scripts/demo.py kubectl logs deployment/otel-collector --tail=50
+python3 scripts/demo.py kubectl get deploy,pods,svc
 ```
 
-The `start-demo` script does four things:
+The `kubectl` helper supplies the owned cluster's private kubeconfig and namespace
+on every call. It prints the underlying command, so you can also run equivalent
+`kubectl --kubeconfig ... --namespace ...` commands directly.
 
-1. **Builds three mock store images** (`frontend:v1`, `checkout:v41` / `:v42`, `payments:v1`) and imports them into a k3d cluster.
-2. **Deploys an in-cluster OTel Collector** plus the three services. Apps export OTLP/HTTP to `otel-collector:4318`; the Collector forwards to Drasi on the host at `:14317`.
-3. **Starts PostgreSQL** and seeds `service_slo_policy` (checkout / `latency_p99_ms` / 750 ms).
-4. **Runs Drasi Server** in the foreground with the full configuration.
-
-On first start, Drasi Server downloads the signed registry plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `source/otel:0.1.0`, `reaction/dashboard:0.1.5`, `reaction/log`) from `ghcr.io/drasi-project`. When you see a line like the following, it's ready:
-
-```text
-Drasi Server started successfully with API on port 8380
-```
-
-Leave this running. Everything else happens from **Terminal 2** (or your browser).
-
-> **Stopping and resetting**
->
-> Press **Ctrl+C** in Terminal 1 to stop the server. To remove the database container *and* the k3d cluster when you're completely done, run `bash scripts/cleanup.sh` (bash) or `powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1` (PowerShell). Add `--volumes` (bash) or `-RemoveVolumes` (PowerShell) to also delete the database data.
+Press **Ctrl+C** to stop Server. Infrastructure and PostgreSQL data remain.
+Restart only Server with `python3 scripts/demo.py start`. No process-name killing
+or database reset is performed.
 
 ## Step 3 of 4: Open the Dashboard
-Drasi Server's dashboard reaction hosts a live web dashboard; there's no separate app to build or run. **Wait until Terminal 1 prints `Drasi Server started successfully`** (on the first run this takes a little longer while the plugins download), then open it in your browser:
+Open **http://localhost:3000** (or your configured dashboard port), then choose
+**Open** on the **OTel Observability** dashboard card. The dashboard
+reaction serves the UI directly; there is no separate frontend application.
 
-```text
-http://localhost:3000
+After telemetry arrives, expect:
+
+- **Active SLO Alerts:** zero at healthy checkout v41.
+- **Checkout p99:** below the 750 ms policy. v41 sleeps 400 ms locally and calls
+  payments (80 ms), so real end-to-end samples are normally roughly **480 ms plus
+  overhead**, not an exact 400 ms.
+- **Current Health:** frontend, checkout v41, and payments.
+- **Service Dependencies:** `frontend → checkout` and `checkout → payments`,
+  derived from actual CLIENT spans.
+- **Checkout heartbeat:** a live receive timestamp. An empty view means no
+  heartbeat has been observed yet, not that a service is proven healthy.
+
+Updates arrive automatically. `requests.http` contains instance-scoped source,
+query, reaction, and runtime requests, plus the checkout control calls.
+For example:
+
+```bash
+curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/runtime
+curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/queries/current-health/results
 ```
-
-In the dev container or Codespaces, port `3000` is forwarded automatically. If you open the page before the server has finished starting, just refresh once it's ready.
-
-The OTel source has **no bootstrap dump** — it waits for the next export. Wait until **Current Health** shows all three services (usually a few seconds after `Drasi Server started successfully`). Then you should see:
-
-- **Active SLO Alerts** — empty. Checkout is healthy.
-- **Checkout p99** and the gauge — about **400 ms**, under the 750 ms policy.
-- **Current Health** — checkout at deploy version **v41**.
-- **Service Dependencies** — a live graph of `frontend → checkout` and `checkout → payments`, derived from CLIENT spans.
-- **Checkout heartbeat** — a `lastSeen` timestamp. Empty means no pulse has arrived yet, not that the signal is healthy.
-
-The dashboard updates the instant the data changes, with no refreshing. Let's make something change.
 
 ## Step 4 of 4: Drive Change
-With Terminal 1 running the demo and the dashboard open, use **Terminal 2** to change the same systems Drasi is watching. None of these commands talk to Drasi. Kubernetes, PostgreSQL, and checkout's control API are the origins; Drasi only observes.
-
-Set the kubeconfig once for this terminal (the cluster script wrote it):
-
-**bash / zsh**
-
-```bash
-export KUBECONFIG=bin/kubeconfig.yaml
-```
-
-**PowerShell**
-
-```powershell
-$env:KUBECONFIG = "bin/kubeconfig.yaml"
-```
-
-List what the cluster is running before you change anything:
-
-```bash
-kubectl get deploy,pods,svc
-```
-
-You should see `frontend`, `checkout` (image tag `v41`), `payments`, and `otel-collector`.
+Use **Terminal 2**. The following commands act on Kubernetes, PostgreSQL, and the
+mock checkout service. Drasi only observes their changes.
 
 ### Roll checkout to v42
 
-This is a real Deployment change. **v41** starts at 400 ms; **v42** starts at 920 ms (above the 750 ms policy). The image change is the latency change.
+```bash
+python3 scripts/demo.py roll v42
+```
+
+This prints and runs `kubectl set image`, waits for `rollout status`, then sets
+the Deployment's `version=v42` label. It uses this run's locally built image.
+The helper verifies and reimports that image first, since Kubernetes can
+garbage-collect an inactive image during a long session; no registry pull is used.
+The v42 process really sleeps **920 ms**, then calls payments, so its p99 exceeds
+750 ms. **Current Health** changes to v42. Once that version matches Kubernetes
+and remains over the policy for five seconds, **slo-alert** emits **Added**.
+The alert row and active count update on the dashboard.
+
+Recover:
 
 ```bash
-kubectl set image deployment/checkout app=otel-observability-checkout:v42
-kubectl rollout status deployment/checkout
-kubectl label deployment/checkout version=v42 --overwrite
+python3 scripts/demo.py roll v41
 ```
 
-`set image` starts a v42 replica that **actually sleeps ~920 ms** on each `/work` request (v41 sleeps ~400 ms). Frontend keeps calling checkout; checkout calls payments; the exported `latency_p99_ms` is the p99 of those real timings. After `rollout status`, **Current Health** shows **v42** at ~920 ms. Five seconds later **slo-alert** emits **Added**.
+After fresh v41 telemetry arrives, the same alert row is **Removed**. There is
+no separate resolution query. Startup, scheduling, Collector batching and export
+intervals add time to the five-second sustained-condition window.
 
-### Recover, then change the policy
+### Change the policy without changing the workload
 
-Roll back to v41 — 400 ms, under the SLO. The same alert row is **Removed**; there is no separate resolution query.
+Read the live row:
 
 ```bash
-kubectl set image deployment/checkout app=otel-observability-checkout:v41
-kubectl rollout status deployment/checkout
-kubectl label deployment/checkout version=v41 --overwrite
+python3 scripts/demo.py sql "SELECT service_name, metric_name, threshold_ms FROM service_slo_policy;"
 ```
 
-The threshold lives in PostgreSQL, not in the query. Checkout v41 is already ~400 ms, so dropping the policy to 100 ms is enough to fire the alert — no latency change required.
-
-Read the current row. You should see `750`:
+Tighten it below healthy v41's observed p99:
 
 ```bash
-docker exec otel-observability-postgres psql -U drasi_user -d otel_observability -c \
-  "SELECT service_name, metric_name, threshold_ms FROM service_slo_policy;"
+python3 scripts/demo.py set-slo 100
 ```
 
-Tighten the policy below the live p99. After five seconds (`trueFor`) **slo-alert** emits **Added**:
+The helper executes the following SQL against **only this run's PostgreSQL**:
+
+```sql
+UPDATE service_slo_policy
+SET threshold_ms = 100
+WHERE service_name = 'checkout' AND metric_name = 'latency_p99_ms';
+```
+
+The shared health row has not been redefined. Logical replication changes the
+policy input and **slo-alert** becomes **Added** after five seconds. Restore:
 
 ```bash
-docker exec otel-observability-postgres psql -U drasi_user -d otel_observability -c \
-  "UPDATE service_slo_policy SET threshold_ms = 100 WHERE service_name = 'checkout' AND metric_name = 'latency_p99_ms';"
+python3 scripts/demo.py set-slo 750
 ```
 
-Put the policy back above the live p99. The same alert row is **Removed**:
+The alert is **Removed**. Repeating the tighten/restore exercise starts a fresh
+sustained-condition window.
+
+### Explicitly disable and restore heartbeat
 
 ```bash
-docker exec otel-observability-postgres psql -U drasi_user -d otel_observability -c \
-  "UPDATE service_slo_policy SET threshold_ms = 750 WHERE service_name = 'checkout' AND metric_name = 'latency_p99_ms';"
+python3 scripts/demo.py heartbeat off
 ```
 
-Drasi never sees these commands — it only sees the row change through logical replication.
-
-### Missing heartbeat
-
-Stop checkout's health metric:
-
-**bash / zsh**
+Checkout continues exporting `health.heartbeat`, now with value **0**.
+**Checkout heartbeat** shows disabled and **missing-heartbeat** emits **Added**
+on the next export; it does not need to wait ten seconds for this explicit signal.
 
 ```bash
-curl -fsS -X POST http://127.0.0.1:18080/heartbeat/off
+python3 scripts/demo.py heartbeat on
 ```
 
-**PowerShell**
+A fresh positive pulse removes the alert. These are the same
+`POST /heartbeat/off` and `/heartbeat/on` control endpoints on
+`http://127.0.0.1:18080` used by `requests.http`.
 
-```powershell
-curl.exe -fsS -X POST http://127.0.0.1:18080/heartbeat/off
-```
+### Observe a truly absent exporter
 
-Checkout keeps exporting `health.heartbeat`, but the value is **0**. **Checkout heartbeat** flips to disabled and **missing-heartbeat** emits **Added**. Resume the signal:
-
-**bash / zsh**
+Keep the positive heartbeat enabled, then stop checkout's only replica:
 
 ```bash
-curl -fsS -X POST http://127.0.0.1:18080/heartbeat/on
+python3 scripts/demo.py kubectl scale deployment/checkout --replicas=0
 ```
 
-**PowerShell**
-
-```powershell
-curl.exe -fsS -X POST http://127.0.0.1:18080/heartbeat/on
-```
-
-The same row is **Removed**.
-
-### Reset
-
-Return everything to the starting state (checkout `v41`, 400 ms, heartbeat on, SLO 750):
-
-**bash / zsh**
+After the last received heartbeat is ten seconds old, the timer emits
+**missing-heartbeat Added** without a new source event. Restart:
 
 ```bash
-bash scripts/reset.sh
+python3 scripts/demo.py kubectl scale deployment/checkout --replicas=1
+python3 scripts/demo.py roll v41
 ```
 
-**PowerShell**
+`roll v41` reimports the owned image if Kubernetes discarded it while no replica
+was running, then waits for the restored Deployment. The next positive export
+removes the alert. Dependency edges expire after 60 seconds
+without another CLIENT span. A source that has never seen checkout cannot invent
+a missing heartbeat row; this exercise requires the initially observed pulse.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/reset.ps1
+### Reset and stop
+
+```bash
+python3 scripts/demo.py reset
 ```
+
+This restores checkout v41's 400 ms local delay, heartbeat on, and SLO 750; it
+does not destroy or recreate the database. If you scaled a Deployment to zero,
+restore its replicas first.
+
+Stop Server with Ctrl+C, then remove only the recorded owned infrastructure:
+
+```bash
+python3 scripts/demo.py cleanup
+```
+
+The database volume is retained. Use `cleanup --volumes` only when you also want
+to delete **this run's** PostgreSQL data. The helper verifies ownership labels
+and recorded cluster container IDs before removal. It refuses foreign resources
+and refuses cleanup while its foreground Server lock is present. Never delete a
+lock without first verifying that its recorded process has stopped.
+
+### Repeat the exercises automatically
+
+With Server still running, `python3 scripts/verify_demo.py` repeats the rollout,
+two policy-change cycles, explicit/absent heartbeat recovery, and dependency
+expiry against this owned run. It also checks the dashboard's live WebSocket
+Added/Removed messages and stable alert identities. This optional verifier needs
+**Node 22+** (built-in WebSocket, no npm packages), changes the store, and writes
+evidence under `.runtime/verification/`. It does not exercise Discord.
+For fast helper checks without infrastructure, run
+`python3 -m unittest discover -s scripts -p test_demo.py`.
 
 ## How It Works
-Everything you just ran is described by the single `server-config.yaml`. Here's what each part does.
+### Three sources, one computation graph
 
-### Three sources
-
-**Kubernetes** watches the store Deployments. Drasi Server runs *outside* the cluster and connects with the kubeconfig written by `scripts/setup-cluster.sh`:
-
-```yaml
-  - kind: kubernetes
-    id: k8s
-    resources:
-      - apiVersion: apps/v1
-        kind: Deployment
-    namespaces:
-      - default
-    authMode: kubeconfig
-    kubeconfigPath: bin/kubeconfig.yaml
-```
-
-Each Deployment becomes a node with `name` (from `metadata.name`) and a nested `labels` map. A **promote** middleware copies `labels.version` to a top-level `version` property so the validated queries can return `d.version`.
-
-**OpenTelemetry** is the native `source/otel` plugin. It listens for OTLP/gRPC on `:14317` and projects an allowlisted subset into a bounded graph — it is not a telemetry backend. The in-cluster Collector forwards to that port; `setup-cluster` rewrites `host.k3d.internal` to the node gateway when the alias is missing (common in the Docker-in-Docker dev container):
+**Kubernetes** watches Deployments in the owned namespace. A `promote` middleware
+copies `labels.version` into a top-level `version` property. **PostgreSQL** streams
+the composite-key `service_slo_policy` table via logical replication. **OTel**
+projects only the allowlisted gauges and CLIENT-span relationships into a bounded
+live graph:
 
 ```text
-(:Service {name: 'checkout'})-[:REPORTS]->(:Metric {name: 'latency_p99_ms', value: 400})
-(:Service {name: 'checkout'})-[:REPORTS]->(:Metric {name: 'health.heartbeat', receivedAt: ...})
-(:Service {name: 'checkout'})-[:DEPENDS_ON]->(:Service {name: 'payments'})
-(:Service {name: 'checkout'})-[:HEARTBEAT]->(:Heartbeat {lastSeen: ...})
+(:Service)-[:REPORTS]->(:Metric {name: 'latency_p99_ms', value: ...})
+(:Service)-[:REPORTS]->(:Metric {name: 'health.heartbeat', receivedAt: ...})
+(:Service)-[:DEPENDS_ON]->(:Service)
 ```
 
-The metric identity is `(service.name, metric.name)`, so the next gauge **updates** the same node. `health.heartbeat` is allowlisted so the query can use `Metric.receivedAt` (server receive time). The mock sends a changing gauge value so each export is a real Update. `DEPENDS_ON` edges refresh on each CLIENT span and expire after 60 seconds. There is no bootstrap: late subscribers wait for the next export.
+Each gauge updates the same `(service.name, metric.name)` identity.
+`receivedAt` is Drasi receive time. Dependency relationships refresh on CLIENT
+spans and expire after 60 seconds. The source can also project Heartbeat nodes,
+but this scenario uses the explicit gauge value and receive timestamp so it can
+distinguish disabled pulses from absent exports.
 
-**PostgreSQL** holds the SLO policy and streams changes via logical replication. The table name is unquoted `service_slo_policy` so the node label matches the Cypher (`(p:service_slo_policy)`).
+### Reuse the correlation, not copied query text
 
-### Virtual joins
-
-The OTel source does not invent Kubernetes or policy relationships. The query declares them:
+`current-health` joins Deployment names to OTel Service names with the synthetic
+`RUNS` relation. It returns both the live service version and Kubernetes rollout
+version, service name, metric name, and latency. `result.label: ServiceHealth`
+exposes those rows as standard graph-change nodes:
 
 ```yaml
-joins:
-  - id: RUNS
-    keys:
-      - label: Deployment
-        property: name
-      - label: Service
-        property: name
-  - id: GOVERNED_BY
-    keys:
-      - label: Service
-        property: name
-      - label: service_slo_policy
-        property: service_name
+result:
+  label: ServiceHealth
 ```
 
-### The queries
+`checkout-health` selects checkout from that result for the KPI and gauge.
+`slo-alert` consumes the same producer plus the PostgreSQL policy:
 
-**current-health** is the always-on path, so the dashboard has a live latency even when no alert is firing:
-
-```cypher
-MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric)
-WHERE m.name = 'latency_p99_ms'
-RETURN
-  s.version AS deployVersion,
-  s.name AS service,
-  m.value AS latencyMs
+```yaml
+inputs:
+  - current-health
+  - component: slo
+    nodes: [service_slo_policy]
 ```
 
-**slo-alert** is the flagship query. Neither the sample 920 ms nor the 750 ms threshold is embedded in the Cypher — both are changing data. The result fires only after the condition holds for five seconds:
+Its `GOVERNED_BY` synthetic join matches `ServiceHealth.service` to
+`service_slo_policy.service_name`. The query is:
 
 ```cypher
-MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric),
-      (s)-[:GOVERNED_BY]->(p:service_slo_policy)
-WHERE m.name = p.metric_name
-  AND s.version = d.version
-  AND m.value > p.threshold_ms
+MATCH (h:ServiceHealth)-[:GOVERNED_BY]->(p:service_slo_policy)
+WHERE h.metricName = p.metric_name
   AND drasi.trueFor(
-    m.value > p.threshold_ms,
+    h.deployVersion = h.rolloutVersion AND h.latencyMs > p.threshold_ms,
     duration({ seconds: 5 })
   )
-RETURN
-  d.version AS deployVersion,
-  s.name AS service,
-  m.value AS latencyMs,
-  p.threshold_ms AS thresholdMs
+RETURN h.deployVersion AS deployVersion,
+       h.service AS service,
+       h.latencyMs AS latencyMs,
+       p.threshold_ms AS thresholdMs
 ```
 
-**service-dependencies** is the live `DEPENDS_ON` map. **missing-heartbeat** watches checkout's `health.heartbeat` gauge: `POST /heartbeat/off` exports **0** (immediate **Added**); a process that stops exporting ages `receivedAt` for 10 seconds.
+Both version agreement and threshold comparison are inside `trueFor`, including
+their false transitions. A mismatching rollout or recovery cancels the pending
+condition instead of filtering out the event before the timer can observe it.
 
-```cypher
-MATCH (svc:Service)-[:REPORTS]->(m:Metric)
-WHERE svc.name = 'checkout'
-  AND m.name = 'health.heartbeat'
-  AND (
-        m.value <= 0
-        OR drasi.trueNowOrLater(
-             datetime(m.receivedAt) <= (datetime.realtime() - duration({ seconds: 10 })),
-             datetime(m.receivedAt) + duration({ seconds: 10 })
-           )
-      )
-RETURN svc.name AS service
-```
+Similarly, `checkout-heartbeat` emits `CheckoutHeartbeat` nodes with `service`,
+`pulse`, and `lastSeen`. `missing-heartbeat` subscribes to that query, tests an
+explicit zero immediately, or schedules a `drasi.trueNowOrLater` check for ten
+seconds after the last receive time. The same live heartbeat result drives the
+dashboard and the timer.
 
-### The mock services
+Query outputs carry standard graph changes, without a remap reaction or
+query-specific envelope in downstream Cypher. This graph representation can
+also connect native source/transformer/query producers and native sinks. The
+ordinary dashboard, log, and HTTP reactions used **here** still subscribe to
+query IDs and use their query-aware Added/Updated/Removed template contracts.
 
-The cluster runs three small images that share `services/app.py` and differ only by `SERVICE_NAME` / `PEER_SERVICE`:
+### Data-plane telemetry versus runtime observability
 
-| Image | Emits |
-| --- | --- |
-| `otel-observability-frontend:v1` | Calls `http://checkout:8080/work` every 2s; exports client p99 + CLIENT span |
-| `otel-observability-checkout:v41` | `/work` sleeps **400 ms**, then calls payments |
-| `otel-observability-checkout:v42` | `/work` sleeps **920 ms**, then calls payments |
-| `otel-observability-payments:v1` | `/work` sleeps **80 ms** |
+The Collector in this scenario delivers **application telemetry as source data**.
+It is not collecting all Drasi component telemetry. The instance `/runtime`
+endpoint proves the selected instance is running ComputationGraph, not that
+every export arrived, that alerts are correct, or that data is durably committed.
+Query-progress metrics likewise do not prove exactly-once processing, durable
+replay, or all-component OTel coverage.
 
-Same `app.py`; v41/v42 differ by `WORK_MS`. Each request is timed; the process exports a p99 gauge of recent samples (the OTel source accepts gauges, not histograms). Checkout's control API is `http://127.0.0.1:18080` (`POST /delay/<ms>` changes the sleep, `POST /heartbeat/on|off` toggles the heartbeat).
-
-### Plugin and server versions
-This tutorial pins **Drasi Server 0.2.2** (`scripts/download.sh`, override with `DRASI_SERVER_VERSION`) and **`source/otel:0.1.0`** from `ghcr.io/drasi-project`. First start downloads the signed cdylib into `bin/<os>-<arch>/plugins` (host and the Linux dev container keep separate trees so a Mac bind-mount cannot exec a Darwin binary).
-
-`0.2.0-preview` is plugin-sdk 0.9 and cannot load this plugin. Re-run `bash scripts/download.sh` if you still have that binary.
+This tutorial deliberately keeps in-memory query state. PostgreSQL survives a
+Server restart and bootstraps its policy; Kubernetes supplies current objects;
+OTel views refill from subsequent exports. It does not promise replay of telemetry
+sent while Server was unavailable.
 
 ## Optional: Discord Alerts
-The dashboard is for *watching*. A reaction can *act*: the same **Added** / **Removed** edges posted to a webhook. Drasi Server's **HTTP reaction** (`kind: http`) does that with no extra code. This step is optional and needs a Discord server where you can create a webhook.
+The dashboard is for watching. The same **Added/Removed** transitions can trigger
+an HTTP reaction. Use a Discord channel where you are allowed to create a webhook,
+or your own webhook endpoint. Do not send private data to an unapproved endpoint.
 
-The reaction is already written in `server-config.yaml`; it ships **commented out**. Enable it by uncommenting it and supplying a webhook URL.
+1. In Discord, create a webhook and copy its URL. Treat the token as a secret.
+2. Uncomment the `discord-alerts` reaction at the bottom of `server-config.yaml`.
+   Preserve its indentation inside `instances[0].reactions`. The local build
+   already includes `drasi-reaction-http`; no plugin download is needed.
+3. Stop only Server, provide `DISCORD_WEBHOOK_URL` in your shell environment, and
+   run `python3 scripts/demo.py start`. Leave the cluster and database intact.
 
-> **Keep the demo running**
->
-> This continues from the demo in Step 2. Leave the cluster and database up. You will restart only Drasi Server.
+The reaction subscribes to `slo-alert` and `missing-heartbeat`. Its `added`
+templates read `after.*`; its `deleted` templates read `before.*`, posting a
+Discord `{"content": "..."}` body. Updated latency rows intentionally have no
+webhook template, avoiding a message for each new sample.
 
-> **Same pattern, any webhook**
->
-> This uses Discord, but the HTTP reaction posts to any webhook-style endpoint (Slack, Microsoft Teams, PagerDuty, your own scaler) by changing the URL and the message `template`.
-
-### 1. Create a Discord webhook
-
-In Discord: **Server Settings → Integrations → Webhooks → New Webhook**, pick the channel, and **Copy Webhook URL**. It looks like `https://discord.com/api/webhooks/<id>/<token>`.
-
-### 2. Enable the HTTP reaction in `server-config.yaml`
-
-Open `server-config.yaml` and **uncomment** two things (remove the leading `# ` from each line):
-
-1. The HTTP reaction plugin in the `plugins:` list:
-
-   ```yaml
-   - ref: reaction/dashboard
-   - ref: reaction/log
-   - ref: reaction/http        # uncomment this line
-   ```
-
-2. The `discord-alerts` reaction block at the bottom of `reactions:`. It subscribes to `slo-alert` and `missing-heartbeat` and posts when a row is **Added** or **Removed**:
-
-   ```yaml
-     - kind: http
-       id: discord-alerts
-       autoStart: true
-       queries:
-         - slo-alert
-         - missing-heartbeat
-       baseUrl: "${DISCORD_WEBHOOK_URL}"
-       timeoutMs: 30000
-       outputTemplates:
-         routes:
-           slo-alert:
-             added:
-               method: POST
-               headers:
-                 Content-Type: application/json
-               template: |
-                 {
-                   "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99:** {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
-                 }
-             deleted:
-               method: POST
-               headers:
-                 Content-Type: application/json
-               template: |
-                 {
-                   "content": "✅ **SLO recovered**\n• **Service:** `{{before.service}}`\n• **Version:** `{{before.deployVersion}}`"
-                 }
-   ```
-
-- `baseUrl` is the webhook URL. `${DISCORD_WEBHOOK_URL}` is resolved at startup, so the secret is not in the file.
-- `added` templates use `{{after.*}}`; `deleted` templates use `{{before.*}}`. Those fields are what the query returns.
-- The body is Discord's `{"content": "..."}` format.
-
-### 3. Provide the webhook URL and restart
-
-Stop Drasi Server with **Ctrl+C** in Terminal 1, set the webhook URL, and start only the server (cluster and Postgres stay up):
-
-**bash / zsh**
-
-```bash
-export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/<id>/<token>"
-bash scripts/start-server.sh
-```
-
-**PowerShell**
-
-```powershell
-$env:DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/<id>/<token>"
-powershell -ExecutionPolicy Bypass -File scripts/start-server.ps1
-```
-
-On this start, Drasi Server installs `reaction/http` and brings up `discord-alerts` next to the dashboard.
-
-From **Terminal 2**, drive a change and watch the channel:
-
-```bash
-kubectl set image deployment/checkout app=otel-observability-checkout:v42
-kubectl rollout status deployment/checkout
-kubectl label deployment/checkout version=v42 --overwrite
-```
-
-After ~5 seconds you should see **SLO alert**. Roll back to v41 and you should see **SLO recovered**. `POST http://127.0.0.1:18080/heartbeat/off` posts **Heartbeat missing**; `/heartbeat/on` posts **Heartbeat restored**.
+Roll v42 then v41 to observe **SLO alert** and **SLO recovered**, or toggle
+heartbeat off/on for **Heartbeat missing** and **Heartbeat restored**. A valid
+webhook and permission to post are required to exercise this optional step;
+local dashboard success does not verify external delivery.

@@ -105,12 +105,7 @@ app.post('/api/vehicles/:plate/toggle', async (req, res) => {
 });
 
 const port = parseInt(process.env.WEBUI_PORT || '3001', 10);
-// Bind host: default to undefined so Node listens on the dual-stack wildcard
-// (::), which accepts both IPv6 (::1) and IPv4 (127.0.0.1) loopback. Binding
-// explicitly to 0.0.0.0 is IPv4-only, and on Windows "localhost" resolves to
-// ::1 first - so the browser stalls retrying IPv6 before falling back, making
-// the console appear to "take forever to load". Set WEBUI_HOST to override.
-const host = process.env.WEBUI_HOST || undefined;
+const host = process.env.WEBUI_HOST || '127.0.0.1';
 
 // Start the HTTP server right away so the page is reachable immediately, even
 // while the databases are still coming up.

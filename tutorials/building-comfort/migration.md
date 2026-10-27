@@ -13,8 +13,8 @@ the same six continuous queries, and the dashboard and log reactions. There
 was no need to convert those plugins to native graph interfaces or replace
 the tutorial with a different application.
 
-This is the first tutorial migrated through its normal setup and walkthrough.
-It does not claim that the other Learning tutorials have been migrated.
+These notes cover this tutorial's setup and walkthrough, not the qualification
+of other tutorials.
 For the runnable instructions, see the [Building Comfort tutorial](README.md).
 
 ## What had to change
@@ -49,7 +49,11 @@ a similarly named registry package will be compatible.
 
 `python3 scripts/demo.py build` uses the existing Server Cargo target directory
 unless `CARGO_TARGET_DIR` is set. It uses locked dependency resolution and writes
-a private bundle under `.runtime/builds/<content-hash>/`. The build record contains
+a private bundle under `.runtime/builds/<content-hash>/`. Build and verification
+delegate to the repository's shared `scripts/local_build.py`. Plugins build
+individually, and each artifact is copied before a later build can replace it
+in the Cargo target directory. Database ownership, startup and cleanup remain
+specific to this tutorial. The build record contains
 the compiler version, Core/Server revisions, working-tree status and SHA256 of
 each executable/library. Rebuild after changing either checkout. The old
 `bin/drasi-server` and global plugin cache are not fallback locations.
@@ -59,7 +63,7 @@ its workspace dependencies, generate that lockfile once before the locked build:
 
 ```bash
 # From tutorials/building-comfort/
-cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml
+RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml
 RUSTUP_TOOLCHAIN=1.95.0 python3 scripts/demo.py build
 ```
 
@@ -71,8 +75,11 @@ verification for downloaded production plugins.
 ### Keep the ordinary source/query/reaction configuration
 
 The configuration already had an explicit `building-comfort-server` instance.
-The six queries still declare their ordinary `sources` and synthetic `joins`.
-The dashboard and log reactions still subscribe by query ID.
+The six queries use `inputs` to name their upstream components. `room-comfort`
+reads the PostgreSQL source and declares the synthetic `joins`; floor, building
+and alert queries consume the relevant upstream query outputs. Explicit result
+labels name the nodes carried by their common graph-change format. The dashboard
+and log reactions subscribe by query ID.
 
 These interfaces create graph-owned components inside that instance's
 ComputationGraph. An application does not need explicit native graph YAML,
@@ -112,8 +119,8 @@ These were mistakes or workarounds in the tutorial, not requirements imposed
 by ComputationGraph:
 
 1. **The building rollup dropped the floor before averaging.** The calculation
-   now retains `f, b` through the first aggregation so it actually averages
-   each floor, then averages those floor values. An extra room on one floor
+   now computes each floor's average from `RoomComfort` results, then computes
+   the building average from `FloorComfort` results. An extra room on one floor
    makes this distinguishable from averaging all rooms directly.
 2. **The KPI and gauge bypassed that rollup.** They now read
    `building-comfort-level-calc` directly instead of averaging the per-room
@@ -127,7 +134,9 @@ by ComputationGraph:
    query and dashboard snapshot to reflect every changed row.
 
 The temperature/humidity/CO2 formula, table schema, synthetic relationships and
-six query IDs remain the same. The dashboard still receives real query changes;
+six calculation/alert roles remain the same. The shared room calculation is
+named `room-comfort` rather than the UI-specific `building-comfort-ui`; the other
+five query IDs are unchanged. The dashboard still receives real query changes;
 the helper never fabricates results or sends sensor updates directly to Server.
 
 ## How to check the migrated tutorial
@@ -186,8 +195,9 @@ matching the floor rollup rather than the room-weighted value `43.00`.
 A normal Server stop/reconstruction retained the changed source readings and
 recreated the matching query and dashboard values.
 
-The local dev-container definition now mounts the sibling checkouts, installs
+The local dev-container definition mounts the sibling checkouts, installs
 build prerequisites and builds the same source; its Rust feature is locked.
+It reports a missing Core workspace lockfile before attempting the locked build.
 That definition is updated, but a complete Linux dev-container runtime run
 and native Windows execution are not part of this local qualification.
 The documentation site is built separately with Hugo Extended 0.152.2.

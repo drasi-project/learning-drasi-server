@@ -55,7 +55,7 @@ def expected_results(rooms):
             "Temperature": room["temperature"], "Humidity": room["humidity"],
             "CO2": room["co2"], "ComfortLevel": comfort,
         }
-        result["building-comfort-ui"].append(row)
+        result["room-comfort"].append(row)
         if comfort < 40 or comfort > 50:
             result["room-alert"].append({key: row[key] for key in ("RoomId", "RoomName", "ComfortLevel")})
         floors.setdefault(room["floor_id"], []).append((room, comfort))
@@ -146,8 +146,8 @@ def exercise():
         evidence.append(baseline)
         demo.set_room("room_01_01_01", 40, 20, 700)
         changed = capture("one cold room: room and floor alerts, no building alert")
-        before = {row["v"]["RoomId"]: row["k"] for row in baseline["dashboard"]["building-comfort-ui"]["rows"]}
-        after = {row["v"]["RoomId"]: row["k"] for row in changed["dashboard"]["building-comfort-ui"]["rows"]}
+        before = {row["v"]["RoomId"]: row["k"] for row in baseline["dashboard"]["room-comfort"]["rows"]}
+        after = {row["v"]["RoomId"]: row["k"] for row in changed["dashboard"]["room-comfort"]["rows"]}
         if before != after:
             raise AssertionError("Updating a room changed its dashboard row identity")
         evidence.append(changed)
@@ -164,7 +164,15 @@ def exercise():
         demo.sql("""INSERT INTO "Room" (id,name,temperature,humidity,co2,floor_id)
                     VALUES ('room_migration_probe','Migration probe',82,40,10,'floor_01_01');""")
         probe_created = True
-        evidence.append(capture("insert: unequal floor sizes still average floors correctly"))
+        unequal = capture("insert: unequal floor sizes still average floors correctly")
+        evidence.append(unequal)
+        floor = next(row["ComfortLevel"] for row in unequal["expected"]["floor-comfort-level-calc"]
+                     if row["FloorId"] == "floor_01_01")
+        building = unequal["expected"]["building-comfort-level-calc"][0]["ComfortLevel"]
+        rooms = unequal["expected"]["room-comfort"]
+        room_average = sum(row["ComfortLevel"] for row in rooms) / len(rooms)
+        print(f"Unequal floors: Floor 01 = {floor:g}; building = {building:g}; "
+              f"averaging all rooms directly would give {room_average:g}.")
         demo.sql("""DELETE FROM "Room" WHERE id='room_migration_probe';""")
         probe_created = False
         evidence.append(capture("delete restores nine rooms and all aggregates"))

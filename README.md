@@ -4,19 +4,58 @@ Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-ser
 
 ## Tutorials
 
-| Tutorial | What you learn | How to trigger it |
-| --- | --- | --- |
-| [getting-started](tutorials/getting-started) | Official Drasi Server getting-started flow (PostgreSQL CDC, queries, log + SSE reactions) | Open the **Drasi Server - Getting Started Tutorial** dev container (or a Codespace) and follow [tutorials/getting-started](tutorials/getting-started) |
-| [building-comfort](tutorials/building-comfort) | ComputationGraph-based Server with PostgreSQL CDC, six comfort/alert queries, synthetic joins and a dashboard | Build the matching local Server/Core checkouts using [tutorials/building-comfort](tutorials/building-comfort); see its [migration notes](tutorials/building-comfort/migration.md) |
-| [otel-observability](tutorials/otel-observability) | Correlate Kubernetes rollouts, OTel health, and a PostgreSQL SLO policy (native OTel source, Collector, dashboard) | Open the **Drasi Server - OTel Observability Tutorial** dev container and follow [tutorials/otel-observability](tutorials/otel-observability) |
+| Tutorial | Scenario |
+| --- | --- |
+| [Getting started](tutorials/getting-started) | PostgreSQL messages, continuous queries, joins, inactivity and Log/SSE reactions |
+| [Building Comfort](tutorials/building-comfort) | Shared room, floor and building calculations with live comfort alerts and a dashboard |
+| [Curbside Pickup](tutorials/curbside-pickup) | Correlate orders and arriving vehicles, show pickup readiness and delays |
+| [High-risk Containers](tutorials/high-risk-containers) | Join running Kubernetes container images to a risk catalogue and react to risk changes |
+| [OTel Observability](tutorials/otel-observability) | Correlate Kubernetes rollouts, OpenTelemetry health and PostgreSQL SLO policy |
+| [Trading](tutorials/trading) | Run the local Server trading application with prices, portfolio views and chained calculations |
+| [SSE CLI](tutorials/sse-cli) | Inspect live Server reaction streams or an explicitly selected existing SSE endpoint |
 
-See [tutorials](tutorials) for the full list of tutorials.
+Follow the README in each tutorial for its exact build, run and exercise
+sequence. The scenarios use the current local ComputationGraph implementation,
+not unrelated released Drasi binaries or automatically downloaded plugins.
 
-**ComputationGraph migration:** Building Comfort uses existing sibling
-`drasi-server/` and `drasi-core/` checkouts rather than released Server/plugin
-downloads. Its local dev container mounts that parent directory and builds the
-same sources. This requirement does not change the setup of the other tutorials;
-their migration is separate work.
+## Local source layout
+
+Keep the complete repositories beside one another:
+
+```text
+workspace/
+  drasi-core/
+  drasi-server/
+  learning-drasi-server/
+```
+
+Use matching `agentofreality-parallel-computation-graph` branches for the current
+development tutorials. Server must use the sibling `drasi-core/lib` dependency.
+The helpers never clone, switch branches, or substitute a release build.
+Tutorial folders are not standalone ZIP distributions: keep repository-level
+`scripts/` and the matching sibling checkouts available.
+
+Most tutorial helpers share [`scripts/local_build.py`](scripts/local_build.py).
+It builds Server and the tutorial's exact Core plugin packages, copies them
+into a private content-addressed bundle, and records their hashes and source
+revisions. Startup verifies that bundle rather than choosing an arbitrary
+library from the shared Cargo target. Rebuild after changing Core or Server.
+The SSE CLI has its own [source-build and verification helper](tutorials/sse-cli)
+so callers use this repository's CLI, not a similarly named Server example.
+
+Use the documented Rust toolchain (currently 1.95.0), Python 3.11 or newer, and
+the native dependencies listed by the tutorial. Before a locked build, generate
+Core's untracked workspace lockfile if it is absent:
+
+```bash
+# From learning-drasi-server/
+RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../drasi-core/Cargo.toml
+```
+
+Tutorials use Podman for local infrastructure. Kubernetes scenarios also need
+the documented `kubectl` and `k3d` tools; a dev container is not proof that its
+container engine or Kubernetes prerequisites work on every host. If sharing
+`drasi-server/target`, run Rust/plugin builds one at a time.
 
 ## Run in a Dev Container
 
@@ -25,27 +64,25 @@ From the repository root:
 1. Open in VS Code.
 2. Run Reopen in Container.
 3. When prompted, choose a configuration:
-	- **Drasi Server - Getting Started Tutorial** — opens [tutorials/getting-started](tutorials/getting-started).
-	- **Drasi Server - Building Comfort Tutorial** — requires the sibling Core
-	  and Server checkouts; installs build prerequisites and compiles matching
-	  local binaries for [tutorials/building-comfort](tutorials/building-comfort).
-	- **Drasi Server - OTel Observability Tutorial** — installs everything for
-	  [tutorials/otel-observability](tutorials/otel-observability) (k3d, kubectl, PostgreSQL client, mock store images).
+	- **Drasi Server - Getting Started Tutorial**
+	- **Drasi Server - Building Comfort Tutorial**
+	- **Drasi Server - Curbside Pickup Tutorial**
+	- **Drasi Server - High Risk Containers Tutorial**
+	- **Drasi Server - OTel Observability Tutorial**
 4. Follow the README in the matching tutorial folder.
 
-## Run in Codespaces
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/drasi-project/learning-drasi-server)
-
-After the Codespace starts, follow the getting-started guide in
-[tutorials/getting-started](tutorials/getting-started).
+The source-based configurations require the sibling repositories above. A
+Codespace containing only `learning-drasi-server` is not the complete setup;
+prepare the matching source layout and infrastructure rather than falling
+back to release downloads.
 
 ## Documentation Site
 
 The tutorials also render as a [Docsy](https://www.docsy.dev/)/[Hugo](https://gohugo.io/)
-documentation site. Each tutorial is authored once in `tutorials/<name>/_index.md`
-(the single source of truth) and mounted into the Hugo content tree, so the doc
-site and the GitHub `README.md` files stay in sync.
+documentation site. Site-published tutorials are authored in
+`tutorials/<name>/_index.md` and mounted into the Hugo content tree; their sibling
+`README.md` files are generated. Trading and SSE CLI have standalone README
+entry points rather than generated `_index.md` pages.
 
 ### Prerequisites
 
@@ -87,84 +124,29 @@ python3 scripts/render-tutorials.py --check   # fail if any are stale (CI check)
 
 ## Isolated Runtime Evaluation
 
-`scripts/tutorial-runtime.py` runs the published tutorial infrastructure without
-reusing the normal tutorial container names, volumes, ports, or Kubernetes
-context. It is an optional development path; Building Comfort now also has its
-own source-based setup, while other tutorials retain their existing setup.
-It requires Python 3, working Docker
-Compose, and a **ComputationGraph-only** Drasi Server build with matching local plugin
-artifacts. High Risk Containers additionally needs `kubectl` and `k3d`.
+Use each tutorial's current helper and verification commands. They own their
+scenario-specific database, service and Kubernetes setup rather than relying on
+one script to guess all tutorial layouts. The older `scripts/tutorial-runtime.py`
+targets prior configuration layouts; it is not the shared runner for these
+source-based walkthroughs.
 
-From this repository's root, choose an unused run ID and an evidence directory:
+For an independent check, select an unused run name, private state directory and
+free loopback ports using the tutorial's documented options. Preserve existing
+user data. Do not reuse a cluster by name alone or switch the global Kubernetes
+context. Stop only the processes you started and use ownership-checked cleanup;
+deleting volumes must be an explicit choice.
 
-```bash
-python3 scripts/tutorial-runtime.py prepare building-comfort \
-  --run-id my-native-evaluation --output /path/to/evidence
-```
+ComputationGraph is the only Server runtime. Readiness must identify the correct
+instance and required components, not merely a healthy HTTP listener. Retain
+the exact build record and runtime evidence, then exercise the actual scenario:
+database changes, query results, timer behavior, browser updates and restart
+where documented. Infrastructure setup or a successful build alone does not
+establish that a tutorial passed.
 
-The `prepare` action uses that tutorial's real Compose configuration and seed SQL.
-It generates isolated `compose.json`, `server-config.yaml`, `environment.sh`, an
-ownership manifest, and command logs under `/path/to/evidence/building-comfort`.
-It refuses to overwrite an existing evaluation or reuse existing data volumes.
-The default loopback ports for PostgreSQL, API, and dashboard are respectively
-`49110`, `49112`, and `49113` for Building Comfort. The other tutorial blocks start
-at `49100` (Getting Started), `49120` (High Risk Containers), and `49130` (Curbside
-Pickup). Override the range with `--base-port`.
-
-Start the exact server build under evaluation, supplying its SHA256:
-
-```bash
-python3 scripts/tutorial-runtime.py serve building-comfort \
-  --run-id my-native-evaluation --output /path/to/evidence \
-  --server /path/to/drasi-server --server-sha256 <sha256> \
-  --plugins /path/to/local-plugins
-```
-
-ComputationGraph is the server's only runtime; no engine flag or feature opt-in
-is needed. Removed `--execution-mode` and `executionMode` configuration selectors
-are not supported. The script requires the live instance's
-`/api/v1/instances/<id>/runtime` endpoint to report exactly that `instanceId`,
-`runtime: "computationGraph"`, and `running: true` inside a successful response.
-A different instance or a healthy API alone does not satisfy readiness
-verification. The server hash, plugin hashes, process ID, arguments, runtime
-response, and server log are recorded. Provenance also includes the fixed
-informational `runtime: "computationGraph"` label; it is not a selectable mode or
-a replacement for the live identity/readiness check. Signature verification is
-skipped only for these explicitly supplied local development plugins, not for
-normal published tutorial downloads.
-
-Use the generated environment with the tutorial's data-changing commands and
-compare all published observations, including result identities, aggregates,
-timers, reaction events, dashboard changes, and stop/restart behavior. Getting
-Started starts from `configs/getting-started-step-3.yaml`; its five queries must
-still be added and exercised in the published sequence, not replaced by the
-older `server-config.yaml` smoke demo. Helpers with fixed container names must be
-adapted to the exact names recorded in the ownership manifest.
-
-For High Risk Containers, after `prepare`, use the same run ID with:
-
-```bash
-python3 scripts/tutorial-runtime.py cluster high-risk-containers \
-  --run-id my-native-evaluation --output /path/to/evidence \
-  --k3d /path/to/k3d --kube-port 49650
-```
-
-This deploys the actual tutorial Pods into a dedicated namespace, writes a private
-kubeconfig, and updates only the generated server configuration. It does not
-update or switch the global Kubernetes context.
-
-After stopping the server, simulator, SSE CLI, and any operations console you
-started, remove only the recorded infrastructure:
-
-```bash
-python3 scripts/tutorial-runtime.py cleanup building-comfort \
-  --run-id my-native-evaluation --output /path/to/evidence
-```
-
-For High Risk Containers, also pass `--k3d` if it is not on `PATH`; cleanup removes
-the owned cluster as well. The evidence is retained. **These commands establish
-infrastructure and runtime provenance, not that a tutorial passed.** Report
-unexecuted or failed workflow steps separately.
+Signature verification is bypassed only for the locally built, hash-checked
+development bundle. This is not a recommendation to disable verification for
+downloaded plugins. Report unavailable services, untested platforms and
+unexercised failure modes explicitly.
 
 ## Project Links
 

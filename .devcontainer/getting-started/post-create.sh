@@ -1,39 +1,31 @@
-#!/bin/bash
-# Copyright 2026 The Drasi Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env bash
+# Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
+set -euo pipefail
+cd "$(dirname "$0")/../../tutorials/getting-started"
+test -f ../../../drasi-server/Cargo.toml && test -f ../../../drasi-core/Cargo.toml || {
+    echo "Existing sibling drasi-server and drasi-core checkouts are required." >&2
+    exit 1
+}
 
-# Post-create script for Drasi Server Getting Started tutorial
-
-set -e
-
-echo "🔧 Initializing Drasi Server Getting Started tutorial environment..."
-
-# Install system dependencies
-echo "🐘 Installing system dependencies (PostgreSQL client)..."
-sudo apt-get update && sudo apt-get install -y postgresql-client
-
-# Download pre-built Drasi Server and SSE CLI binaries.
-# Invoke via `bash` so we don't depend on the executable bit, which can be
-# lost on Windows bind-mounts (e.g. workspace under OneDrive) where chmod
-# is not permitted on the mounted filesystem.
-echo "⬇️  Downloading Drasi Server and SSE CLI binaries..."
-bash tutorials/getting-started/scripts/download.sh
-
-# Install tools used by the automated tutorial evaluation workflow.
-# This is a no-op unless DRASI_TUTORIAL_EVALUATION=true (set by CI), so it does
-# not affect the normal human tutorial experience.
-source "$(dirname "$0")/install-evaluation-tools.sh"
-
-echo ""
-echo "✅ Drasi Server Getting Started tutorial environment is ready!"
+packages=(podman uidmap slirp4netns fuse-overlayfs python3 curl ca-certificates
+          build-essential pkg-config clang libclang-dev libssl-dev libjq-dev
+          libonig-dev protobuf-compiler cmake)
+missing=()
+for package in "${packages[@]}"; do
+    dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed' ||
+        missing+=("$package")
+done
+if ((${#missing[@]})); then
+    sudo apt-get update
+    sudo apt-get install -y "${missing[@]}"
+fi
+if ! grep -q '^vscode:' /etc/subuid; then
+    sudo usermod --add-subuids 100000-165535 vscode
+fi
+if ! grep -q '^vscode:' /etc/subgid; then
+    sudo usermod --add-subgids 100000-165535 vscode
+fi
+podman info >/dev/null
+bash ../../.devcontainer/getting-started/install-evaluation-tools.sh
+echo "Build prerequisites ready. Follow README.md to build matching local Server/Core and SSE CLI."
+echo "Setup does not start Cargo automatically; coordinate builds when sharing a target directory."

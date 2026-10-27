@@ -1,5 +1,7 @@
-# Downloaded Drasi Server binary
+# Historical downloaded binaries are not used by the local build helper.
 bin/
+.runtime/
+__pycache__/
 
 # Local environment overrides
 .env

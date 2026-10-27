@@ -1,273 +1,273 @@
 # Drasi SSE CLI
 
-A command-line tool that streams real-time query change events from a [Drasi Server](../../README.md) to your terminal. It dynamically creates a temporary SSE (Server-Sent Events) Reaction on the server, displays incoming events, and automatically cleans up when you exit.
+Watch a continuous query while changing its source data. The CLI creates a
+temporary SSE reaction, prints the JSON notifications to your terminal, and
+deletes its reaction when you press Ctrl-C. It can also observe an existing SSE
+endpoint without changing the server.
 
-## Purpose
+This helper uses the **current local ComputationGraph-based Server and matching
+Core plugins**, not a released binary or Server's separate `examples/sse-cli`.
+Ordinary query reactions and native graph sinks expose different payloads; the
+CLI preserves whichever JSON the selected endpoint actually sends.
 
-When developing with Drasi, you often want to observe what a continuous query is producing in real time — seeing inserts, updates, and deletes as they happen in the underlying data source. The SSE CLI gives you a zero-setup way to do this from any terminal without writing code or building a UI.
+## Build the local helper
 
-Typical use cases:
+Use the existing sibling checkouts:
 
-- **Debugging queries** — verify that a continuous query produces the expected results when data changes
-- **Monitoring** — watch a live stream of changes flowing through a query
-- **Testing** — pipe the JSON output to other tools (`jq`, `grep`, test scripts) for automated validation
-- **Logging** — capture a session's events to a file for later analysis
+```text
+computation-graph/
+  drasi-core/
+  drasi-server/
+  learning-drasi-server/
+```
 
-## Quick Start
+Build Server and its matching local `drasi-reaction-sse` plugin using the
+[Getting Started tutorial](../getting-started). Do not mix downloaded plugins
+with the local Server/Core build. ComputationGraph is always enabled; there is
+no execution-mode flag. The instance and query must already be running and
+must permit imperative reaction creation.
+
+The helper needs Python 3, `rustup`, Rust `1.95.0`, and the dependencies from its
+committed Cargo lockfile in the local Cargo cache. From `learning-drasi-server/`:
 
 ```bash
-# Build the tool
-cd examples/sse-cli
-cargo build --release
+python3 tutorials/sse-cli/scripts/build.py \
+  --destination tutorials/sse-cli/bin/drasi-sse-cli \
+  --state tutorials/sse-cli/bin/provenance.json
 
-# Stream events from a query (Drasi Server must be running)
-cargo run -- --server http://localhost:8080 --instance my-instance --query all-messages
+python3 tutorials/sse-cli/scripts/build.py \
+  --destination tutorials/sse-cli/bin/drasi-sse-cli \
+  --state tutorials/sse-cli/bin/provenance.json \
+  --verify-only
 ```
 
-You'll see output like this:
+The builder runs only this tutorial's manifest with `--offline --locked -j 1`.
+It defaults to `../drasi-server/target` and the debug profile; `--target-dir`,
+`--profile release`, and `--toolchain` are explicit overrides. It does not
+download a toolchain, dependencies, released CLI, Server, or plugins. A missing
+toolchain/cache is an error: prepare that prerequisite explicitly, then rerun.
+Coordinate access to the shared target directory when other builds are running.
+Do not inherit a cross-compilation target into a local build.
 
-```
-Creating SSE reaction 'sse-cli-a3f1b2c4' for query 'all-messages'... done.
-Streaming events (Ctrl-C to stop)...
+`--destination` is the exact installed executable path, and `--state` is the
+provenance JSON path. For example, Getting Started can choose its own
+`tutorials/getting-started/bin/drasi-sse-cli` and adjacent provenance file.
+The receipt records the build command, compiler, source/lockfile SHA256 values,
+and installed executable SHA256. `--verify-only` checks this checkout and that
+installed binary without invoking Cargo. Rebuild after changing CLI sources.
+This receipt covers the CLI only, not Server or plugin provenance.
 
-{
-  "queryId": "all-messages",
-  "results": [
-    {
-      "op": "i",
-      "data": {
-        "Id": 5,
-        "Sender": "Alice",
-        "Message": "Hello from Alice"
-      }
-    }
-  ],
-  "timestamp": 1739378400000
-}
-```
+## Trigger and observe a change
 
-Press **Ctrl-C** to stop. The tool automatically deletes the SSE Reaction it created:
-
-```
-^C
-Shutting down...
-Reaction 'sse-cli-a3f1b2c4' deleted.
-```
-
-## Command-Line Arguments
-
-```
-Usage: drasi-sse-cli [OPTIONS] --server <SERVER> --instance <INSTANCE> --query <QUERY>
-
-Options:
-  -s, --server <SERVER>      Drasi Server base URL (e.g. http://localhost:8080)
-  -i, --instance <INSTANCE>  Instance containing the query
-  -q, --query <QUERY>        Query ID to subscribe to
-  -d, --debug                Show heartbeat messages (debug mode)
-  -l, --log-file <LOG_FILE>  Log received events to a file
-  -p, --sse-port <SSE_PORT>  Port for the SSE Reaction HTTP server [default: 8090]
-  -h, --help                 Print help
-  -V, --version              Print version
-```
-
-### `--server` / `-s` (required)
-
-The base URL of the Drasi Server. Can also be set via the `DRASI_SERVER_URL` environment variable.
+Keep the [Getting Started](../getting-started) server running. In another terminal:
 
 ```bash
-# Using the flag
-drasi-sse-cli --server http://localhost:8080 --instance my-instance --query my-query
-
-# Using the environment variable
-export DRASI_SERVER_URL=http://localhost:8080
-drasi-sse-cli --instance my-instance --query my-query
+tutorials/sse-cli/bin/drasi-sse-cli \
+  --server http://127.0.0.1:8080 \
+  --instance getting-started-server \
+  --query message-counts
 ```
 
-### `--instance` / `-i` (required)
+Wait for `Connected to SSE stream`, then perform the tutorial's next
+message insert, update, or delete in its database terminal. The same queries,
+SQL changes, and observation sequence still apply; the CLI is an observer,
+not a replacement source or a row cache. Check the resulting `results` array
+on your terminal, then press **Ctrl-C**. Status messages go to stderr; only JSON
+data goes to stdout.
 
-The instance containing the query. Set `DRASI_INSTANCE_ID` instead of the flag
-when scripting. Creation and cleanup use that same explicit instance; the CLI
-does not select the first available instance.
+The temporary reaction streams **future changes**, not an initial snapshot.
+Rows that existed before you connected do not automatically appear. An aggregate
+can emit an update rather than an insert, and a row leaving a query is a query
+result deletion even if its source row was updated rather than deleted.
 
-### `--query` / `-q` (required)
+## Command-line contract
 
-The ID of the continuous query to subscribe to. The query must already exist on the Drasi Server. Can also be set via the `DRASI_QUERY` environment variable.
-
-```bash
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages
+```text
+drasi-sse-cli --server URL --instance ID --query ID [OPTIONS]
+drasi-sse-cli --sse-url URL [--debug] [--log-file FILE]
 ```
 
-### `--debug` / `-d`
+| Option | Meaning |
+| --- | --- |
+| `-s`, `--server` | Server API base URL; alternatively `DRASI_SERVER_URL` |
+| `-i`, `--instance` | Explicit instance; alternatively `DRASI_INSTANCE_ID` |
+| `-q`, `--query` | Existing query ID; alternatively `DRASI_QUERY` |
+| `-p`, `--sse-port` | Temporary reaction's HTTP port, default `8090`; choose an unused nonzero port |
+| `--sse-host` | Reaction bind IP, default **`127.0.0.1`** |
+| `--sse-url` | Connect to an existing endpoint; no creation or deletion |
+| `-d`, `--debug` | Show heartbeat timestamps and SSE protocol lines on stderr |
+| `-l`, `--log-file` | Append the same pretty-printed JSON as stdout to a file |
+| `-h`, `--help` | Show full usage |
 
-Enables debug mode. In normal mode, only query result change events are displayed. In debug mode, heartbeat messages and raw SSE protocol lines are also shown:
+Existing tutorial `--server` / `--instance` / `--query` commands remain supported.
+`--sse-url` is a separate mode and cannot be combined with those options
+(including their environment variables), `--sse-port`, or `--sse-host`.
 
-```bash
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages --debug
-```
+The reaction binds loopback by default rather than exposing query results to the
+network. The CLI connects to `http://<server-host>:<sse-port>/events`; this
+listener is separate from the API port and serves HTTP even if the API uses
+HTTPS. If Server is remote, prefer an authenticated tunnel/proxy to an existing
+endpoint with `--sse-url`. Explicit `--sse-host 0.0.0.0` enables a remote
+reaction listener only when intended: secure that port yourself. The reaction
+does not add authentication or TLS. For IPv6 loopback, use `--sse-host ::1`
+and an appropriate `[::1]` Server URL.
 
-Debug output appears on stderr so it doesn't interfere with piping the JSON data:
+To watch two queries, run two terminals with different unused `--sse-port`
+values. Creation and deletion both address the selected instance; the CLI
+never chooses the first instance or removes a pre-existing reaction.
 
-```
-[heartbeat] ts=1739378415000
-[heartbeat] ts=1739378445000
-{
-  "queryId": "all-messages",
-  ...
-}
-[heartbeat] ts=1739378475000
-```
+## Know which stream you selected
 
-### `--log-file` / `-l`
+| Endpoint | JSON data contract |
+| --- | --- |
+| Temporary ordinary `kind: sse` reaction, `/events` | `queryId`, `results`, `timestamp` |
+| Existing native `drasi.network/sse-sink`, configured SSE path | `output`, `sequence`, `publishedAt`, `changes` |
+| Server API `/api/v1/instances/<instance>/queries/<query>/attach` | Named `snapshot` event with a row array, then `QueryResult` payloads using `query_id`, `sequence`, `timestamp`, `results`, `metadata` |
 
-Path to a file where all query result events will be appended. Each event is written as pretty-printed JSON. The file is created if it doesn't exist. Heartbeats are not logged to the file.
+These are **not interchangeable envelopes**. `--sse-url` displays their JSON
+data without converting one to another. SSE `event:`, `id:`, comments, and retry
+fields are protocol metadata, shown only with `--debug`; they are not injected
+into stdout or the log. This is a JSON observer, not a protocol replay file.
+Custom endpoint templates must produce valid JSON; plain-text templates fail
+explicitly. JSON is parsed for formatting, not application-schema validation.
 
-```bash
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages --log-file events.json
-```
+### Ordinary reaction: query result diffs
 
-### `--sse-port` / `-p`
-
-The port on which the SSE Reaction's HTTP server will listen. Defaults to `8090`. Change this if port 8090 is already in use or if you want to run multiple instances of the tool simultaneously.
-
-```bash
-# Use a different port
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages --sse-port 9090
-
-# Run two instances side by side
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q query-a --sse-port 8090 &
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q query-b --sse-port 8091 &
-```
-
-## Sample Output
-
-### Insert Event
-
-When a new row is inserted into the data source that matches the query:
+The current default reaction sends `ResultDiff` records, not the old
+`{"op":"i"}` / `{"op":"u"}` / `{"op":"d"}` examples. An illustrative insert:
 
 ```json
 {
   "queryId": "all-messages",
   "results": [
     {
-      "op": "i",
-      "data": {
-        "Id": 6,
-        "Sender": "Bob",
-        "Message": "Goodbye World"
-      }
+      "type": "ADD",
+      "data": {"Id": 6, "Sender": "Bob", "Message": "Hello"},
+      "row_signature": 12345
     }
   ],
-  "timestamp": 1739378400000
+  "timestamp": 1793127600000
 }
 ```
 
-### Update Event
+`row_signature` comes from the query engine; it is not a source primary key or
+a value generated by this CLI. Actual signatures and timestamps vary.
 
-When an existing row is updated:
+| `type` | Fields carried by the adapter |
+| --- | --- |
+| `ADD` | `data`, `row_signature` |
+| `UPDATE` | `data`, `before`, `after`, `row_signature`, optional `grouping_keys` |
+| `DELETE` | `data`, `row_signature` |
+| `aggregation` | `before` (may be null), `after`, `row_signature` |
+| `noop` | No row change |
 
-```json
-{
-  "queryId": "all-messages",
-  "results": [
-    {
-      "op": "u",
-      "data": {
-        "before": { "Id": 6, "Sender": "Bob", "Message": "Goodbye World" },
-        "after": { "Id": 6, "Sender": "Bob", "Message": "Hello Again" }
-      }
-    }
-  ],
-  "timestamp": 1739378460000
-}
-```
-
-### Delete Event
-
-When a row is deleted:
-
-```json
-{
-  "queryId": "all-messages",
-  "results": [
-    {
-      "op": "d",
-      "data": {
-        "Id": 6,
-        "Sender": "Bob",
-        "Message": "Hello Again"
-      }
-    }
-  ],
-  "timestamp": 1739378520000
-}
-```
-
-### Heartbeat (debug mode only)
-
-```
-[heartbeat] ts=1739378415000
-```
-
-## How It Works
-
-The SSE CLI operates in four phases:
-
-### 1. Create Reaction
-
-On startup, the tool generates a unique reaction ID (e.g., `sse-cli-a3f1b2c4`) and sends a `POST /api/v1/instances/my-instance/reactions` request to the Drasi Server with the following configuration:
-
-```json
-{
-  "kind": "sse",
-  "id": "sse-cli-a3f1b2c4",
-  "queries": ["all-messages"],
-  "autoStart": true,
-  "host": "0.0.0.0",
-  "port": 8090,
-  "ssePath": "/events"
-}
-```
-
-This tells the Drasi Server to create an SSE Reaction that:
-- Subscribes to the specified query
-- Starts an HTTP server on the given port
-- Serves an SSE event stream at the `/events` path
-
-### 2. Connect to Stream
-
-After a brief pause for the reaction's HTTP server to start, the tool opens a long-lived HTTP GET connection to `http://localhost:{sse-port}/events`. This is a standard SSE connection — the server holds it open and pushes `data:` frames as query results change.
-
-### 3. Process Events
-
-The tool reads the SSE stream line by line, parsing `data:` frames as JSON:
-
-- **Query result events** (containing `queryId` and `results`) are pretty-printed to stdout and optionally appended to the log file.
-- **Heartbeat events** (containing `"type": "heartbeat"`) are silently ignored unless `--debug` is enabled, in which case they are printed to stderr.
-- **Raw SSE lines** (like `event:` or `id:` fields) are shown on stderr in debug mode only.
-
-Status messages and diagnostics are always written to stderr, keeping stdout clean for JSON data. This means you can pipe the output:
+For example, an update's `before` and `after` are siblings of `data`, not nested
+under it. All records in the received batch, including aggregation/noop records
+if emitted, are retained. This renderer's millisecond `timestamp` is its
+publication time; it does not expose the underlying `QueryResult` sequence.
 
 ```bash
-drasi-sse-cli -s http://localhost:8080 -i my-instance -q all-messages | jq '.results[].data'
+tutorials/sse-cli/bin/drasi-sse-cli \
+  -s http://127.0.0.1:8080 -i getting-started-server -q message-counts \
+  --log-file events.json | jq '.results[]'
 ```
 
-### 4. Cleanup on Exit
+The log is a sequence of pretty-printed JSON values, not a single JSON array or
+one-line NDJSON. Tools such as `jq` can read that sequence. Take care when passing
+64-bit row signatures to tools that round JSON numbers.
 
-When the user presses **Ctrl-C**, the tool:
+### Existing native sink: producer-neutral graph changes
 
-1. Cancels the SSE stream via `tokio::select!`
-2. Sends a `DELETE /api/v1/instances/my-instance/reactions/{id}` request to the Drasi Server to remove the reaction
-3. Exits
+For an already-configured, owned native sink:
 
-This ensures no orphaned reactions are left on the server. If the delete request fails (e.g., the server is unreachable), a warning is printed but the tool still exits.
+```bash
+tutorials/sse-cli/bin/drasi-sse-cli --sse-url http://127.0.0.1:9010/events
+```
 
-## Design
+No instance or query is invented. A native output can come from a source,
+transformer, or query. For example, this is a patch followed by an identity-only
+delete (illustrative, not a promised emission from Getting Started):
 
-The tool is a single-file Rust binary (~230 lines) with no external state. Key design decisions:
+```json
+{
+  "output": {"alias": "items", "component": "inventory-source", "port": "out"},
+  "sequence": 42,
+  "publishedAt": 1793127600000,
+  "changes": [
+    {
+      "operation": "PATCH",
+      "identity": {"namespace": "inventory", "id": "item-1"},
+      "after": {"note": null},
+      "removedProperties": ["oldNote"]
+    },
+    {
+      "operation": "DELETE",
+      "identity": {"namespace": "inventory", "id": "item-2"}
+    }
+  ]
+}
+```
 
-- **Standalone Cargo project** — has its own `Cargo.toml` independent of the main Drasi Server workspace, so it can be built and distributed separately.
-- **Ephemeral reactions** — each run creates a fresh reaction with a UUID-based ID and deletes it on exit. No persistent server-side state.
-- **stderr for status, stdout for data** — all operational messages (connection status, heartbeats, errors) go to stderr. Only query result JSON goes to stdout, making it safe to pipe.
-- **Manual SSE parsing** — uses `reqwest`'s streaming response with line-by-line parsing rather than a dedicated SSE client library, keeping dependencies minimal.
-- **Graceful shutdown** — `tokio::select!` races the SSE stream against `Ctrl-C`, ensuring cleanup always runs.
-- **Environment variables** — `DRASI_SERVER_URL`, `DRASI_INSTANCE_ID`, and `DRASI_QUERY` can supply the server, instance, and query for scripts and CI.
+Native operations are `ADD`, `REPLACE`, `PATCH`, and `DELETE`. `ADD`/`REPLACE`
+carry full after images; a `PATCH` after image contains only properties being
+set. Setting a property to null is different from removing it using
+`removedProperties`. Identity-only deletion has no manufactured row or before
+image. `element`, `before`, `after`, and `effectiveFrom` appear only if supplied.
+`publishedAt` is the sink's wall clock, not business/event time.
+
+The CLI preserves nested objects, lists, nulls, strings representing temporal
+values, large numbers, and all supplied change metadata. It does not apply
+patches, merge a row cache, infer missing images, or add `queryId` or row
+signatures to native data.
+
+## Transport, cleanup, and limits
+
+In temporary mode the CLI posts to
+`/api/v1/instances/<instance>/reactions` with `kind: "sse"`, a unique
+`sse-cli-<uuid>` ID, `queries: [<query>]`, `autoStart: true`, and the chosen
+host/port plus `ssePath: "/events"`. Current reaction startup binds its listener
+before reporting readiness, so no arbitrary one-second sleep is required.
+
+The parser assembles complete SSE events across HTTP chunks, handles UTF-8
+characters split between chunks, LF/CRLF/CR line endings, and joins multiple
+`data:` lines. Heartbeats of the form `{"type":"heartbeat","ts":123}` are
+excluded from stdout/logs; debug mode shows their real timestamp.
+
+Ctrl-C after creation closes the connection and deletes **only this CLI's**
+reaction. Stream, JSON, UTF-8, stdout/log write, and cleanup failures produce
+diagnostics and a nonzero exit status. Opening a bad log path fails before
+creating a reaction. A failed create request reports the generated reaction ID
+to inspect if the remote server completed an ambiguous request. Forced
+termination or an unreachable server can prevent cleanup; do not assume a
+reaction was deleted unless deletion was confirmed.
+
+The CLI does **not** silently reconnect on EOF: a server close or lag
+disconnection may mean missing notifications, so it reports failure. Native
+and ordinary SSE sinks provide volatile notifications, not retained history,
+replay, or exactly-once delivery. Reconnect explicitly, and obtain a fresh
+snapshot if your downstream consumer maintains state. The native sink's
+`/snapshot/<alias>` is a point-in-time read; the Server query `/attach` endpoint
+has its own snapshot-first subscription contract.
+
+## Contributor checks
+
+From `learning-drasi-server/`, with exclusive access to the shared Rust target:
+
+```bash
+rustup run 1.95.0 cargo fmt --manifest-path tutorials/sse-cli/Cargo.toml --check
+rustup run 1.95.0 cargo test --manifest-path tutorials/sse-cli/Cargo.toml \
+  --target-dir ../drasi-server/target --offline --locked -j 1
+
+DRASI_SSE_CLI="$PWD/tutorials/sse-cli/bin/drasi-sse-cli" \
+  PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s tutorials/sse-cli/tests -v
+```
+
+Rust tests cover framing, mode selection, binding, and payload preservation.
+Python tests cover provenance and a locally owned mock HTTP server's lifecycle,
+errors, Ctrl-C cleanup, logging, and connect-only behavior. These are regression
+checks, **not live Drasi proof**. For live validation, build matching local
+Server/Core plugins, start an isolated owned tutorial instance, run the CLI,
+perform real source changes, compare observed query notifications, and confirm
+its temporary reaction disappeared. A native sink needs its own live check;
+ordinary reaction evidence does not establish the native wire contract.

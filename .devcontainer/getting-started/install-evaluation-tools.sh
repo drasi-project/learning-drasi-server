@@ -25,13 +25,13 @@
 #   - @github/copilot: GitHub Copilot CLI used to run the evaluation agent
 #
 # The getting-started tutorial is driven entirely through the terminal
-# (drasi-server, drasi-sse-cli, docker, curl, psql), so no browser automation
+# (drasi-server, drasi-sse-cli, podman, curl, psql), so no browser automation
 # tooling (Playwright/Chromium) is required.
 #
 # Usage: source this script from post-create.sh:
 #   source "$(dirname "$0")/install-evaluation-tools.sh"
 
-if [ "$DRASI_TUTORIAL_EVALUATION" = "true" ]; then
+if [ "${DRASI_TUTORIAL_EVALUATION:-}" = "true" ]; then
     echo "🤖 Installing tutorial evaluation tools..."
 
     # The base devcontainer image does not include Node.js/npm, which the

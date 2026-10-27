@@ -11,41 +11,50 @@ Imagine you manage a building and want to know — the instant it happens — wh
 
 This tutorial builds a **Building Comfort** monitoring demo on **Drasi Server**. A PostgreSQL database holds a building made of floors and rooms, each room reporting `temperature`, `humidity`, and `co2`. You'll start Drasi Server with a single configuration, watch a live dashboard light up, and then change room readings and see everything react in real time — without writing any application code, and **without building a bespoke web UI**. Instead of a hand-written dashboard, the demo uses Drasi Server's built-in **dashboard reaction**.
 
-**What you'll build:** a running Drasi Server that connects to PostgreSQL and reacts to room sensor changes in real time, assembled from Drasi's three core building blocks:
+## The graph you'll run {#graph}
 
-<div class="flow-diagram">
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-database"></i>
-    </div>
-    <div class="flow-step__label">Sources</div>
-    <div class="flow-step__description">Connect to your data sources</div>
-  </div>
+A **source** supplies data changes, a **continuous query** keeps a calculated
+result up to date, and a **reaction** presents or acts on those results. Here,
+queries also feed other queries: calculate each room's comfort once, reuse
+those scores for floor averages, then reuse the floor averages for the building.
+Scores from **40 through 50, inclusive**, are comfortable; scores outside that
+band produce alerts.
 
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
+```mermaid
+flowchart TD
+    DB[("PostgreSQL: Building, Floor, Room")]
+    S["PostgreSQL source"]
+    R["Room comfort query"]
+    F["Floor comfort query"]
+    B["Building comfort query"]
+    RA["Room alert query"]
+    FA["Floor alert query"]
+    BA["Building alert query"]
+    DB --> S
+    S --> R
+    R --> F
+    F --> B
+    R --> RA
+    F --> FA
+    B --> BA
+```
 
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-filter"></i>
-    </div>
-    <div class="flow-step__label">Continuous Queries</div>
-    <div class="flow-step__description">Define what changes matter</div>
-  </div>
+The **dashboard subscribes to all six query outputs**. The **console log
+subscribes to the three alert outputs**. One calculation can therefore serve
+several consumers; this is *fan-out*. An alert filter and the dashboard reuse
+the same room result rather than recalculating its comfort independently.
 
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
+The source and every query **emit graph changes**. A query represents each
+result row as a node: its returned columns become properties, and changes to
+the row add, replace or delete that node. Because query inputs accept the same
+format, the next query can process those changes directly, with no conversion
+component. The dashboard presents the maintained results, not just the latest
+individual change.
 
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-bolt"></i>
-    </div>
-    <div class="flow-step__label">Reactions</div>
-    <div class="flow-step__description">Take action automatically</div>
-  </div>
-</div>
+For example, changing one room reading changes its score, which changes its
+floor average, which changes the building average. At each level, a separate
+alert query keeps only results outside the comfortable band. The exercises
+below let you follow this path and watch alerts appear and disappear.
 
 | Step | What You'll Do | Time |
 | ---- | ------------- | ---- |
@@ -53,14 +62,14 @@ This tutorial builds a **Building Comfort** monitoring demo on **Drasi Server**.
 | **[Step 2: Run the Demo](#run)** | One command starts PostgreSQL and Drasi Server | 3 min |
 | **[Step 3: Open the Dashboard](#dashboard)** | Watch comfort levels and alerts live | 2 min |
 | **[Step 4: Drive Change](#drive)** | Break, reset, and simulate rooms — and watch Drasi react instantly | 5 min |
-| **[How It Works](#how)** | Understand the source, the six queries, the synthetic joins, and the dashboard | 5 min |
+| **[How It Works](#how)** | Connect the graph to its query inputs, output labels, joins and dashboard configuration | 5 min |
 
 {{% alert title="Before you begin" color="info" %}}
 - **Terminals:** you'll use two. **Terminal 1** runs the demo (it stays in the foreground). Use **Terminal 2** for the helper scripts that change data.
 - **Working directory:** run every command from the tutorial directory (`tutorials/building-comfort/`). The dev container opens there automatically; if you're running locally, `cd tutorials/building-comfort` first.
 - **Platform:** use macOS, Linux, or WSL with Python 3.11 or newer. All commands below use the same Python helper; there are no separate shell-specific implementations.
 - **Ports:** the Drasi Server API is on `8380`, the dashboard is on `3000`, and PostgreSQL is published on `5732`.
-- **Runtime:** this tutorial builds the ComputationGraph version of Drasi Server, not a published Server release. Other tutorials have not necessarily been migrated.
+- **Runtime:** this tutorial builds the ComputationGraph version of Drasi Server from matching local Server and Core checkouts, not a published Server release.
 {{% /alert %}}
 
 ## Step 1 of 4: Set Up Your Environment {#setup}
@@ -105,18 +114,28 @@ From `learning-drasi-server/`:
 
 ```bash
 cd tutorials/building-comfort
-RUSTUP_TOOLCHAIN=1.95.0 python3 scripts/demo.py build
 ```
 
-If the Core checkout has no workspace `Cargo.lock` yet, run
-`cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml`
-from the tutorial directory before building.
+If the Core checkout has no workspace `Cargo.lock` yet, generate it before the
+locked build. Keep an existing lockfile unchanged:
+
+```bash
+RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml
+```
+
+Then build the matching artifacts:
+
+```bash
+RUSTUP_TOOLCHAIN=1.95.0 python3 scripts/demo.py build
+```
 
 This builds Server and exactly four plugins from the sibling Core checkout:
 PostgreSQL source, PostgreSQL bootstrap, dashboard reaction, and log reaction.
 It uses `drasi-server/target` by default, then copies a matching set into the
 tutorial's private `.runtime/builds/` directory. `.runtime/build.json` records
 repository revisions, working-tree status, compiler version, and artifact hashes.
+Build and verification use the repository's shared `scripts/local_build.py`;
+this tutorial keeps its own artifact bundle and database lifecycle.
 Rebuild after changing Server or Core.
 
 The dashboard's web assets are embedded in its plugin. This tutorial does not
@@ -127,8 +146,14 @@ require the separate Server management UI or a Node.js build.
 Open this repository in VS Code, choose **Reopen in Container**, and select
 **Drasi Server - Building Comfort Tutorial**. Keep all three checkouts present
 first: this configuration mounts their parent directory and installs the build
-prerequisites. Its post-create script runs the same local build, with a
-container-specific Cargo target directory.
+prerequisites. Its post-create script checks that Core's workspace `Cargo.lock`
+exists before running the same locked build, with a container-specific Cargo
+target directory. If that check fails, generate the lockfile using the command
+above in the container terminal, then rerun:
+
+```bash
+bash ../../.devcontainer/building-comfort/post-create.sh
+```
 
 This source-based setup is **not a one-click Codespaces or release-ZIP setup**.
 Those environments need the matching Core and Server checkouts too. The former
@@ -205,8 +230,8 @@ The dashboard updates the instant the data changes — no refreshing. Let's make
 With Terminal 1 running the demo and the dashboard open, use **Terminal 2** to change room readings and watch Drasi react.
 
 {{% alert title="No middle tier — the scripts just write to the database" color="info" %}}
-The data-changing commands below run ordinary SQL `UPDATE` statements against
-PostgreSQL. They do not call Server or publish artificial query results. Drasi
+The data-changing commands below write ordinary SQL changes to PostgreSQL.
+They do not call Server or publish artificial query results. Drasi
 observes those changes through logical replication, updates the queries, and
 sends result changes to the dashboard.
 {{% /alert %}}
@@ -219,10 +244,23 @@ Push a single room out of the comfortable band (sets `temperature = 40`, `humidi
 python3 scripts/demo.py break-room room_01_01_01
 ```
 
-**Room 01** on **Floor 01** changes from comfort `46` to `4`, and its label
+**Room 01** on **Floor 01** changes from comfort `46` to `4`, and its status
 becomes blue (too cold). Floor 01 becomes `32`, and building comfort becomes
 approximately `41.3333`. Room and floor alerts appear, but **no building alert**
 appears: the building average is still within 40-50. Terminal 1 logs the alerts.
+
+Follow the one database update through the graph:
+
+| Stage | What changes | Who reuses that output |
+| --- | --- | --- |
+| Room comfort | The room's existing result node is replaced with score `4` and its new readings | Floor calculation, room-alert filter, dashboard |
+| Floor comfort | Floor 01's average becomes `32`; the other two floors remain at `46` | Building calculation, floor-alert filter, dashboard |
+| Building comfort | The average of `32`, `46`, and `46` becomes approximately `41.3333` | Building-alert filter, dashboard |
+
+The alert queries do not repeat these calculations. They test the corresponding
+maintained score: room `4` and floor `32` are below `40`, while building
+`41.3333` is not. Dashboard branches update independently as changes arrive;
+the graph does not make all widgets refresh atomically or in a fixed visual order.
 
 ### Reset a room (or all rooms)
 
@@ -236,7 +274,11 @@ python3 scripts/demo.py reset-room room_01_01_01
 python3 scripts/demo.py reset-room
 ```
 
-The alerts clear and the building returns to green.
+The room's result node is replaced again, this time with score `46`. Its floor
+and building averages return to `46`. The room and floor no longer match their
+alert filters, so those queries emit **deletions of their alert result nodes**.
+That is why the alert lists clear without a separate "clear alert" command.
+The underlying room has not been deleted.
 
 ### Set custom values
 
@@ -260,7 +302,39 @@ python3 scripts/demo.py break-room room_01_01_02
 ```
 
 Floor 01 becomes `18`, and building comfort becomes approximately `36.6667`.
-All three kinds of alert now have results. Reset all rooms to clear them.
+All three kinds of alert now have results. The building alert is visible in
+Terminal 1's log; the room and floor alerts also appear in the dashboard lists.
+Reset all rooms to clear them.
+
+### Check why floor sizes matter
+
+The building gives each floor equal weight, not each room. With three rooms on
+every floor, both methods give the same answer and can hide a mistaken query.
+Predict the extra-room result: the original nine rooms have
+score `46`, and the extra room has score `58`. Floor 01 now has four rooms; the
+other floors still have three.
+
+| Calculation | Expected value |
+| --- | --- |
+| Floor 01: average of `46`, `46`, `46`, `58` | `49` |
+| Building: average of floor scores `49`, `46`, `46` | `47` |
+| Average of all ten room scores, which this demo does **not** use | `47.2` |
+
+Now run the exercise while Server is running and the simulator is stopped.
+This data-changing check requires exactly the nine seeded rooms. It resets
+their readings for its scenarios, inserts the temporary hot room on Floor 01,
+then removes it and restores your original readings. It checks all six query
+results and dashboard snapshots after each scenario; no query results are
+fabricated.
+
+```bash
+python3 scripts/verify_demo.py --exercise --output .runtime/comfort-exercise.json
+```
+
+Look for `Unequal floors: Floor 01 = 49; building = 47` in the terminal output.
+The JSON file preserves that scenario's six result sets even after the
+temporary room is removed. Its removal must also remove the room's alert and
+return the floor and building averages to `46`.
 
 ### Let it run hands-free
 
@@ -281,17 +355,33 @@ queries and dashboard.
 
 Set a room to an uncomfortable value, stop Server with Ctrl+C, and run
 `python3 scripts/demo.py start-demo` again. PostgreSQL retains your readings.
-The room query bootstraps from those current rows; the floor, building and alert
-queries initialize from their upstream query outputs and then follow changes.
-The dashboard returns to the same state. Layout edits and query/API changes are not persisted
-by this tutorial configuration.
+The source first supplies a snapshot of the current database rows and then
+supplies live changes. The room query uses that initial data to establish its
+result. Each downstream query likewise starts with its upstream query's current
+output and then follows changes. This initial-state loading is called
+**bootstrap**; a consumer does not have to wait for every room to change before
+showing the current picture.
+
+The dashboard returns to the same state. Layout edits and query/API changes are
+not persisted by this tutorial configuration. If readings change while Server
+is stopped, restart restores the current picture; this is not an alert-history
+service that promises to replay every alert transition during the outage.
 
 This is a normal restart and fresh bootstrap, **not** a claim of durable query
 indexes, crash-safe browser delivery, or exactly-once external effects.
 
 ## How It Works {#how}
 
-Everything you just ran is described by the single `server-config.yaml`. Here's what each part does.
+Everything you just ran is described by the single `server-config.yaml`. The
+named instance `building-comfort-server` owns one ComputationGraph containing
+the source, six queries and two reactions. Its ports are the components'
+connection points, and its pipes carry changes between them. Server creates
+these connections from the query `inputs` and reaction `queries` declarations.
+
+The convenient `sources`, `queries` and `reactions` sections do not create a
+second runtime. Each query runs as a `ContinuousQueryTransformer` inside that
+graph. There is no need for custom arithmetic transformers or lower-level
+factory configuration to express this demo.
 
 ### The Source
 
@@ -352,18 +442,29 @@ floor( 50 + (r.temperature - 72) + (r.humidity - 42)
 
 There are six queries:
 
-| Query | Input | What it returns |
+| Query | Input component | Output: graph changes to nodes labeled |
 | ----- | ----- | --------------- |
-| `building-comfort-ui` | `building-facilities` | One `RoomComfort` node per room, including its floor/building context |
-| `floor-comfort-level-calc` | `building-comfort-ui` | One `FloorComfort` node per floor, including its building context |
-| `building-comfort-level-calc` | `floor-comfort-level-calc` | One `BuildingComfort` node per building |
-| `room-alert` | `building-comfort-ui` | Only the rooms whose comfort is outside 40–50 |
-| `floor-alert` | `floor-comfort-level-calc` | Only the floors whose average comfort is outside 40–50 |
-| `building-alert` | `building-comfort-level-calc` | Only the buildings whose overall comfort is outside 40–50 |
+| `room-comfort` | `building-facilities` | `RoomComfort`: one per room, with readings, score and floor/building context |
+| `floor-comfort-level-calc` | `room-comfort` | `FloorComfort`: one per floor, with its score and building context |
+| `building-comfort-level-calc` | `floor-comfort-level-calc` | `BuildingComfort`: one per building, with its score |
+| `room-alert` | `room-comfort` | `RoomAlert`: only rooms whose score is outside 40–50 |
+| `floor-alert` | `floor-comfort-level-calc` | `FloorAlert`: only floors whose score is outside 40–50 |
+| `building-alert` | `building-comfort-level-calc` | `BuildingAlert`: only buildings whose score is outside 40–50 |
 
-Every returned alias is a property on the result node. `result.label` names its
-label; it does not change the graph-change format. The same output can feed
-another query, an alert filter and the dashboard without a conversion component.
+The query **ID** selects a component to connect to; the result **label** tells a
+downstream `MATCH` which kind of node to read. For example,
+`inputs: [room-comfort]` connects to the room query, while
+`MATCH (r:RoomComfort)` reads the nodes it produces. `result.label` declares that
+label; it does not select a different message format. All six use
+`drasi.graph-change` v1.
+
+Every returned alias is a property on the result node. `RoomId`, for example,
+is a business identifier carried as a property; Drasi also supplies the result
+node's own stable identity so a consumer can apply replacements and deletions.
+The floor query retains `BuildingId` and `BuildingName` in its output so the
+next query can group by building without joining the original tables again.
+Each query maintains its own input and result state; the benefit is reusing
+an upstream calculation, not sharing one mutable store between queries.
 
 #### Synthetic joins connect the entities
 
@@ -406,7 +507,7 @@ properties. It needs neither the original database joins nor the room formula:
 
 ```yaml
 - id: floor-comfort-level-calc
-  inputs: [building-comfort-ui]
+  inputs: [room-comfort]
   result:
     label: FloorComfort
   query: |
@@ -433,18 +534,23 @@ so a floor with more rooms does not receive extra weight:
 Alerts are simple filters over the corresponding maintained output. For example,
 the building alert does no aggregation itself:
 
-```cypher
-MATCH (b:BuildingComfort)
-WHERE b.ComfortLevel < 40 OR b.ComfortLevel > 50
-RETURN b.BuildingId AS BuildingId, b.BuildingName AS BuildingName,
-  b.ComfortLevel AS ComfortLevel
+```yaml
+- id: building-alert
+  inputs: [building-comfort-level-calc]
+  result:
+    label: BuildingAlert
+  query: |
+    MATCH (b:BuildingComfort)
+    WHERE b.ComfortLevel < 40 OR b.ComfortLevel > 50
+    RETURN b.BuildingId AS BuildingId, b.BuildingName AS BuildingName,
+      b.ComfortLevel AS ComfortLevel
 ```
 
-Repeat the cold-room exercise while watching all three dashboard levels. The
-room changes first, its floor average changes, and the building average follows;
-the alert filters add or remove their rows as thresholds are crossed. These
-queries maintain their results incrementally, and each passes ordinary
-graph-change records to the next.
+The result is the set of **currently uncomfortable** buildings, not an
+append-only history. Entering the band removes a building from that result;
+leaving it adds the building. A changed score while it remains uncomfortable
+replaces its existing alert result. The room and floor alert queries follow
+the same rule over their corresponding inputs.
 
 ### The Dashboard Reaction
 
@@ -453,7 +559,7 @@ reactions:
   - kind: dashboard
     id: building-comfort-dashboard
     queries:
-      - building-comfort-ui
+      - room-comfort
       - building-comfort-level-calc
       # ...
     port: 3000
@@ -464,9 +570,25 @@ reactions:
           # ...
 ```
 
-The dashboard reaction subscribes to the queries and streams their changes to the browser over a WebSocket. A **predefined dashboard** is seeded on startup, so the layout is ready the first time you open it. Most of the panels are **Markdown widgets** that use the reaction's Handlebars helpers (`groupBy`, `each`, `gt`/`lt`) to lay out the building from the `building-comfort-ui` rows, plus a KPI and gauge for the overall level and Markdown widgets for the alert lists. Because the queries only emit *changes*, the dashboard updates the instant a room's comfort changes — no polling. The full set of widget types and configuration options is documented in [Configure the Dashboard Reaction](https://drasi.io/drasi-server/how-to-guides/configuration/configure-reactions/configure-dashboard-reaction/).
+The dashboard reaction subscribes to all six queries and streams their changes
+to the browser over a WebSocket. It maintains the rows for each output, applying
+additions, replacements and deletions. A **predefined dashboard** supplies the
+initial layout. The large building panel reads `room-comfort`, the floor table
+reads `floor-comfort-level-calc`, and both the KPI and gauge read
+`building-comfort-level-calc` directly. They do not recalculate the building
+average from the room rows.
 
-For example, the centerpiece **Building Comfort** panel is a single Markdown widget. Its template groups the `building-comfort-ui` rows by floor with `groupBy`, loops the rooms with `each`, and uses the `gt`/`lt` helpers to pick a status emoji per comfort level. Here is the widget's `template`:
+The room and floor alert lists display their alert-query results. The log
+reaction independently subscribes to all three alert queries, including
+`building-alert`; no extra query is created for the log. Formatting a score as a
+colored room status is presentation work, not another comfort calculation.
+The full widget options are documented in
+[Configure the Dashboard Reaction](https://drasi.io/drasi-server/how-to-guides/configuration/configure-reactions/configure-dashboard-reaction/).
+
+For example, the centerpiece **Building Comfort** panel is a single Markdown
+widget. Its template groups the `room-comfort` rows by floor with `groupBy`,
+loops over the rooms with `each`, and uses `gt`/`lt` comparisons to pick a status
+emoji per comfort level:
 
 ```handlebars
 {{#groupBy rows "FloorName"}}
@@ -491,13 +613,7 @@ And the reaction renders it live:
 
 <img src="images/dashboard-building-view.png" width="820" alt="The Building Comfort widget: rooms grouped by floor, each tagged with a comfort level and a green, red, or blue status emoji">
 
-### Where ComputationGraph fits
-
-The named instance `building-comfort-server` owns one ComputationGraph. Its
-PostgreSQL source feeds the room query. That query feeds the floor query, which
-feeds the building query; each level also feeds its own alert query and the
-dashboard. `inputs` declarations compile into the same graph's checked ports and
-pipes, with snapshot initialization and live delivery, not another execution engine.
+### Inspect the running graph
 
 You do not need an `executionMode` field or an enablement flag. The single output
 on each query resolves automatically; an input with several outputs requires an
@@ -523,7 +639,7 @@ acceptance exercises.
 You can also query Drasi Server's REST API while the demo runs — see `requests.http` for ready-made requests, for example:
 
 ```text
-GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/building-comfort-ui/results
+GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/room-comfort/results
 GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/room-alert/results
 ```
 {{% /alert %}}
@@ -553,8 +669,10 @@ the same, and the acceptance checks used for this tutorial.
 ## What You Learned {#summary}
 
 - **Sources** connect Drasi Server to live data — here, PostgreSQL via Change Data Capture.
-- **Continuous Queries** with **synthetic joins** let you model relationships (room → floor → building) and compute derived values (comfort levels) that stay current automatically.
-- **Reactions** turn query changes into action. The **dashboard reaction** gave you a live, configurable UI with zero application code — no bespoke web app required.
-- Because Drasi emits only what *changed*, everything updates the instant the data does, with no polling.
+- **Continuous queries emit graph changes**, so the room calculation can feed floor and building calculations directly. Only the room query needs the original table joins and comfort formula.
+- **Fan-out** lets rollups, alert filters and presentation reuse those maintained outputs without repeating the calculation.
+- **Alerts are maintained results**: matching entities appear, change and disappear as their scores cross the comfortable band.
+- **Reactions** present or act on those results. The dashboard supplies a live UI without application code, while the log independently consumes the alert outputs.
+- **Bootstrap and live changes** establish the current picture and keep it current. Restarting from PostgreSQL is different from guaranteeing delivery of every historical alert.
 
 From here, try editing the comfort formula or the dashboard widgets in `server-config.yaml`, adding a new alert query, or pointing the dashboard at your own data.

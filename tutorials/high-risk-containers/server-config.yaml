@@ -17,9 +17,8 @@
 # =============================================================================
 # Builds a real-time dashboard of running containers whose image is flagged as
 # high risk. A PostgreSQL table ("RiskyImage") lists risky image tags; a
-# Kubernetes source watches the live Pods in a cluster. A single continuous
-# query unwinds each Pod's containers and synthetic-joins them to the RiskyImage
-# table, and the dashboard reaction renders the result live.
+# Kubernetes source watches the live Pods in a cluster. A reusable query
+# publishes container inventory; the risk query joins it to RiskyImage.
 # =============================================================================
 
 apiVersion: drasi.io/v1
@@ -28,17 +27,10 @@ port: ${SERVER_PORT:-8380}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
 
-# Plugins are downloaded from the OCI registry (ghcr.io/drasi-project) on first
-# startup. No manual build step is required.
-autoInstallPlugins: true
-plugins:
-  - ref: source/postgres
-  - ref: bootstrap/postgres
-  - ref: source/kubernetes
-  - ref: bootstrap/kubernetes
-  - ref: reaction/dashboard
-  # Optional (Discord alerts step): uncomment to enable the HTTP reaction below.
-  # - ref: reaction/http
+# scripts/demo.py builds Server and these six plugins from the sibling local
+# checkouts. Startup uses only that private, hash-verified plugin bundle.
+autoInstallPlugins: false
+plugins: []
 
 # =============================================================================
 # Sources
@@ -79,7 +71,7 @@ instances:
 
   # Kubernetes source: the live Pods running in the cluster. Drasi Server runs
   # outside the cluster and connects with the kubeconfig written by
-  # scripts/setup-cluster.sh (KUBECONFIG_PATH). The source flattens each Pod's
+  # scripts/demo.py. The source flattens each Pod's
   # spec into top-level properties, including a `containers` list of
   # { name, image, ... } objects that the query unwinds below.
       - kind: kubernetes
@@ -91,9 +83,7 @@ instances:
         namespaces:
           - default
         authMode: kubeconfig
-    # Path to the kubeconfig written by scripts/setup-cluster.sh, relative to the
-    # tutorial directory (start-server.sh/.ps1 launch the server from there).
-    # The Kubernetes plugin reads this path literally, so it is not templated.
+    # The runner replaces this literal and the namespace in its private copy.
         kubeconfigPath: bin/kubeconfig.yaml
 
     # Bootstrap provider loads the Pods that already exist on startup. It reuses
@@ -102,42 +92,22 @@ instances:
           kind: kubernetes
 
 # =============================================================================
-# Continuous Query
+# Continuous Queries
 # =============================================================================
     queries:
-  # high-risk-containers: join running containers to the RiskyImage table.
-  #
-  # The Kubernetes source emits Pod nodes whose `containers` property is a list
-  # of { name, image, ... } objects. The unwind middleware promotes each entry
-  # to its own `Container` node (keyed by the container name) linked to its Pod
-  # by an `OWNS` relation. The synthetic `HAS_IMAGE` join then connects each
-  # Container to a RiskyImage row by matching Container.image to RiskyImage.Image.
-      - id: high-risk-containers
+  # Normalize Pod container arrays once. Other queries can consume this
+  # graph-change v1 output without repeating the Kubernetes subscription/unwind.
+      - id: pod-containers
         autoStart: true
         queryLanguage: Cypher
-
-    # The inputs this query consumes, and the labels it consumes from each.
+        result:
+          label: ContainerImage
         inputs:
           - component: k8s
             nodes:
               - Pod
-        # Run incoming Pod changes through the unwind middleware.
             pipeline:
               - extract-containers
-          - component: devops
-            nodes:
-              - RiskyImage
-
-    # Declare the synthetic join the query walks with [:HAS_IMAGE].
-        joins:
-          - id: HAS_IMAGE
-            keys:
-              - label: Container
-                property: image
-              - label: RiskyImage
-                property: Image
-
-    # Pre-process Pod changes: unwind $.containers[*] into Container nodes.
         middleware:
           - kind: unwind
             name: extract-containers
@@ -149,12 +119,37 @@ instances:
                   relation: OWNS
 
         query: |
-          MATCH
-            (p:Pod)-[:OWNS]->(c:Container)-[:HAS_IMAGE]->(i:RiskyImage)
+          MATCH (p:Pod)-[:OWNS]->(c:Container)
           RETURN
             p.name AS pod,
             p.namespace AS namespace,
             c.name AS container,
+            c.image AS image
+
+  # The risky-image join consumes derived ContainerImage nodes, not raw Pods.
+      - id: high-risk-containers
+        autoStart: true
+        queryLanguage: Cypher
+        result:
+          label: HighRiskContainer
+        inputs:
+          - component: pod-containers
+          - component: devops
+            nodes:
+              - RiskyImage
+        joins:
+          - id: HAS_IMAGE
+            keys:
+              - label: ContainerImage
+                property: image
+              - label: RiskyImage
+                property: Image
+        query: |
+          MATCH (c:ContainerImage)-[:HAS_IMAGE]->(i:RiskyImage)
+          RETURN
+            c.pod AS pod,
+            c.namespace AS namespace,
+            c.container AS container,
             c.image AS image,
             i.Reason AS reason,
             i.Mitigation AS mitigation
@@ -229,37 +224,42 @@ instances:
   # ===========================================================================
   # Posts a message to a Discord channel whenever a high risk container appears
   # (added) or is resolved (deleted). To enable it:
-  #   1. Uncomment the `- ref: reaction/http` plugin near the top of this file.
-  #   2. Uncomment the reaction block below (remove the leading "# " on each line).
+  #   1. The local build already includes reaction/http.
+  #   2. Uncomment the reaction block below, retaining its indentation.
   #   3. Set DISCORD_WEBHOOK_URL to your Discord webhook URL and restart the server.
   # See the "Optional: Discord Alerts" step in the README for the full walkthrough.
   #
-  # - kind: http
-  #   id: discord-alerts
-  #   autoStart: true
-  #   queries:
-  #     - high-risk-containers
-  #   # The Discord webhook URL, supplied via an environment variable.
-  #   baseUrl: "${DISCORD_WEBHOOK_URL}"
-  #   timeoutMs: 30000
-  #   outputTemplates:
-  #     routes:
-  #       high-risk-containers:
-  #         # A new high risk container started running.
-  #         added:
-  #           method: POST
-  #           headers:
-  #             Content-Type: application/json
-  #           template: |
-  #             {
-  #               "content": "🚨 **High risk container detected**\n• **Pod:** `{{after.pod}}` (namespace `{{after.namespace}}`)\n• **Container:** `{{after.container}}`\n• **Image:** `{{after.image}}`\n• **Reason:** {{after.reason}}\n• **Mitigation:** {{after.mitigation}}"
-  #             }
-  #         # A previously flagged container is no longer running / no longer risky.
-  #         deleted:
-  #           method: POST
-  #           headers:
-  #             Content-Type: application/json
-  #           template: |
-  #             {
-  #               "content": "✅ **High risk container resolved**\n• **Pod:** `{{before.pod}}`\n• **Image:** `{{before.image}}`"
-  #             }
+      # - kind: http
+      #   id: discord-alerts
+      #   autoStart: true
+      #   queries:
+      #     - high-risk-containers
+      #   baseUrl: "${DISCORD_WEBHOOK_URL}"
+      #   timeoutMs: 30000
+      #   outputTemplates:
+      #     routes:
+      #       high-risk-containers:
+      #         added:
+      #           method: POST
+      #           headers:
+      #             Content-Type: application/json
+      #           template: |
+      #             {
+      #               "content": "🚨 **High risk container detected**\n• **Pod:** `{{after.pod}}` (namespace `{{after.namespace}}`)\n• **Container:** `{{after.container}}`\n• **Image:** `{{after.image}}`\n• **Reason:** {{after.reason}}\n• **Mitigation:** {{after.mitigation}}"
+      #             }
+      #         updated:
+      #           method: POST
+      #           headers:
+      #             Content-Type: application/json
+      #           template: |
+      #             {
+      #               "content": "🚨 **High risk container updated**\n• **Pod:** `{{after.pod}}`\n• **Image:** `{{after.image}}`\n• **Reason:** {{after.reason}}\n• **Mitigation:** {{after.mitigation}}"
+      #             }
+      #         deleted:
+      #           method: POST
+      #           headers:
+      #             Content-Type: application/json
+      #           template: |
+      #             {
+      #               "content": "✅ **High risk container resolved**\n• **Pod:** `{{before.pod}}`\n• **Image:** `{{before.image}}`"
+      #             }

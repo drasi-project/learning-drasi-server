@@ -33,8 +33,6 @@ $$;
 GRANT CREATE ON DATABASE otel_observability TO drasi_user;
 GRANT ALL PRIVILEGES ON DATABASE otel_observability TO drasi_user;
 
-DROP TABLE IF EXISTS service_slo_policy CASCADE;
-
 CREATE TABLE service_slo_policy (
     service_name text NOT NULL,
     metric_name text NOT NULL,

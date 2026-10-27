@@ -19,6 +19,8 @@
 # API documentation is served at http://localhost:8380/api/v1/docs/
 
 @baseUrl = http://localhost:8380
+@instanceId = otel-observability-server
+@instanceUrl = {{baseUrl}}/api/v1/instances/{{instanceId}}
 @dashboardUrl = http://localhost:3000
 @checkoutUrl = http://localhost:18080
 
@@ -29,6 +31,9 @@
 ### Health check
 GET {{baseUrl}}/health
 
+### Exact instance runtime identity
+GET {{instanceUrl}}/runtime
+
 ### List API versions
 GET {{baseUrl}}/api/versions
 
@@ -37,45 +42,45 @@ GET {{baseUrl}}/api/versions
 ### ==========================================================================
 
 ### List all sources
-GET {{baseUrl}}/api/v1/sources
+GET {{instanceUrl}}/sources
 
 ### Get the PostgreSQL SLO source status
-GET {{baseUrl}}/api/v1/sources/slo
+GET {{instanceUrl}}/sources/slo
 
 ### Get the Kubernetes source status
-GET {{baseUrl}}/api/v1/sources/k8s
+GET {{instanceUrl}}/sources/k8s
 
 ### Get the OTel source status
-GET {{baseUrl}}/api/v1/sources/otel
+GET {{instanceUrl}}/sources/otel
 
 ### ==========================================================================
 ### Continuous Queries
 ### ==========================================================================
 
 ### List all queries
-GET {{baseUrl}}/api/v1/queries
+GET {{instanceUrl}}/queries
 
 ### Current health (always-on deployment/metric view)
-GET {{baseUrl}}/api/v1/queries/current-health/results
+GET {{instanceUrl}}/queries/current-health/results
 
 ### Active SLO alerts
-GET {{baseUrl}}/api/v1/queries/slo-alert/results
+GET {{instanceUrl}}/queries/slo-alert/results
 
 ### Service dependency edges
-GET {{baseUrl}}/api/v1/queries/service-dependencies/results
+GET {{instanceUrl}}/queries/service-dependencies/results
 
 ### Missing heartbeats
-GET {{baseUrl}}/api/v1/queries/missing-heartbeat/results
+GET {{instanceUrl}}/queries/missing-heartbeat/results
 
 ### ==========================================================================
 ### Reactions
 ### ==========================================================================
 
 ### List all reactions
-GET {{baseUrl}}/api/v1/reactions
+GET {{instanceUrl}}/reactions
 
 ### Get the dashboard reaction status
-GET {{baseUrl}}/api/v1/reactions/otel-observability-dashboard
+GET {{instanceUrl}}/reactions/otel-observability-dashboard
 
 ### Seeded dashboards
 GET {{dashboardUrl}}/api/dashboards

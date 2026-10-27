@@ -13,13 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
-
-CHECKOUT_URL="${CHECKOUT_URL:-http://127.0.0.1:${CHECKOUT_CONTROL_PORT:-18080}}"
-
-echo "Stopping checkout heartbeats via $CHECKOUT_URL"
-curl -fsS -X POST "$CHECKOUT_URL/heartbeat/off"
-echo
-echo
-echo "After ~10s the missing-heartbeat query should emit Added."
-echo "Watch the dashboard at http://localhost:${DASHBOARD_PORT:-3000}"
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$SCRIPT_DIR/demo.py" compat "${BASH_SOURCE[0]}" "$@"

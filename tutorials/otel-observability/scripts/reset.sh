@@ -13,25 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Reset Script
-# Returns the demo to its starting state: checkout v41, latency 400, heartbeat
-# on, SLO threshold 750.
-
-set -e
-
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-echo "Resetting checkout to v41..."
-bash "$SCRIPT_DIR/roll-checkout.sh" v41
-
-echo
-echo "Restoring healthy latency and heartbeat..."
-bash "$SCRIPT_DIR/set-latency.sh" 400
-bash "$SCRIPT_DIR/start-heartbeat.sh"
-
-echo
-echo "Restoring the default SLO threshold..."
-bash "$SCRIPT_DIR/set-slo.sh" 750
-
-echo
-echo "Reset complete. Checkout should be v41 at 400ms with a 750ms SLO."
+exec python3 "$SCRIPT_DIR/demo.py" compat "${BASH_SOURCE[0]}" "$@"

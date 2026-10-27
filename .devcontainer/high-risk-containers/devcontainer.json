@@ -1,8 +1,6 @@
 {
     "name": "Drasi Server - High Risk Containers Tutorial",
-    // Ubuntu 24.04 (glibc 2.39). The source/kubernetes and bootstrap/kubernetes
-    // plugins are built against glibc 2.39, so the older Debian bookworm base
-    // (glibc 2.36) fails to load them with "GLIBC_2.39 not found".
+    // Server and all plugins are built together inside this container.
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04@sha256:d94c97dd9cacf183d0a6fd12a8e87b526e9e928307674ae9c94139139c0c6eae",
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
@@ -10,6 +8,9 @@
             "moby": false
         },
         "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/rust:1": {
+            "version": "1.95.0"
+        },
         "ghcr.io/devcontainers/features/common-utils:2": {
             "installZsh": true,
             "configureZshAsDefaultShell": true
@@ -19,6 +20,7 @@
         }
     },
     "postCreateCommand": "bash ../../.devcontainer/high-risk-containers/post-create.sh",
+    "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind",
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}/tutorials/high-risk-containers",
     "runArgs": [
         "--privileged",
@@ -59,6 +61,11 @@
         "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
     },
     "containerEnv": {
+        "CONTAINER_ENGINE": "docker",
+        "CARGO_TARGET_DIR": "/home/vscode/.cache/drasi-high-risk-containers/target",
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "0",
         "POSTGRES_HOST": "localhost",
         "POSTGRES_PORT": "5732",
         "POSTGRES_HOST_PORT": "5732",

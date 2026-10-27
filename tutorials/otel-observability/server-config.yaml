@@ -17,29 +17,19 @@
 # =============================================================================
 # Correlates Kubernetes Deployments, OTel-projected service health, and a
 # PostgreSQL SLO policy. Mock store services export OTLP through an in-cluster
-# Collector; Drasi listens on :14317 and evaluates four continuous queries.
+# Collector; six queries share health and heartbeat calculations.
 # =============================================================================
 
 apiVersion: drasi.io/v1
-host: "${SERVER_HOST:-0.0.0.0}"
+host: "${SERVER_HOST:-127.0.0.1}"
 port: ${SERVER_PORT:-8380}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
 
-# Plugins auto-install from ghcr.io/drasi-project. Pin source/otel to the
-# published 0.1.0 (plugin-sdk 0.11, signed). Pair with Drasi Server 0.2.2.
-autoInstallPlugins: true
-verifyPlugins: true
-plugins:
-  - ref: source/postgres
-  - ref: bootstrap/postgres
-  - ref: source/kubernetes
-  - ref: bootstrap/kubernetes
-  - ref: source/otel:0.1.0
-  - ref: reaction/dashboard:0.1.5
-  - ref: reaction/log
-  # Optional (Discord alerts step): uncomment to enable the HTTP reaction below.
-  # - ref: reaction/http
+# Only matching, hash-verified local libraries from scripts/demo.py build.
+autoInstallPlugins: false
+verifyPlugins: false
+pluginRegistry: "${DRASI_PLUGINS_DIR}"
 
 # =============================================================================
 # Sources
@@ -50,11 +40,11 @@ instances:
       - kind: postgres
         id: slo
         autoStart: true
-        host: "${POSTGRES_HOST:-localhost}"
+        host: "127.0.0.1"
         port: ${POSTGRES_PORT:-5732}
-        database: "${POSTGRES_DATABASE:-otel_observability}"
-        user: "${POSTGRES_USER:-drasi_user}"
-        password: "${POSTGRES_PASSWORD:-drasi_password}"
+        database: otel_observability
+        user: drasi_user
+        password: drasi_password
         sslMode: prefer
         tables:
           - service_slo_policy
@@ -75,9 +65,9 @@ instances:
           - apiVersion: apps/v1
             kind: Deployment
         namespaces:
-          - default
+          - "${K8S_NAMESPACE:-otel-observability}"
         authMode: kubeconfig
-        kubeconfigPath: bin/kubeconfig.yaml
+        kubeconfigPath: "${KUBECONFIG_PATH}"
         bootstrapProvider:
           kind: kubernetes
 
@@ -107,12 +97,16 @@ instances:
       - id: current-health
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: ServiceHealth
         query: |
           MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric)
           WHERE m.name = 'latency_p99_ms'
           RETURN
             s.version AS deployVersion,
+            d.version AS rolloutVersion,
             s.name AS service,
+            m.name AS metricName,
             m.value AS latencyMs
         inputs:
           - component: k8s
@@ -147,102 +141,54 @@ instances:
       - id: checkout-health
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: CheckoutHealth
         query: |
-          MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric)
-          WHERE m.name = 'latency_p99_ms'
-            AND s.name = 'checkout'
+          MATCH (h:ServiceHealth)
+          WHERE h.service = 'checkout'
           RETURN
-            s.version AS deployVersion,
-            s.name AS service,
-            m.value AS latencyMs
+            h.deployVersion AS deployVersion,
+            h.service AS service,
+            h.latencyMs AS latencyMs
         inputs:
-          - component: k8s
-            nodes:
-              - Deployment
-            pipeline:
-              - promote-version
-          - component: otel
-            nodes:
-              - Service
-              - Metric
-            relations:
-              - REPORTS
-        joins:
-          - id: RUNS
-            keys:
-              - label: Deployment
-                property: name
-              - label: Service
-                property: name
-        middleware:
-          - kind: promote
-            name: promote-version
-            config:
-              mappings:
-                - path: "$.labels.version"
-                  target_name: version
-              on_error: skip
+          - current-health
 
   # Validated OSMC story query: fire only after the metric stays above the
   # policy threshold for five seconds.
       - id: slo-alert
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: SloAlert
         query: |
-          MATCH (d:Deployment)-[:RUNS]->(s:Service)-[:REPORTS]->(m:Metric),
-                (s)-[:GOVERNED_BY]->(p:service_slo_policy)
-          WHERE m.name = p.metric_name
-            AND s.version = d.version
-            AND m.value > p.threshold_ms
+          MATCH (h:ServiceHealth)-[:GOVERNED_BY]->(p:service_slo_policy)
+          WHERE h.metricName = p.metric_name
             AND drasi.trueFor(
-              m.value > p.threshold_ms,
+              h.deployVersion = h.rolloutVersion AND h.latencyMs > p.threshold_ms,
               duration({ seconds: 5 })
             )
           RETURN
-            d.version AS deployVersion,
-            s.name AS service,
-            m.value AS latencyMs,
+            h.deployVersion AS deployVersion,
+            h.service AS service,
+            h.latencyMs AS latencyMs,
             p.threshold_ms AS thresholdMs
         inputs:
-          - component: k8s
-            nodes:
-              - Deployment
-            pipeline:
-              - promote-version
-          - component: otel
-            nodes:
-              - Service
-              - Metric
-            relations:
-              - REPORTS
+          - current-health
           - component: slo
             nodes:
               - service_slo_policy
         joins:
-          - id: RUNS
-            keys:
-              - label: Deployment
-                property: name
-              - label: Service
-                property: name
           - id: GOVERNED_BY
             keys:
-              - label: Service
-                property: name
+              - label: ServiceHealth
+                property: service
               - label: service_slo_policy
                 property: service_name
-        middleware:
-          - kind: promote
-            name: promote-version
-            config:
-              mappings:
-                - path: "$.labels.version"
-                  target_name: version
-              on_error: skip
-
       - id: service-dependencies
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: ServiceDependency
         query: |
           MATCH (a:Service)-[:DEPENDS_ON]->(b:Service)
           RETURN a.name AS fromService, b.name AS toService
@@ -257,6 +203,8 @@ instances:
       - id: checkout-heartbeat
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: CheckoutHeartbeat
         query: |
           MATCH (svc:Service)-[:REPORTS]->(m:Metric)
           WHERE svc.name = 'checkout'
@@ -278,25 +226,20 @@ instances:
       - id: missing-heartbeat
         autoStart: true
         queryLanguage: Cypher
+        result:
+          label: MissingHeartbeat
         query: |
-          MATCH (svc:Service)-[:REPORTS]->(m:Metric)
-          WHERE svc.name = 'checkout'
-            AND m.name = 'health.heartbeat'
-            AND (
-                  m.value <= 0
+          MATCH (h:CheckoutHeartbeat)
+          WHERE (
+                  h.pulse <= 0
                   OR drasi.trueNowOrLater(
-                       datetime(m.receivedAt) <= (datetime.realtime() - duration({ seconds: 10 })),
-                       datetime(m.receivedAt) + duration({ seconds: 10 })
+                       datetime(h.lastSeen) <= (datetime.realtime() - duration({ seconds: 10 })),
+                       datetime(h.lastSeen) + duration({ seconds: 10 })
                      )
                 )
-          RETURN svc.name AS service
+          RETURN h.service AS service
         inputs:
-          - component: otel
-            nodes:
-              - Service
-              - Metric
-            relations:
-              - REPORTS
+          - checkout-heartbeat
 
 # =============================================================================
 # Reactions
@@ -312,7 +255,7 @@ instances:
           - slo-alert
           - service-dependencies
           - missing-heartbeat
-        host: "${DASHBOARD_HOST:-0.0.0.0}"
+        host: "${DASHBOARD_HOST:-127.0.0.1}"
         port: ${DASHBOARD_PORT:-3000}
         heartbeatIntervalMs: 15000
         predefinedDashboards:
@@ -438,52 +381,52 @@ instances:
   # Optional: Discord alerts (HTTP reaction)
   # ===========================================================================
   # Posts when slo-alert or missing-heartbeat is Added or Removed. To enable:
-  #   1. Uncomment `- ref: reaction/http` in the plugins list above.
+  #   1. The local build includes reaction/http; no registry download is needed.
   #   2. Uncomment this reaction block (remove the leading "# " on each line).
   #   3. Set DISCORD_WEBHOOK_URL and restart the server.
   # See "Optional: Discord Alerts" in the tutorial for the walkthrough.
   #
-  # - kind: http
-  #   id: discord-alerts
-  #   autoStart: true
-  #   queries:
-  #     - slo-alert
-  #     - missing-heartbeat
-  #   baseUrl: "${DISCORD_WEBHOOK_URL}"
-  #   timeoutMs: 30000
-  #   outputTemplates:
-  #     routes:
-  #       slo-alert:
-  #         added:
-  #           method: POST
-  #           headers:
-  #             Content-Type: application/json
-  #           template: |
-  #             {
-  #               "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99:** {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
-  #             }
-  #         deleted:
-  #           method: POST
-  #           headers:
-  #             Content-Type: application/json
-  #           template: |
-  #             {
-  #               "content": "✅ **SLO recovered**\n• **Service:** `{{before.service}}`\n• **Version:** `{{before.deployVersion}}`"
-  #             }
-  #       missing-heartbeat:
-  #         added:
-  #           method: POST
-  #           headers:
-  #             Content-Type: application/json
-  #           template: |
-  #             {
-  #               "content": "💔 **Heartbeat missing**\n• **Service:** `{{after.service}}`"
-  #             }
-  #         deleted:
-  #           method: POST
-  #           headers:
-  #             Content-Type: application/json
-  #           template: |
-  #             {
-  #               "content": "✅ **Heartbeat restored**\n• **Service:** `{{before.service}}`"
-  #             }
+  #     - kind: http
+  #       id: discord-alerts
+  #       autoStart: true
+  #       queries:
+  #         - slo-alert
+  #         - missing-heartbeat
+  #       baseUrl: "${DISCORD_WEBHOOK_URL}"
+  #       timeoutMs: 30000
+  #       outputTemplates:
+  #         routes:
+  #           slo-alert:
+  #             added:
+  #               method: POST
+  #               headers:
+  #                 Content-Type: application/json
+  #               template: |
+  #                 {
+  #                   "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99:** {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
+  #                 }
+  #             deleted:
+  #               method: POST
+  #               headers:
+  #                 Content-Type: application/json
+  #               template: |
+  #                 {
+  #                   "content": "✅ **SLO recovered**\n• **Service:** `{{before.service}}`\n• **Version:** `{{before.deployVersion}}`"
+  #                 }
+  #           missing-heartbeat:
+  #             added:
+  #               method: POST
+  #               headers:
+  #                 Content-Type: application/json
+  #               template: |
+  #                 {
+  #                   "content": "💔 **Heartbeat missing**\n• **Service:** `{{after.service}}`"
+  #                 }
+  #             deleted:
+  #               method: POST
+  #               headers:
+  #                 Content-Type: application/json
+  #               template: |
+  #                 {
+  #                   "content": "✅ **Heartbeat restored**\n• **Service:** `{{before.service}}`"
+  #                 }

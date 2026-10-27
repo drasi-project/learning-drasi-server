@@ -130,6 +130,10 @@ async function refresh() {
   try {
     const res = await fetch("/api/state");
     const state = await res.json();
+    if (!res.ok || state.error) {
+      setStatus("error", state.error || "database read failed");
+      return;
+    }
     if (state.connecting) {
       setStatus("connecting", "connecting to databases…");
       renderLog(state.log);

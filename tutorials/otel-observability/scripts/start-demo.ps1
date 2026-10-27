@@ -12,19 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Start Demo Script (Windows)
-# Builds images, creates the cluster, starts PostgreSQL, then runs Drasi Server.
-
 $ErrorActionPreference = "Stop"
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-
-& powershell -ExecutionPolicy Bypass -File (Join-Path $ScriptDir "setup-cluster.ps1")
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host ""
-& powershell -ExecutionPolicy Bypass -File (Join-Path $ScriptDir "setup-database.ps1")
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-Write-Host ""
-& powershell -ExecutionPolicy Bypass -File (Join-Path $ScriptDir "start-server.ps1")
+& python (Join-Path $PSScriptRoot "demo.py") compat $PSCommandPath @args
+exit $LASTEXITCODE

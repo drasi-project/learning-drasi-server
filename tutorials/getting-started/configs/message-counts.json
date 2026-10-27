@@ -1,0 +1,8 @@
+{
+  "id": "message-counts",
+  "autoStart": true,
+  "inputs": ["all-messages"],
+  "result": {"label": "MessageCount"},
+  "query": "MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count",
+  "queryLanguage": "Cypher"
+}

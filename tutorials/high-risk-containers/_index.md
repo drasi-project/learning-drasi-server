@@ -4,552 +4,487 @@ title: "High Risk Containers"
 linkTitle: "High Risk Containers"
 weight: 30
 description: >
-  Build a no-code, real-time dashboard of high risk container images running in a Kubernetes cluster, by joining a PostgreSQL source to a Kubernetes source.
+  Build a no-code, real-time dashboard of high risk container images running in a Kubernetes cluster, by joining PostgreSQL risk data to reusable Kubernetes container inventory.
 ---
 
-Imagine you keep a list of container images that are considered high risk (known vulnerabilities, compliance problems, images you simply don't want in production), and you want to know, the instant it happens, whenever one of them is actually *running* in your Kubernetes cluster. You don't want to write a controller, poll the API on a timer, or stand up a stream processor. You just want to describe the relationship between "risky images" and "running containers" and have something watch for the overlap, continuously.
+Imagine you keep a list of container images that are considered high risk
+(known vulnerabilities, compliance problems, or images you don't want in
+production), and want to know whenever one is used by a Pod in your Kubernetes
+cluster. You don't want to write a controller or poll an API. You want to
+describe the relationship between risky images and running applications, and
+have something watch for the overlap continuously.
 
-This tutorial builds a **High Risk Containers** dashboard on **Drasi Server**. A PostgreSQL table holds the image tags you consider high risk, and a Kubernetes source watches the live Pods in a cluster. A single continuous query joins the two together, and Drasi Server's built-in **dashboard reaction** renders the result live, with no application code and **no bespoke web UI**.
+This tutorial builds a **High Risk Containers** dashboard on **Drasi Server**.
+A PostgreSQL table holds risky image tags, a Kubernetes source watches real
+Pods, and a reusable query publishes their container inventory. A second query
+joins that inventory to the risky-image list. The **dashboard reaction** renders
+the findings live, with no application code or bespoke web UI. An optional
+**HTTP reaction** sends the same findings and resolutions to Discord.
 
-**What you'll build:** a running Drasi Server that connects to PostgreSQL *and* Kubernetes and reacts to both in real time, assembled from Drasi's three core building blocks:
+The scenario stays small: two Pods, two initial risky-image records, one
+dashboard, then an image flagged in PostgreSQL and a Pod upgraded in Kubernetes.
+The reusable inventory is the computation-graph improvement: another query can
+consume the same normalized containers without another Kubernetes watch or
+another unwind pipeline.
 
-<div class="flow-diagram">
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-database"></i>
-    </div>
-    <div class="flow-step__label">Sources</div>
-    <div class="flow-step__description">Connect to your data sources</div>
-  </div>
-
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-filter"></i>
-    </div>
-    <div class="flow-step__label">Continuous Queries</div>
-    <div class="flow-step__description">Define what changes matter</div>
-  </div>
-
-  <div class="flow-arrow">
-    <i class="fas fa-arrow-right"></i>
-  </div>
-
-  <div class="flow-step">
-    <div class="flow-step__icon">
-      <i class="fas fa-bolt"></i>
-    </div>
-    <div class="flow-step__label">Reactions</div>
-    <div class="flow-step__description">Take action automatically</div>
-  </div>
-</div>
-
-| Step | What You'll Do | Time |
-| ---- | ------------- | ---- |
-| **[Step 1: Set Up Your Environment](#setup)** | Open the dev container (or install the tools locally) | 5 min |
-| **[Step 2: Run the Demo](#run)** | One command starts Kubernetes, PostgreSQL, and Drasi Server | 5 min |
-| **[Step 3: Open the Dashboard](#dashboard)** | Watch high risk containers appear live | 2 min |
-| **[Step 4: Drive Change](#drive)** | Flag a new image and upgrade a Pod, then watch Drasi react instantly | 5 min |
-| **[How It Works](#how)** | Understand the two sources, the unwind middleware, the synthetic join, and the dashboard | 5 min |
+| Step | What you'll do |
+| ---- | -------------- |
+| **[1. Set up](#setup)** | Build matching local Server, Core and plugins |
+| **[2. Run](#run)** | Start an owned Kubernetes cluster, PostgreSQL and Server |
+| **[3. Open the dashboard](#dashboard)** | See the initial high risk container |
+| **[4. Drive change](#drive)** | Flag an image, upgrade a Pod, then reset |
+| **[How it works](#how)** | Understand reusable results, the synthetic join and graph inspection |
+| **[Optional Discord alerts](#discord)** | Deliver real added/deleted query changes as webhooks |
 
 {{% alert title="Before you begin" color="info" %}}
-- **Terminals:** you'll use two. **Terminal 1** runs the demo (it stays in the foreground). Use **Terminal 2** for the helper scripts that change data.
-- **Working directory:** run every command from the tutorial directory (`tutorials/high-risk-containers/`). The dev container opens there automatically; if you're running locally, `cd tutorials/high-risk-containers` first.
-- **Command tabs:** commands are shown in tabs (*bash / zsh* and *PowerShell*). Use the one for your shell. The dev container and Codespaces use *bash*.
-- **Ports:** the Drasi Server API is on `8380`, the dashboard is on `3000`, PostgreSQL is published on `5732`, and the k3d Kubernetes API is on `6550`.
+- Use two terminals, both in `tutorials/high-risk-containers/`. Terminal 1 runs Server in the foreground; Terminal 2 changes data.
+- Default loopback ports are API `8380`, dashboard `3000`, PostgreSQL `5732` and Kubernetes API `6550`. Copy `.env.example` to `.env` before the first run to change them.
+- Python commands below use `python3`; on Windows use `python` with Python 3.11 or newer. The existing `.sh` and `.ps1` helpers delegate to the same runner.
+- The runner writes build provenance, ownership and a private kubeconfig under `.runtime/`. Do not copy this directory between machines or delete its ownership record while resources exist.
 {{% /alert %}}
 
 ## Step 1 of 4: Set Up Your Environment {#setup}
 
-This tutorial needs **Docker** (it runs both PostgreSQL and a local Kubernetes cluster), plus **k3d** and **kubectl**. The easiest way to get everything is the **dev container**.
+### Existing local checkouts
 
-### Option A: Dev Container or GitHub Codespaces (recommended)
+Use this directory layout, with the matching computation-graph versions already
+checked out:
 
-1. Open this repository in VS Code and run **Reopen in Container** (or create a **Codespace** from the repo's **Code** menu).
-2. When prompted for a configuration, choose **Drasi Server - High Risk Containers Tutorial**.
-3. Wait for the container to finish. Its setup script installs the PostgreSQL client, `kubectl`, and `k3d`, and downloads the Drasi Server binary.
+```text
+workspace/
+  drasi-core/
+  drasi-server/
+  learning-drasi-server/
+```
 
-That's it. Skip ahead to [Step 2](#run).
+Server must depend on the sibling `drasi-core/lib` by path. This tutorial does
+not clone repositories, switch branches, download a released Drasi binary, or
+install registry plugins. A released Server or an old plugin cache is not a
+substitute for a matching local build.
 
-### Option B: Run Locally
+### Option A: Local dev container
 
-You'll need **Docker** (for PostgreSQL and k3d), [**k3d**](https://k3d.io/#installation), [**kubectl**](https://kubernetes.io/docs/tasks/tools/), and **bash** (the helper scripts use it; on Windows use Git Bash or WSL, or use the PowerShell tabs). From the repository root, move into the tutorial directory and download the Drasi Server binary:
+Open the existing `learning-drasi-server` folder in VS Code, select **Reopen in
+Container**, and choose **Drasi Server - High Risk Containers Tutorial**. The
+container mounts the parent directory so both sibling source checkouts are
+available. Setup installs build prerequisites and builds local artifacts.
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
+A Codespace containing only this tutorial repository is not sufficient: the
+matching Core and Server checkouts must also be present. The local container
+uses its own Docker-in-Docker engine, not a Docker Desktop installation; the
+host workflow below defaults to Podman.
+
+### Option B: Run on the host
+
+Install Python 3.11+, the Rust toolchain named by the local checkouts (currently
+1.95.0), the Server/Core native build prerequisites, **Podman**, **k3d** and
+**kubectl**. Start a rootful Podman machine if your host needs one. k3d requires
+Podman's Docker-compatible API, not just the `podman` CLI.
+
+On macOS, inspect the socket and set it for these terminal sessions:
+
+```bash
+podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}'
+export DOCKER_HOST=unix:///the/socket/path/printed/above
+```
+
+On Linux use the endpoint of your rootful Podman API service. Configure that
+service explicitly if it is not running; the tutorial will not change your
+system settings or fall back to an unrelated Docker daemon.
+
+Then build:
+
+```bash
 cd tutorials/high-risk-containers
-bash scripts/download.sh
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-cd tutorials/high-risk-containers
-powershell -ExecutionPolicy Bypass -File scripts/download.ps1
-{{< /tab >}}
-{{< /tabpane >}}
+python3 scripts/demo.py build
+python3 scripts/demo.py verify-build
+```
 
-This places the binary at `bin/drasi-server` (or `bin\drasi-server.exe` on Windows) inside the tutorial directory.
+The shared builder compiles Server and **separately rebuilds** these six dynamic
+plugins from local Core: `drasi-source-postgres`, `drasi-bootstrap-postgres`,
+`drasi-source-kubernetes`, `drasi-bootstrap-kubernetes`,
+`drasi-reaction-dashboard` and `drasi-reaction-http`. It records revisions and
+artifact hashes and stages a private bundle. Server startup checks those hashes
+and does not use `PATH`, `bin/plugins` or a global plugin cache. Signature
+verification is bypassed only for this explicit local development bundle.
 
-### Option C: Build from Source
-
-Prefer to compile Drasi Server yourself? Follow the [**Build from Source**](https://drasi.io/drasi-server/how-to-guides/installation/build-from-source/) installation guide to clone the repository and build the binary.
-
-Once it is built, make the `drasi-server` binary available to this tutorial's helper scripts — either add it to your `PATH`, or copy it into this tutorial's `bin/` directory (the same location [Option B](#setup) uses):
-
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-cd tutorials/high-risk-containers
-mkdir -p bin
-cp /path/to/drasi-server/bin/drasi-server bin/drasi-server
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-cd tutorials/high-risk-containers
-New-Item -ItemType Directory -Force bin | Out-Null
-Copy-Item C:\path\to\drasi-server\bin\drasi-server.exe bin\drasi-server.exe
-{{< /tab >}}
-{{< /tabpane >}}
+Re-run `build` after changing either checkout. Stop this tutorial's Server
+before rebuilding. The old `download.sh` / `download.ps1` entry points now call
+this local build rather than downloading released artifacts.
 
 ## Step 2 of 4: Run the Demo {#run}
 
-Everything runs from a single configuration file, `server-config.yaml`. In **Terminal 1**, start the demo:
+In **Terminal 1**:
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-bash scripts/start-demo.sh
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
-{{< /tab >}}
-{{< /tabpane >}}
-
-The `start-demo` script does three things:
-
-1. **Creates a k3d Kubernetes cluster** and deploys two demo Pods (`my-app-1` running `ghcr.io/drasi-project/my-app:0.1` and `my-app-2` running `:0.2`), then writes a kubeconfig that Drasi Server uses to watch the cluster.
-2. **Starts PostgreSQL** and seeds the `RiskyImage` table (it flags `my-app:0.1` as a *Security Risk* and `redis:6.2.3-alpine` as a *Compliance Issue*).
-3. **Runs Drasi Server** in the foreground with the full configuration.
-
-On first start, Drasi Server downloads the plugins it needs (`source/postgres`, `bootstrap/postgres`, `source/kubernetes`, `bootstrap/kubernetes`, `reaction/dashboard`) from `ghcr.io/drasi-project` and caches them under this tutorial's `bin/plugins` directory, connects to both sources, bootstraps the existing rows and Pods, starts the continuous query, and starts the dashboard. When you see a line like the following, it's ready:
-
-```text
-Drasi Server started successfully with API on port 8380
+```bash
+python3 scripts/demo.py start-demo
 ```
 
-Leave this running. Everything else happens from **Terminal 2** (or your browser).
+The first run allocates a unique run ID and records it in
+`.runtime/ownership.json`. It:
 
-{{% alert title="Stopping and resetting" color="info" %}}
-Press **Ctrl+C** in Terminal 1 to stop the server. To remove the database container *and* the k3d cluster when you're completely done, run `bash scripts/cleanup.sh` (bash) or `powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1` (PowerShell). Add `--volumes` (bash) or `-RemoveVolumes` (PowerShell) to also delete the database data.
-{{% /alert %}}
+1. Creates a k3d cluster with a private kubeconfig and a run-specific namespace,
+   then deploys the original `my-app-1` (`ghcr.io/drasi-project/my-app:0.1`) and
+   `my-app-2` (`:0.2`) Pods. It waits for both Pods to be ready.
+2. Starts an owned PostgreSQL container and volume. An empty database is seeded
+   with `my-app:0.1` as a *Security Risk* and `redis:6.2.3-alpine` as a
+   *Compliance Issue*.
+3. Starts the verified local Server/plugin bundle with a private copy of
+   `server-config.yaml`, scoped to this cluster's kubeconfig and namespace.
+
+It never switches your global kubectl context. All Kubernetes helpers specify
+the private kubeconfig, named context and namespace. Existing resources are
+reused only after ownership checks, not because their names happen to match.
+
+Wait for:
+
+```text
+High Risk Containers READY: ComputationGraph; both sources, both queries and reactions running.
+```
+
+This is stronger than an open API port: the runner verifies the exact instance
+ID, `runtime: "computationGraph"`, `running: true`, source/query/reaction statuses,
+graph failure/wait observations and dashboard availability. Inspect the graph
+and Server logs if it fails. A missing Kubernetes tool, denied list/watch
+permission, unavailable API or Pod image-pull failure is an error, not a
+simulated successful run.
+
+### Startup and restart guarantees
+
+**First start:** the database is seeded only when empty, and the two Pods are
+created only when the owned namespace has no Pods. The PostgreSQL bootstrap
+loads existing risks; Kubernetes bootstrap lists existing Pods. The
+`pod-containers` query publishes its inventory snapshot, and
+`high-risk-containers` bootstraps from that derived output plus the risk table
+before maintaining live results.
+
+**Normal restart:** Ctrl+C stops only Server. Run `start-demo` again, or use
+`python3 scripts/demo.py start` when the infrastructure is already running.
+Neither command resets risk rows or reapplies the original Pod image tags.
+Server re-reads the YAML and rebuilds query results from current source data.
+`persistConfig: false` means REST configuration edits are not saved; put lasting
+changes in `server-config.yaml`, then restart.
+
+**Delivery limits:** these are ordinary Source and Reaction adapters in the
+ComputationGraph runtime, not native transactional PostgreSQL replay components.
+There is no persistent query checkpoint or durable HTTP outbox configured here.
+The tutorial does not promise exactly-once alerts, uninterrupted delivery across
+outages, or gap-free snapshot/CDC coordination. Re-bootstrap may deliver an
+existing finding again; do not use Discord messages as an audit log.
+
+**Reset and cleanup are explicit:** `reset` changes only the tutorial's added
+risk record and its two Pod images. `cleanup` deletes the owned cluster and
+database container, preserving the database volume unless `--volumes` is passed.
+After cleanup, a later start recreates the Pods at their original tags, while
+retained database rows remain as you left them.
 
 ## Step 3 of 4: Open the Dashboard {#dashboard}
 
-Drasi Server's dashboard reaction hosts a live web dashboard; there's no separate app to build or run. **Wait until Terminal 1 prints `Drasi Server started successfully`** (on the first run this takes a little longer while the plugins download), then open it in your browser:
+After the READY message, open <http://localhost:3000> (or your configured
+dashboard port). In the dev container, use the **High Risk Containers Dashboard**
+entry in VS Code's **Ports** panel.
 
-```text
-http://localhost:3000
-```
+The predefined dashboard contains:
 
-In the dev container or Codespaces, port `3000` is forwarded automatically; VS Code shows a notification when the dashboard is ready, and you can also open it from the **Ports** panel (the **High Risk Containers Dashboard** entry). If you open the page before the server has finished starting, just refresh once it's ready.
+- **High Risk Containers** KPI: count of matching containers.
+- **Running High Risk Containers** table: Pod, namespace, container, image,
+  reason and mitigation.
+- **Detail**: a Markdown list of findings, or an all-clear message.
 
-You'll see the **High Risk Containers** dashboard:
+On a fresh run there is exactly one finding: **my-app-1**, running `my-app:0.1`,
+with reason *Security Risk*. The risky Redis image has no matching Pod and does
+not appear. Changes stream to the browser without refresh.
 
-- **High Risk Containers** KPI: how many running containers currently match a high risk image.
-- **Running High Risk Containers**: the live table of pod, namespace, container, image, reason, and mitigation.
-- **Detail**: a Markdown panel listing each finding (and an all-clear message when there are none).
+<img src="images/dashboard.png" width="900" alt="High Risk Containers dashboard showing the count, risky-container table and detail panel">
 
-To begin, exactly one container is flagged: **my-app-1**, running `my-app:0.1`, which the database lists as a *Security Risk*. The dashboard updates the instant the data changes, with no refreshing. Let's make something change.
-
-<img src="images/dashboard.png" width="900" alt="The High Risk Containers dashboard: a count KPI, a table of running risky containers (my-app-1 and my-app-2), and a Markdown detail panel">
-
+The image illustrates the dashboard layout; use the live table and the API
+results to observe your run's actual state.
 
 ## Step 4 of 4: Drive Change {#drive}
 
-With Terminal 1 running the demo and the dashboard open, use **Terminal 2** to change the inputs and watch Drasi react.
-
 ### Flag a new high risk image
 
-`my-app-2` is running `my-app:0.2`, but that image isn't risky *yet*. Add it to the `RiskyImage` table:
+In **Terminal 2**:
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c 'INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation") VALUES (101, ''ghcr.io/drasi-project/my-app:0.2'', ''Critical Bug'', ''Update to latest version'');'
-{{< /tab >}}
-{{< /tabpane >}}
+```bash
+python3 scripts/demo.py add-risk
+```
 
-Within about a second the dashboard reacts: **my-app-2** appears in the table with reason *Critical Bug*, and the KPI ticks up to **2**. Nothing restarted, and Drasi never polled; it saw the new database row through PostgreSQL's logical replication and re-evaluated the join. (The `add-risky-image.sh` / `.ps1` helper scripts run exactly this `INSERT` with sensible defaults if you prefer.)
+This executes the following operation against **this run's** PostgreSQL
+container, with safely quoted SQL parameters:
+
+```sql
+INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation")
+VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version')
+ON CONFLICT ("Id") DO UPDATE SET
+  "Image" = EXCLUDED."Image",
+  "Reason" = EXCLUDED."Reason",
+  "Mitigation" = EXCLUDED."Mitigation";
+```
+
+**my-app-2** appears with reason *Critical Bug* and the KPI becomes **2**.
+PostgreSQL CDC drives the risk join; the Pod did not change and the inventory
+query did not need another watch or a re-unwind. The helper accepts image,
+reason and mitigation arguments if you want to try another risk.
 
 ### Upgrade a Pod to a safe image
 
-Now fix `my-app-2` by upgrading it to `:0.3`, which isn't on the risky list:
+```bash
+python3 scripts/demo.py upgrade
+```
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3
-{{< /tab >}}
-{{< /tabpane >}}
+This runs `kubectl set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3`
+against the private kubeconfig/context/namespace and waits until the container
+reports that image and is running and ready. **my-app-2** leaves the findings
+and the KPI returns to **1**. The risk row still exists in PostgreSQL; it no
+longer joins to this Pod's image.
 
-Once the Pod is running the new image, **my-app-2** disappears from the table and the KPI drops back to **1**; Drasi saw the Pod change through the Kubernetes watch and removed the row from the result set automatically. (The `upgrade-pod.sh` / `.ps1` helper scripts run this same `kubectl set image` and then wait for the Pod to be ready.)
+The query reads the Pod's **configured container image** (`spec.containers`),
+not an image digest attestation or a container-health test. The result may
+change before the replacement container finishes starting. The helper waits
+for the actual new container to become ready so a failed rollout is not
+reported as a successful upgrade.
 
-### Reset
+### Reset and repeat
 
-Return everything to the starting state (removes the image you added and puts the Pods back on their original tags):
+```bash
+python3 scripts/demo.py reset
+```
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-bash scripts/reset.sh
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-powershell -ExecutionPolicy Bypass -File scripts/reset.ps1
-{{< /tab >}}
-{{< /tabpane >}}
+This deletes risk row `101` and restores `my-app-1` to `:0.1` and `my-app-2`
+to `:0.2`, without dropping the risk table or replication slot. The dashboard
+returns to the single initial finding.
+
+For direct Kubernetes inspection without touching your global context:
+
+```bash
+python3 scripts/demo.py kubectl get pods -o wide
+```
 
 ## How It Works {#how}
 
-Everything you just ran is described by the single `server-config.yaml`. Here's what each part does.
+### Two real sources
 
-### Two Sources
+`devops` uses the ordinary PostgreSQL source and bootstrap plugins. The quoted,
+PascalCase `"RiskyImage"` table and `"Image"`, `"Reason"` and `"Mitigation"`
+columns match the labels and properties in the query. `REPLICA IDENTITY FULL`
+supplies old values for deletes/updates; the primary key preserves identity.
 
-The query joins data from two different systems, so the configuration declares two sources.
+`k8s` uses the ordinary Kubernetes source and bootstrap plugins. It lists and
+watches Pods only in the owned namespace. Authentication uses the private
+kubeconfig written by the runner. The current Kubernetes plugin flattens
+selected properties: `name`, `namespace`, `phase` and `containers` are top-level
+fields; `containers` represents `spec.containers`. This is not an unchanged
+copy of the entire Kubernetes JSON document.
 
-**PostgreSQL** holds the list of risky images and streams changes via **logical replication (CDC)**:
+Both sources participate in the same computation graph as the queries and
+reactions. Keeping these adapters does not select an older execution engine.
 
-```yaml
-sources:
-  - kind: postgres
-    id: devops
-    # ... connection settings ...
-    tables:
-      - RiskyImage
-    tableKeys:
-      - table: RiskyImage
-        keyColumns:
-          - Id
-    bootstrapProvider:
-      kind: postgres
-```
+### Normalize once, publish reusable container inventory
 
-The table name and columns are quoted and PascalCase (`"RiskyImage"`, `"Image"`, `"Reason"`, `"Mitigation"`) so the node label and properties Drasi sees match the Cypher query (`(i:RiskyImage)` with `i.Image`, `i.Reason`, `i.Mitigation`) without any change to the query text.
-
-**Kubernetes** watches the live Pods. Drasi Server runs *outside* the cluster and connects with a kubeconfig file:
+The `pod-containers` query attaches an unwind pipeline to its Kubernetes input:
 
 ```yaml
-  - kind: kubernetes
-    id: k8s
-    resources:
-      - apiVersion: v1
-        kind: Pod
-    namespaces:
-      - default
-    authMode: kubeconfig
-    kubeconfigPath: bin/kubeconfig.yaml
-    bootstrapProvider:
-      kind: kubernetes
-```
-
-Each Kubernetes object becomes a graph node whose **properties mirror that object's representation in the Kubernetes API**: the same field names and nested structure you'd see in `kubectl get pod -o json`. So a Pod node's `containers` property *is* the API's `spec.containers` array: one entry per container, each with its `name`, `image`, `ports`, `resources`, and so on. Frequently used metadata such as `name` and `namespace` are also promoted to the top level for convenience. Because the shape matches the API, you can navigate any field in Cypher exactly as it appears in `kubectl ... -o json`. That `containers` array is the key to the join. (`scripts/setup-cluster.sh` writes the kubeconfig to `bin/kubeconfig.yaml`, and the start scripts launch Drasi Server from the tutorial directory so that relative path resolves.)
-
-### The Unwind Middleware
-
-The risky-image list is keyed by *image*, but a Pod can run several containers. To compare them, the query first **unwinds** each Pod's `containers` array, promoting every entry to its own `Container` node linked back to the Pod by an `OWNS` relation:
-
-```yaml
+inputs:
+  - component: k8s
+    nodes: [Pod]
+    pipeline: [extract-containers]
 middleware:
   - kind: unwind
     name: extract-containers
     config:
       Pod:
-        - selector: $.containers[*]   # each entry in the Pod's containers list
-          label: Container            # becomes a node with this label
-          key: $.name                 # unique within the Pod
-          relation: OWNS              # Pod -[:OWNS]-> Container
+        - selector: $.containers[*]
+          label: Container
+          key: $.name
+          relation: OWNS
+result:
+  label: ContainerImage
+query: |
+  MATCH (p:Pod)-[:OWNS]->(c:Container)
+  RETURN p.name AS pod, p.namespace AS namespace,
+         c.name AS container, c.image AS image
 ```
 
-The middleware is attached to the Kubernetes subscription with a `pipeline`, so every incoming Pod change is pre-processed before the query sees it:
+Each nested container becomes a `Container` node, keyed by its name within the
+Pod and connected with `OWNS`. The query publishes rows as **ContainerImage
+nodes**. `result.label` names those nodes; it does not opt in to a different
+output format. Standard source, query and transformer outputs use
+**graph-change v1**, so another query can consume them directly.
+
+### Join the reusable output to risks
+
+The downstream query consumes the inventory rather than subscribing to
+Kubernetes again:
 
 ```yaml
-inputs:
-  - component: k8s
-    nodes:
-      - Pod
-    pipeline:
-      - extract-containers
-  - component: devops
-    nodes:
-      - RiskyImage
+- id: high-risk-containers
+  autoStart: true
+  queryLanguage: Cypher
+  inputs:
+    - component: pod-containers
+    - component: devops
+      nodes: [RiskyImage]
+  result:
+    label: HighRiskContainer
+  joins:
+    - id: HAS_IMAGE
+      keys:
+        - label: ContainerImage
+          property: image
+        - label: RiskyImage
+          property: Image
+  query: |
+    MATCH (c:ContainerImage)-[:HAS_IMAGE]->(i:RiskyImage)
+    RETURN c.pod AS pod, c.namespace AS namespace,
+           c.container AS container, c.image AS image,
+           i.Reason AS reason, i.Mitigation AS mitigation
 ```
 
-### The Synthetic Join
+The synthetic `HAS_IMAGE` join connects matching image strings across the two
+systems. Inventory updates propagate through the derived graph output;
+database changes update the same join from its other input. Dashboard and
+Discord both subscribe to `high-risk-containers`, so neither duplicates that
+join. The six returned fields are unchanged from the original scenario.
 
-PostgreSQL and Kubernetes know nothing about each other, so the query **declares** the relationship that connects them. The `HAS_IMAGE` synthetic join matches a `Container`'s `image` to a `RiskyImage`'s `Image`:
+On this Server/Core version, `nodes`, `relations` and `pipeline` are ordinary
+Source subscription settings. Omit them when consuming another query's output;
+the downstream `MATCH (c:ContainerImage)` selects the published label.
 
-```yaml
-joins:
-  - id: HAS_IMAGE
-    keys:
-      - label: Container
-        property: image
-      - label: RiskyImage
-        property: Image
-```
+### Dashboard and graph inspection
 
-With the unwind relation and the synthetic join in place, the Cypher walks straight from Pod to Container to risky image and returns exactly the running containers that overlap the risky list:
+The dashboard reaction subscribes to the risk query and streams its changes
+over WebSocket. The KPI counts rows, the table displays the six fields, and the
+Markdown panel formats the same rows. The predefined layout is available at
+startup; it is not a static or generated screenshot.
 
-```cypher
-MATCH
-  (p:Pod)-[:OWNS]->(c:Container)-[:HAS_IMAGE]->(i:RiskyImage)
-RETURN
-  p.name AS pod,
-  p.namespace AS namespace,
-  c.name AS container,
-  c.image AS image,
-  i.Reason AS reason,
-  i.Mitigation AS mitigation
-```
-
-Because this is a *continuous* query, the result set is maintained incrementally: add a row to `RiskyImage` and a matching Pod appears; change a Pod's image and it drops out, each as a single change, with no rescans and no polling.
-
-#### The query, assembled
-
-Put those pieces together and here is the complete query definition exactly as it appears in `server-config.yaml`: the source subscriptions (with the unwind `pipeline`), the synthetic join, the unwind middleware, and the Cypher, all under one `queries` entry:
-
-```yaml
-queries:
-  - id: high-risk-containers
-    autoStart: true
-    queryLanguage: Cypher
-
-    # The sources this query subscribes to, and the labels it consumes from each.
-    inputs:
-      - component: k8s
-        nodes:
-          - Pod
-        # Run incoming Pod changes through the unwind middleware.
-        pipeline:
-          - extract-containers
-      - component: devops
-        nodes:
-          - RiskyImage
-
-    # Declare the synthetic join the query walks with [:HAS_IMAGE].
-    joins:
-      - id: HAS_IMAGE
-        keys:
-          - label: Container
-            property: image
-          - label: RiskyImage
-            property: Image
-
-    # Pre-process Pod changes: unwind $.containers[*] into Container nodes.
-    middleware:
-      - kind: unwind
-        name: extract-containers
-        config:
-          Pod:
-            - selector: $.containers[*]
-              label: Container
-              key: $.name
-              relation: OWNS
-
-    query: |
-      MATCH
-        (p:Pod)-[:OWNS]->(c:Container)-[:HAS_IMAGE]->(i:RiskyImage)
-      RETURN
-        p.name AS pod,
-        p.namespace AS namespace,
-        c.name AS container,
-        c.image AS image,
-        i.Reason AS reason,
-        i.Mitigation AS mitigation
-```
-
-### The Dashboard Reaction
-
-```yaml
-reactions:
-  - kind: dashboard
-    id: high-risk-containers-dashboard
-    queries:
-      - high-risk-containers
-    port: 3000
-    predefinedDashboards:
-      - id: high-risk-containers
-        name: High Risk Containers
-        widgets:
-          # KPI (count), table, and a Markdown detail panel
-          # ...
-```
-
-The dashboard reaction subscribes to the query and streams its changes to the browser over a WebSocket. A **predefined dashboard** is seeded on startup, so the layout is ready the first time you open it: a **KPI** counts the matching rows, a **table** lists them, and a **text** (Markdown) widget renders a human-friendly detail panel, or an all-clear message when the result set is empty. Because the query only emits *changes*, the dashboard updates the instant a Pod or the risky list changes. The full set of widget types and options is documented in [Configure the Dashboard Reaction](https://drasi.io/drasi-server/how-to-guides/configuration/configure-reactions/configure-dashboard-reaction/).
-
-The widgets themselves are simple. The **Running High Risk Containers** table, for example, is a single `table` widget that names the query to read and the columns to show:
-
-```yaml
-- id: risky-table
-  type: table
-  title: Running High Risk Containers
-  grid: { x: 0, y: 2, w: 12, h: 8 }
-  config:
-    queryId: high-risk-containers
-    columns:
-      - pod
-      - namespace
-      - container
-      - image
-      - reason
-      - mitigation
-```
-
-Each column is one of the fields the query returns, and `grid` places the widget on the dashboard's 12-column layout. As containers appear and disappear, the reaction adds and removes table rows in place, with no page reload.
-
-{{% alert title="Inspect the query directly (optional)" color="info" %}}
-You can also query Drasi Server's REST API while the demo runs; see `requests.http` for ready-made requests, for example:
+Use `requests.http` for the instance-scoped API requests, including:
 
 ```text
-GET http://localhost:8380/api/v1/instances/high-risk-containers-server/queries/high-risk-containers/results
+GET /api/v1/instances/high-risk-containers-server/runtime
+GET /api/v1/instances/high-risk-containers-server/computation
+GET /api/v1/instances/high-risk-containers-server/queries/pod-containers/results
+GET /api/v1/instances/high-risk-containers-server/queries/high-risk-containers/results
 ```
-{{% /alert %}}
+
+Or run:
+
+```bash
+python3 scripts/demo.py check
+python3 scripts/demo.py inspect
+```
+
+Inspection shows component lifecycle/health, waiting dependencies and
+relationships. Follow `k8s -> pod-containers -> high-risk-containers` and
+`devops -> high-risk-containers`, then the dashboard/optional HTTP subscriptions.
+An HTTP success response or `runtime.running` alone does not prove the data
+pipeline is ready; inspect component states and actual results too.
 
 ## Optional: Discord Alerts {#discord}
 
-The dashboard is great for *watching*, but you often want to be *notified*: pushed a message the instant a high risk container appears. Drasi Server's **HTTP reaction** (`kind: http`) turns query changes into outbound webhooks, so you can post straight into a Discord channel with no extra code. This step is optional and needs a Discord server where you can create a webhook.
+The dashboard is useful for watching; the **HTTP reaction** can also notify a
+channel when a finding appears or is resolved. This uses real query changes,
+not periodically generated notifications. It requires a Discord server where
+you are allowed to create a webhook.
 
-The reaction is already written for you in `server-config.yaml`; it just ships **commented out**, so the base demo stays focused on the dashboard. Enabling it is a matter of uncommenting it and supplying a webhook URL.
+### 1. Create a webhook
 
-{{% alert title="Keep the demo running" color="info" %}}
-This step continues from the demo you started in Step 2, so make sure Drasi Server is still running in Terminal 1 (and the database and cluster are still up) before you begin.
-{{% /alert %}}
+In Discord, open **Server Settings > Integrations > Webhooks > New Webhook**,
+choose the channel and copy its URL. Treat that URL as a secret.
 
-{{% alert title="Same pattern, any webhook" color="info" %}}
-This uses Discord, but the HTTP reaction posts to any webhook-style endpoint (Slack, Microsoft Teams, PagerDuty, your own service) by changing the URL and the message `template`.
-{{% /alert %}}
+### 2. Enable the reaction
 
-### 1. Create a Discord webhook
+`reaction/http` is already part of the locally built plugin bundle. Do not add
+an OCI plugin reference or enable `autoInstallPlugins`.
 
-In Discord: **Server Settings → Integrations → Webhooks → New Webhook**, pick the channel, and **Copy Webhook URL**. It looks like `https://discord.com/api/webhooks/<id>/<token>`.
+In `server-config.yaml`, uncomment the `discord-alerts` block at the bottom,
+keeping it aligned with the dashboard reaction in the instance's `reactions`
+list. It subscribes to `high-risk-containers`; `added` and `updated` format
+`after.*`, and `deleted` formats `before.*`, into Discord's
+`{"content": "..."}` body. The update template also handles changes to a risk's
+reason or mitigation without sending Discord an incompatible default payload.
 
-### 2. Enable the HTTP reaction in `server-config.yaml`
+### 3. Restart Server with the webhook URL
 
-Open `server-config.yaml` and **uncomment** two things (remove the leading `# ` from each line):
-
-1. The HTTP reaction plugin in the `plugins:` list, so it is installed on the next start:
-
-   ```yaml
-   - ref: reaction/dashboard
-   - ref: reaction/http        # uncomment this line
-   ```
-
-2. The `discord-alerts` reaction block at the bottom of the `reactions:` section. It subscribes to the same `high-risk-containers` query and renders a Discord message for each container that **appears** (`added`) and each one that is **resolved** (`deleted`):
-
-   ```yaml
-     - kind: http
-       id: discord-alerts
-       autoStart: true
-       queries:
-         - high-risk-containers
-       # The Discord webhook URL, supplied via an environment variable.
-       baseUrl: "${DISCORD_WEBHOOK_URL}"
-       timeoutMs: 30000
-       outputTemplates:
-         routes:
-           high-risk-containers:
-             added:
-               method: POST
-               headers:
-                 Content-Type: application/json
-               template: |
-                 {
-                   "content": "🚨 **High risk container detected**\n• **Pod:** `{{after.pod}}` (namespace `{{after.namespace}}`)\n• **Container:** `{{after.container}}`\n• **Image:** `{{after.image}}`\n• **Reason:** {{after.reason}}\n• **Mitigation:** {{after.mitigation}}"
-                 }
-             deleted:
-               method: POST
-               headers:
-                 Content-Type: application/json
-               template: |
-                 {
-                   "content": "✅ **High risk container resolved**\n• **Pod:** `{{before.pod}}`\n• **Image:** `{{before.image}}`"
-                 }
-   ```
-
-How this reaction works:
-
-- `baseUrl` is the full Discord webhook URL; `${DISCORD_WEBHOOK_URL}` is resolved from the environment at startup, so no secret is committed to the file. (Each call's `url` defaults to empty, so requests POST to `baseUrl` as-is.)
-- `template` is a [Handlebars](https://handlebarsjs.com/) template rendered to the request body. `added` templates read the new row via `{{after.*}}`; `deleted` templates read the removed row via `{{before.*}}`. The fields (`pod`, `namespace`, `container`, `image`, `reason`, `mitigation`) are exactly what the query returns.
-- The body is Discord's webhook format (`{"content": "..."}`), where `\n` becomes a line break in the posted message.
-
-### 3. Provide the webhook URL and restart
-
-Stop Drasi Server with **Ctrl+C** in Terminal 1, set the webhook URL in that same terminal, and start it again:
+Stop Server with Ctrl+C in Terminal 1, then:
 
 {{< tabpane persist="header" >}}
 {{< tab header="bash / zsh" lang="bash" >}}
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/<id>/<token>"
-bash scripts/start-server.sh
+python3 scripts/demo.py start
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
 $env:DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/<id>/<token>"
-powershell -ExecutionPolicy Bypass -File scripts/start-server.ps1
+python scripts/demo.py start
 {{< /tab >}}
 {{< /tabpane >}}
 
-On this start, Drasi Server installs the `reaction/http` plugin and brings up the `discord-alerts` reaction alongside the dashboard. (The cluster and database are still running, so use `start-server`, not `start-demo`; the latter would reset the database.)
+The URL is resolved at startup, not committed to the file. The existing
+database rows and Pod images remain unchanged. Readiness now also requires the
+enabled HTTP reaction to be running. Existing findings may be delivered during
+re-bootstrap; notifications are not exactly-once.
 
-### 4. See it in action
+### 4. Observe an alert and resolution
 
-From **Terminal 2**, drive a change and watch your Discord channel:
+Reset first if you already completed Step 4. In Terminal 2:
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-# A high risk container appears -> 🚨 message in Discord
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c "INSERT INTO \"RiskyImage\" (\"Id\", \"Image\", \"Reason\", \"Mitigation\") VALUES (101, 'ghcr.io/drasi-project/my-app:0.2', 'Critical Bug', 'Update to latest version');"
+```bash
+python3 scripts/demo.py reset
+python3 scripts/demo.py add-risk
+python3 scripts/demo.py upgrade
+```
 
-# Resolve it by upgrading the pod -> ✅ message in Discord
-kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-# A high risk container appears -> 🚨 message in Discord
-docker exec -i high-risk-containers-postgres psql -U drasi_user -d high_risk_containers -c 'INSERT INTO "RiskyImage" ("Id", "Image", "Reason", "Mitigation") VALUES (101, ''ghcr.io/drasi-project/my-app:0.2'', ''Critical Bug'', ''Update to latest version'');'
-
-# Resolve it by upgrading the pod -> ✅ message in Discord
-kubectl --kubeconfig bin/kubeconfig.yaml set image pod/my-app-2 app=ghcr.io/drasi-project/my-app:0.3
-{{< /tab >}}
-{{< /tabpane >}}
-
-The first command flags `my-app:0.2`; Drasi joins it to the running `my-app-2` pod and posts a 🚨 alert. The second upgrades that pod to the safe `:0.3` tag, dropping it from the result set and posting a ✅ resolution. Run `reset.sh` afterwards to return to the starting state.
+Adding the risk makes **my-app-2** appear in the table and produces a detection
+message; upgrading it to `:0.3` removes the finding and produces a resolution.
+This same pattern works with another webhook endpoint by changing the URL and
+templates. Check the HTTP reaction logs for rejected deliveries; do not infer
+Discord delivery from the dashboard alone.
 
 ## Clean Up {#cleanup}
 
-When you're finished, stop Drasi Server with **Ctrl+C** in Terminal 1, then remove the database container and the k3d cluster:
+Stop Server with Ctrl+C, then:
 
-{{< tabpane persist="header" >}}
-{{< tab header="bash / zsh" lang="bash" >}}
-# Stop containers + cluster, keep data
-bash scripts/cleanup.sh
+```bash
+# Remove only this run's cluster and PostgreSQL container; retain database data.
+python3 scripts/demo.py cleanup
 
-# Stop containers + cluster and delete the database volume
-bash scripts/cleanup.sh --volumes
-{{< /tab >}}
-{{< tab header="PowerShell" lang="powershell" >}}
-# Stop containers + cluster, keep data
-powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1
+# Also delete this run's database volume when you no longer need its data.
+python3 scripts/demo.py cleanup --volumes
+```
 
-# Stop containers + cluster and delete the database volume
-powershell -ExecutionPolicy Bypass -File scripts/cleanup.ps1 -RemoveVolumes
-{{< /tab >}}
-{{< /tabpane >}}
+Cleanup verifies ownership labels and refuses to kill Server by process name or
+delete unrelated clusters/volumes. It leaves build records and evidence in
+`.runtime/`. If Server was forcibly killed and `server.lock` remains, verify
+that the recorded process and its Server child are no longer running before
+removing that one stale lock file.
 
 ## What You Learned {#summary}
 
-- **Multi-source queries** let Drasi join data that lives in completely different systems (here, a PostgreSQL table and a live Kubernetes cluster) with no glue code.
-- The **unwind middleware** turns a nested array (a Pod's containers) into first-class graph nodes you can match and join.
-- **Synthetic joins** declare relationships across sources, so a single Cypher query can walk from Pod to container to risky image.
-- The **dashboard reaction** gave you a live, configurable UI with zero application code, and no bespoke web app required.
-- The optional **HTTP reaction** pushed those same changes straight to a Discord channel as webhooks; the same pattern works for Slack, Teams, or any HTTP endpoint.
-- Because Drasi emits only what *changed*, the dashboard updates the instant a Pod or the risky-image list changes, with no polling.
+- PostgreSQL CDC and a Kubernetes watch can maintain one live cross-system risk view.
+- Unwind turns a nested container array into graph nodes; a query can publish a
+  reusable, labeled inventory for downstream consumers.
+- Synthetic joins connect that inventory to risk records without glue code.
+- Dashboard and HTTP reactions share one maintained risk result set.
+- Computation-graph inspection makes dependencies and failed/waiting components
+  visible, while explicit ownership and non-resetting startup keep the exercise safe to repeat.
 
-From here, try watching more resource types, flagging your own images, adding columns to the query, or editing the dashboard widgets in `server-config.yaml`.
+### Check your local run
+
+For a read-only comparison of both queries and the dashboard's row identities
+with actual PostgreSQL rows and Kubernetes Pod specs:
+
+```bash
+python3 scripts/verify_demo.py
+```
+
+On an isolated run with no other writers, `--exercise` performs the add-risk,
+risk-update, Pod-upgrade, reset and all-clear checks, then restores the original
+inputs. It requires the two original Pods and only the two seeded risk rows:
+
+```bash
+python3 scripts/verify_demo.py --exercise --output .runtime/flow-evidence.json
+python3 -m unittest discover -s scripts -p test_demo.py
+```
+
+These checks use real source data and the live dashboard reaction. They do not
+prove external Discord delivery or exactly-once recovery.

@@ -13,35 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Set SLO Script
-# Updates checkout's latency_p99_ms threshold in PostgreSQL.
-
-set -e
-
-CONTAINER="${POSTGRES_CONTAINER:-otel-observability-postgres}"
-DB="${POSTGRES_DATABASE:-otel_observability}"
-DB_USER="${POSTGRES_USER:-drasi_user}"
-THRESHOLD="${1:-}"
-
-if [ -z "$THRESHOLD" ] || ! printf '%s' "$THRESHOLD" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
-    echo "Usage: $0 <threshold_ms>"
-    echo
-    echo "Examples:"
-    echo "  $0 1000   # raise the SLO — an active alert resolves immediately"
-    echo "  $0 750    # restore the default policy"
-    exit 1
-fi
-
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
-    echo "Error: the ${CONTAINER} container is not running."
-    echo "Run ./scripts/setup-database.sh first."
-    exit 1
-fi
-
-echo "Setting checkout latency_p99_ms threshold to $THRESHOLD"
-
-docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB" -c \
-    "UPDATE service_slo_policy SET threshold_ms = $THRESHOLD WHERE service_name = 'checkout' AND metric_name = 'latency_p99_ms' RETURNING service_name, metric_name, threshold_ms;"
-
-echo
-echo "Done. Watch the dashboard at http://localhost:${DASHBOARD_PORT:-3000}"
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$SCRIPT_DIR/demo.py" compat "${BASH_SOURCE[0]}" "$@"

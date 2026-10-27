@@ -13,17 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Start Demo Script
-# Builds images, creates the cluster, starts PostgreSQL, then runs Drasi Server.
-
-set -e
-
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-bash "$SCRIPT_DIR/setup-cluster.sh"
-
-echo
-bash "$SCRIPT_DIR/setup-database.sh"
-
-echo
-exec bash "$SCRIPT_DIR/start-server.sh"
+exec python3 "$SCRIPT_DIR/demo.py" compat "${BASH_SOURCE[0]}" "$@"
