@@ -23,7 +23,6 @@ export class DrasiClient {
   private initialized = false;
   private reactionId = 'sse-stream';
   private createdQueries: Set<string> = new Set();
-  private createdReaction = false;
   private customQueries: Set<string> = new Set();
   private readonly instanceId: string;
 
@@ -172,9 +171,6 @@ export class DrasiClient {
           const error = await createResponse.text();
           throw new Error(`Failed to create reaction ${this.reactionId}: ${error}`);
         }
-
-        // Track that this session created the reaction
-        this.createdReaction = true;
 
         // Start the reaction
         await fetch(`${this.instanceApiUrl}/reactions/${encodeURIComponent(this.reactionId)}/start`, { method: 'POST' });
@@ -415,7 +411,6 @@ export class DrasiClient {
     // Clear tracking sets
     this.createdQueries.clear();
     this.customQueries.clear();
-    this.createdReaction = false;
   }
 
   /**
