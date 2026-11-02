@@ -20,17 +20,24 @@ fi
 echo "Installing local-build dependencies..."
 sudo apt-get update
 sudo apt-get install -y build-essential cmake clang libclang-dev pkg-config \
-    libjq-dev libssl-dev protobuf-compiler python3
+    libjq-dev libonig-dev libssl-dev protobuf-compiler python3
 
-echo "Building matching ComputationGraph Server and plugins..."
+# Debian's libjq-dev does not provide the pkg-config metadata used by jq-sys.
+if [ -z "${JQ_LIB_DIR:-}" ]; then
+    JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
+fi
+export JQ_LIB_DIR
+
 cd "$TUTORIAL_DIR"
 if [ ! -f "$REPO_ROOT/../drasi-core/Cargo.lock" ]; then
-    echo "Core's workspace Cargo.lock is required for the locked build."
-    echo "From this tutorial directory, run:"
-    echo "  RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml"
-    echo "Then rerun: bash ../../.devcontainer/building-comfort/post-create.sh"
-    exit 1
+    echo "Generating Core's missing workspace Cargo.lock..."
+    cargo generate-lockfile --manifest-path "$REPO_ROOT/../drasi-core/Cargo.toml"
 fi
+
+echo "Synchronizing Server's workspace Cargo.lock with the local Core checkout..."
+cargo update --manifest-path "$REPO_ROOT/../drasi-server/Cargo.toml" --workspace
+
+echo "Building matching ComputationGraph Server and plugins..."
 python3 scripts/demo.py build
 
 echo ""

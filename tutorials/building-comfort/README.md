@@ -93,8 +93,13 @@ On Debian/Ubuntu the native prerequisites are:
 
 ```bash
 sudo apt-get install build-essential cmake clang libclang-dev pkg-config \
-  libjq-dev libssl-dev protobuf-compiler python3
+  libjq-dev libonig-dev libssl-dev protobuf-compiler python3
+export JQ_LIB_DIR="/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)"
 ```
+
+Debian's jq development package lacks the pkg-config metadata expected by
+`jq-sys`, so set its library directory explicitly. The Oniguruma development
+package supplies the other library that `jq-sys` links against.
 
 On macOS, use the Xcode command-line tools and Homebrew's `cmake`, `llvm`,
 `pkg-config`, `jq`, `openssl@3`, and `protobuf`. If linking cannot locate jq, set
@@ -137,10 +142,20 @@ require the separate Server management UI or a Node.js build.
 Open this repository in VS Code, choose **Reopen in Container**, and select
 **Drasi Server - Building Comfort Tutorial**. Keep all three checkouts present
 first: this configuration mounts their parent directory and installs the build
-prerequisites. Its post-create script checks that Core's workspace `Cargo.lock`
-exists before running the same locked build, with a container-specific Cargo
-target directory. If that check fails, generate the lockfile using the command
-above in the container terminal, then rerun:
+prerequisites. Its post-create script sets the native `JQ_LIB_DIR` for its build,
+generates Core's workspace `Cargo.lock` if missing, and synchronizes Server's
+separate workspace lockfile with the local Core checkout using
+`cargo update --workspace`. It then runs the same locked build with a
+container-specific Cargo target directory. Server's update preserves compatible
+locked registry dependency versions rather than updating them all. The checkouts
+are bind-mounted, so generated or updated lockfiles also appear in the host
+checkouts. An existing Core lockfile is left unchanged.
+
+For a manual rebuild in a new container terminal, run the `export JQ_LIB_DIR`
+command above first.
+
+If an earlier container setup stopped at the Core lockfile check or because
+Server's lockfile was stale, rerun this updated script from the tutorial directory:
 
 ```bash
 bash ../../.devcontainer/building-comfort/post-create.sh
