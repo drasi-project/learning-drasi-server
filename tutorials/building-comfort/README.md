@@ -119,6 +119,18 @@ locked build. Keep an existing lockfile unchanged:
 RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml
 ```
 
+Server has a separate workspace lockfile. Synchronize it with the local Core
+checkout before the locked build:
+
+```bash
+RUSTUP_TOOLCHAIN=1.95.0 cargo update \
+  --manifest-path ../../../drasi-server/Cargo.toml \
+  --workspace
+```
+
+The `--workspace` option preserves compatible locked registry dependency versions
+rather than updating them all.
+
 Then build the matching artifacts:
 
 ```bash
@@ -231,6 +243,16 @@ The dashboard updates the instant the data changes — no refreshing. Let's make
 
 ## Step 4 of 4: Drive Change
 With Terminal 1 running the demo and the dashboard open, use **Terminal 2** to change room readings and watch Drasi react.
+
+First, set Terminal 2's working directory. From the `learning-drasi-server`
+repository root, run:
+
+```bash
+cd tutorials/building-comfort
+```
+
+If Terminal 2 already opened in the tutorial directory (as in the dev container),
+skip the `cd`. Run all commands below from this directory.
 
 > **No middle tier — the scripts just write to the database**
 >

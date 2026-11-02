@@ -1,0 +1,17 @@
+id: ff9d34b8-77d9-4704-a1f7-b0697475170d
+host: 0.0.0.0
+port: 8080
+logLevel: info
+persistConfig: true
+persistIndex: false
+enableUi: true
+pluginRegistry: ghcr.io/drasi-project
+autoInstallPlugins: false
+verifyPlugins: true
+hotReloadPlugins: false
+hotReloadDebounceMs: 2000
+sources: []
+queries: []
+reactions: []
+identityProviders: []
+instances: []
