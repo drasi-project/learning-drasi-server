@@ -78,6 +78,29 @@ python3 scripts/render-tutorials.py          # write README.md files
 python3 scripts/render-tutorials.py --check   # fail if any are stale (CI check)
 ```
 
+## Automated Tutorial Evaluation
+
+The [manual evaluation workflow](.github/workflows/tutorial-evaluation.yml) and
+[scheduled evaluation workflow](.github/workflows/tutorial-evaluation-scheduled.yml)
+use Copilot CLI's default model rather than a pinned model ID. The manual workflow
+accepts an optional `model` input to override that default; leave it blank to use
+the CLI default. Scheduled evaluations always use the CLI default.
+
+Each scheduled evaluation attempt uses a separate tutorial workspace with fresh
+plugin, configuration, and runtime-data paths. Retries also recreate the tutorial
+database and devcontainer without pruning unrelated Docker resources. Reports
+from every attempt are retained in the evaluation artifact; the final status
+check reads only the last attempted workspace.
+
+The evaluator follows the tutorial commands, replacing `docker exec -it` with
+`docker exec -i` in its non-interactive shell and running the server and SSE CLI
+as background processes to emulate separate terminals. For time-driven query
+results, the evaluator tracks the relevant reference time and waits for the
+interval specified by the tutorial or query definition before checking the
+expected state. It records any timing discrepancy and still requires the
+documented results and subsequent transitions; API, server, and SSE errors
+remain failures.
+
 ## Project Links
 
 - [Drasi Server](https://github.com/drasi-project/drasi-server)
