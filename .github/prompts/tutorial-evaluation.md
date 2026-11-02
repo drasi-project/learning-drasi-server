@@ -42,7 +42,7 @@ Running long-lived processes (IMPORTANT):
     - For the Drasi Server process (Terminal 1): start it in the background with its output redirected to a log file (for example `nohup ./bin/drasi-server --config getting-started.yaml > evaluation-<timestamp>/NN_drasi-server.log 2>&1 &`). Wait a few seconds, then read the log file to confirm it started and reported the API address before continuing. The Log Reaction output that the tutorial asks you to observe will appear in this log file.
     - For the SSE CLI process (Terminal 3): start it in the background the same way, redirecting to its own log file, then read that file to observe streamed events.
     - Give background processes a short, bounded wait (a few seconds) before reading their output so events have time to arrive. Do not wait indefinitely.
-    - For time-based tutorial steps, follow the guide's explicit 20-second waits instead of the short startup wait. Apart from the Step 6 initialization timing allowance below, do not add undocumented setup steps or change the expected transitions to make an evaluation pass.
+    - For time-based tutorial steps, follow the timing rules below instead of the short startup wait. Do not add undocumented setup steps or change the expected transitions to make an evaluation pass.
     - Keep track of the background process IDs and ensure you read from the correct log file when verifying each step's expected output.
     - When the tutorial says to press Ctrl+C, send SIGINT only to the recorded SSE CLI process ID. Do not use process-name matching that could also stop the server or evaluator.
 
@@ -53,13 +53,13 @@ Evaluation Criteria:
     - The sequence of instructions must be unambiguous for any agent or human.
     - The tutorial instructions should not contain assumptions that are not expressed clearly.
 
-Step 6 initialization timing allowance:
-    - The PostgreSQL bootstrap timestamps existing rows when the new query loads them. The `inactive-senders` result set can therefore be empty initially, even though the guide describes it as immediately populated.
-    - After successfully creating `inactive-senders`, record the time and start the SSE CLI as instructed. Before inserting Alice's next message, allow up to 30 seconds from query creation for the existing senders to become inactive. You may use bounded sleeps and repeat `GET http://localhost:8080/api/v1/queries/inactive-senders/results` every 2 seconds within that deadline.
-    - Verify a successful API response whose `data` array contains the expected senders: Buzz Lightyear, Brian Kernighan, Antoninus, David, Alice, and Bob. Proceed as soon as that state is present; do not require a fresh initial SSE notification if it was emitted before the CLI connected.
-    - Fail if the expected state is still absent at the 30-second deadline. API errors, invalid responses, server exits, and SSE connection failures remain failures; this allowance only tolerates a temporarily incomplete initial result set.
-    - Once the initial state is verified, follow the guide's Alice inserts and 20-second waits unchanged. Verify the documented DELETE/ADD transitions; do not skip them or change the query, data, or configuration to force success.
-    - Record the initial results, elapsed wait, and final results in the evaluation evidence. Note delayed population as a non-blocking documentation timing discrepancy in the report, rather than claiming that the guide's immediate-population statement matched. This allowance does not waive any other failure.
+Time-based Continuous Queries:
+    - Some queries change their results as time passes without another source event. Before evaluating such results, identify the time condition, its reference timestamp, and the required waiting interval from the tutorial or query definition. If these cannot be determined, treat that as an ambiguous instruction rather than inventing a delay.
+    - Record query creation/initialization and relevant data-change times. For existing data loaded during bootstrap, account for the query's timestamp semantics; do not assume an inactivity window has already elapsed merely because the rows existed before query creation.
+    - Calculate when the condition is expected to become true and track elapsed time. Use bounded sleeps to wait until the full required interval has elapsed before checking the expected time-driven result. A temporarily empty result before that time is not a failure.
+    - After the wait, verify the documented results and subsequent transitions using the tutorial's commands or output. Honor any documented timeout; otherwise check at the end of the required interval and fail if the expected state is absent. Do not wait indefinitely, add undocumented retries, or change the query, data, or configuration to force success.
+    - Record the reference time, required interval, elapsed wait, and observed results in the evaluation evidence. Report any discrepancy between the tutorial's stated timing and the observed timing rather than claiming an immediate-result expectation matched.
+    - API errors, invalid responses, server exits, and SSE connection failures remain failures and must not be deferred by a time-based wait. These timing rules do not relax checks for event-driven results.
 
 Output Details:
     - All output must go into a folder named `evaluation-` suffixed with the timestamp of the start of this run. Create this folder at the very start.
@@ -78,11 +78,11 @@ Skip Directives:
     - In your report, list each skipped section by id and include the reason verbatim.
 
 Constraints:
-    - You must run only the commands explicitly specified in the tutorial doc (plus the version sanity check, the non-TTY adaptation, the process-management/redirection mechanics, and the bounded Step 6 initialization checks described above).
+    - You must run only the commands explicitly specified in the tutorial doc (plus the version sanity check, the non-TTY adaptation, the process-management/redirection mechanics, and the timekeeping and bounded waits described above).
     - You must NOT set up any extra port forwarding — everything is already set up in the devcontainer. If something networking-related is not working, terminate the evaluation immediately and mark it as failed.
     - If something is broken, terminate the evaluation immediately and mark it as failed.
-    - If any instruction is unclear or ambiguous, terminate the evaluation immediately and mark it as failed, except for the explicitly permitted Step 6 initialization timing allowance.
-    - If you hit a mismatch between expected output / behavior and what you observe, terminate the evaluation immediately and mark it as failed, except for the explicitly permitted Step 6 initialization timing allowance.
+    - If any instruction is unclear or ambiguous, terminate the evaluation immediately and mark it as failed.
+    - If you hit a mismatch between expected output / behavior and what you observe, terminate the evaluation immediately and mark it as failed. For time-driven results, make this comparison after the required interval described above and report any timing discrepancy.
     - You must NOT debug failures or fix anything. Upon hitting any failure, terminate the evaluation immediately and mark it as failed.
     - Do not perform any cleanup steps (stopping the server, `docker compose down`, etc.) that the tutorial lists at the end, even if mentioned in the docs.
     - Whatever scripts you write or files you create must remain within the evaluation directory you create at the start of the task.
