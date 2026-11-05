@@ -12,7 +12,7 @@ defaultContentLanguageInSubdir = false
 
 [languages]
   [languages.en]
-    languageName = "English"
+    label = "English"
     weight = 1
 
 [markup]
@@ -56,7 +56,7 @@ defaultContentLanguageInSubdir = false
 [module]
   [module.hugoVersion]
     extended = true
-    min = "0.152.2"
+    min = "0.169.0"
 
   [[module.imports]]
     path = "github.com/google/docsy"
@@ -78,11 +78,12 @@ defaultContentLanguageInSubdir = false
     # The interactive viewer is a runtime helper (served by scripts/open-viewer.sh),
     # not documentation; keep its raw index.html out of the content mount so Hugo's
     # text/html content policy doesn't reject it.
-    excludeFiles = "viewer/**"
+    files = ["! viewer/**", "! .runtime/**", "! bin/**", "! **/node_modules/**", "! **/__pycache__/**", "! .env*"]
 
   [[module.mounts]]
     source = "tutorials/building-comfort"
     target = "content/tutorials/building-comfort"
+    files = ["! .runtime/**", "! bin/**", "! **/node_modules/**", "! **/__pycache__/**", "! .env*"]
 
   [[module.mounts]]
     source = "tutorials/curbside-pickup"
@@ -90,19 +91,18 @@ defaultContentLanguageInSubdir = false
     # The Node.js operations console (webui/) is application code, not docs; its
     # node_modules and static assets can contain raw .html that Hugo's text/html
     # content policy rejects, so keep that directory out of the content mount.
-    excludeFiles = "webui/**"
+    files = ["! webui/**", "! .runtime/**", "! bin/**", "! **/node_modules/**", "! **/__pycache__/**", "! .env*"]
 
   [[module.mounts]]
     source = "tutorials/high-risk-containers"
     target = "content/tutorials/high-risk-containers"
+    files = ["! .runtime/**", "! bin/**", "! **/node_modules/**", "! **/__pycache__/**", "! .env*"]
 
   [[module.mounts]]
     source = "tutorials/otel-observability"
     target = "content/tutorials/otel-observability"
-    # services/ is application code. bin/ holds the downloaded server, plugins,
-    # and the local drasi-core clone — including dashboard index.html that
-    # Hugo's text/html content policy rejects.
-    excludeFiles = ["services/**", "bin/**"]
+    # Application code and private runtime/build artifacts are not documentation.
+    files = ["! services/**", "! bin/**", "! .runtime/**", "! **/node_modules/**", "! **/__pycache__/**", "! .env*"]
 
   # Keep default mounts for the remaining components.
   [[module.mounts]]
@@ -123,6 +123,11 @@ defaultContentLanguageInSubdir = false
   [[module.mounts]]
     source = "archetypes"
     target = "archetypes"
+
+[security.node.permissions]
+  # Hugo already grants assets and installed node_modules. Do not scan tutorial
+  # runtime directories or grant Node access to virtualenv targets outside this repo.
+  allowRead = ["package.json", "package-lock.json"]
 
 # UI Customization
 [params]

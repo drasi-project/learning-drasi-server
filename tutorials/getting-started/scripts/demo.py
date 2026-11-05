@@ -21,6 +21,7 @@ TUTORIAL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
 INSTANCE = "getting-started-server"
 PLUGINS = (
+    "drasi-computation-transformer-query",
     "drasi-source-postgres", "drasi-bootstrap-postgres",
     "drasi-reaction-log", "drasi-reaction-sse",
     "drasi-source-http", "drasi-bootstrap-scriptfile",

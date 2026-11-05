@@ -53,11 +53,16 @@ of these local Core plugin packages separately:
 
 | Package | Role |
 | --- | --- |
+| `drasi-computation-transformer-query` | Explicit native continuous-query factory and middleware |
 | `drasi-computation-source-postgres` | Shared PostgreSQL CDC |
 | `drasi-computation-bootstrap-postgres` | Per-consumer PostgreSQL snapshots |
 | `drasi-computation-source-http` | Live simulated price ingestion |
 | `drasi-computation-bootstrap-http` | Initial prices from the real Trading API |
 | `drasi-reaction-sse` | Existing browser SSE output adapter |
+
+The query plugin includes standard middleware and system JQ support. Both Server
+and the native metadata generator select its actual factory; neither silently
+substitutes the linked reference query implementation.
 
 Path dependencies rebuild the Server, **not** its dynamically loaded plugins.
 The helper copies a matching private bundle into `.runtime/builds/`, records

@@ -1,6 +1,7 @@
 # Copyright 2026 The Drasi Authors.
 # Licensed under the Apache License, Version 2.0.
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -132,6 +133,7 @@ class LocalBuildTests(unittest.TestCase):
                 local_build._roots(server)
 
     def test_build_copies_each_package_before_later_build_overwrites_target(self):
+        self.plugins = ("drasi-computation-transformer-query", *self.plugins)
         server, _ = self.roots()
         target = self.root / "target"
         (target / "debug").mkdir(parents=True)
@@ -165,8 +167,28 @@ class LocalBuildTests(unittest.TestCase):
             name = "lib" + package.replace("-", "_") + ".so"
             self.assertEqual((directory / name).read_text(), name)
         builds = [args for args in calls if args[0] == "cargo"]
-        self.assertEqual(len(builds), 3)
+        self.assertEqual(len(builds), len(self.plugins) + 1)
         self.assertTrue(all(args.count("-p") == 1 for args in builds[1:]))
+        for args in builds[1:]:
+            package = args[args.index("-p") + 1]
+            expected = "dynamic-plugin,middleware-jq" if package == self.plugins[0] \
+                else "dynamic-plugin"
+            self.assertEqual(args[args.index("--features") + 1], expected)
+
+    def test_server_tutorials_explicitly_include_the_native_query_plugin(self):
+        helpers = sorted((local_build.REPOSITORY / "tutorials").glob("*/scripts/demo.py"))
+        self.assertTrue(helpers)
+        for helper in helpers:
+            with self.subTest(tutorial=helper.parents[1].name):
+                assignments = [
+                    node for node in ast.parse(helper.read_text()).body
+                    if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == "PLUGINS"
+                            for target in node.targets)
+                ]
+                self.assertEqual(len(assignments), 1)
+                plugins = local_build._plugins(ast.literal_eval(assignments[0].value))
+                self.assertIn("drasi-computation-transformer-query", plugins)
 
 
 if __name__ == "__main__":

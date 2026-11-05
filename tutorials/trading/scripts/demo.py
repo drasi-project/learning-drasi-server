@@ -28,6 +28,7 @@ APP = EXAMPLE / "app"
 STATE = TUTORIAL / ".runtime"
 INSTANCE = "trading-server"
 PLUGINS = (
+    "drasi-computation-transformer-query",
     "drasi-computation-source-postgres", "drasi-computation-bootstrap-postgres",
     "drasi-computation-source-http", "drasi-computation-bootstrap-http", "drasi-reaction-sse",
 )

@@ -75,9 +75,12 @@ python3 scripts/demo.py build-cli
 python3 scripts/demo.py verify-build
 ```
 
-`build` compiles Server and **separately compiles all six dynamic plugins**:
+`build` compiles Server and **separately compiles all seven dynamic plugins**:
 PostgreSQL Source and Bootstrap, Log and SSE Reactions, HTTP Source, and ScriptFile
-Bootstrap. It records source/build provenance and copies the exact artifacts to
+Bootstrap, plus `drasi-computation-transformer-query`. Server registers that native
+query factory before creating the tutorial's queries; there is no implicit
+linked-query fallback. The query plugin includes the standard middleware and
+system JQ support. The build records source/build provenance and copies the exact artifacts to
 a private hash-checked bundle. `build-cli` builds this repository's
 `tutorials/sse-cli`, installs a private copy, and records its provenance.
 Every start verifies the bundle; every `stream` command verifies the CLI.

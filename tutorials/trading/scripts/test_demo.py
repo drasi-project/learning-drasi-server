@@ -25,12 +25,16 @@ class TutorialContractTests(unittest.TestCase):
             self.assertFalse(demo.runtime_ready(wrong))
         self.assertFalse(demo.runtime_ready({**body, "success": False}))
 
-    def test_uses_existing_source_application_and_five_matching_plugins(self):
+    def test_uses_existing_source_application_and_matching_query_plugin(self):
         self.assertTrue((demo.EXAMPLE / "server/trading-native-recipe.json").is_file())
         self.assertEqual(demo.EXAMPLE, demo.LEARNING.parent / "drasi-server/examples/trading")
-        self.assertEqual(len(demo.PLUGINS), 5)
-        self.assertEqual(len(set(demo.PLUGINS)), 5)
-        self.assertIn("drasi-reaction-sse", demo.PLUGINS)
+        self.assertEqual(set(demo.PLUGINS), {
+            "drasi-computation-transformer-query",
+            "drasi-computation-source-postgres", "drasi-computation-bootstrap-postgres",
+            "drasi-computation-source-http", "drasi-computation-bootstrap-http",
+            "drasi-reaction-sse",
+        })
+        self.assertEqual(len(demo.PLUGINS), len(set(demo.PLUGINS)))
 
     def test_chain_consumes_projected_result_and_label(self):
         self.assertEqual(exercise.ALERT["inputs"], ["price-ticker-query"])

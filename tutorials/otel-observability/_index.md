@@ -62,7 +62,10 @@ workspace/
 Server's `drasi-lib` dependency must point at the sibling `drasi-core/lib`.
 The helper never clones a repository, changes branches, downloads a released
 Server, or installs registry plugins. It rebuilds the Server and the PostgreSQL,
-Kubernetes, OTel, dashboard, log, and optional HTTP plugin libraries together.
+Kubernetes, OTel, dashboard, log, optional HTTP and native query plugin libraries
+together. `drasi-computation-transformer-query` is a required part of the bundle:
+Server registers its query factory before creating queries. Its standard
+middleware and system JQ support are compiled into the query library.
 
 Install the Server/Core build prerequisites documented in those repositories
 (Rust **1.95**, C/C++ tools, CMake, Clang/libclang, libjq, OpenSSL, pkg-config,

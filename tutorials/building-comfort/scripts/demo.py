@@ -38,6 +38,7 @@ from local_build import sha256
 
 INSTANCE = "building-comfort-server"
 PLUGINS = (
+    "drasi-computation-transformer-query",
     "drasi-source-postgres",
     "drasi-bootstrap-postgres",
     "drasi-reaction-dashboard",

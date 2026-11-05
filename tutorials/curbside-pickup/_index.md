@@ -46,7 +46,7 @@ workspace/
   learning-drasi-server/
 ```
 
-Server must reference `../drasi-core/lib` as a local path dependency. Use the matching ComputationGraph versions already checked out in this workspace. A Server binary alone is insufficient: its **five dynamic plugins** must be rebuilt against the same local Core/SDK.
+Server must reference `../drasi-core/lib` as a local path dependency. Use the matching ComputationGraph versions already checked out in this workspace. A Server binary alone is insufficient: its **six dynamic plugins** must be rebuilt against the same local Core/SDK.
 
 ### Option A: Local Dev Container
 
@@ -77,7 +77,7 @@ python scripts/demo.py build
 {{< /tab >}}
 {{< /tabpane >}}
 
-The shared source-build helper builds Server and `source/postgres`, `bootstrap/postgres`, `source/mysql`, `bootstrap/mysql`, and `reaction/dashboard`. It records provenance and artifact hashes in `.runtime/build.json` and copies the complete build into a private, content-addressed bundle. Startup verifies that bundle; it does not search `PATH`, reuse an old `bin/`, or load the global plugin cache. Rebuild after changing Server or Core.
+The shared source-build helper builds Server and `source/postgres`, `bootstrap/postgres`, `source/mysql`, `bootstrap/mysql`, `reaction/dashboard`, and `drasi-computation-transformer-query`. Server registers the native query factory from that bundle; its standard middleware and system JQ are compiled into the query library. The helper records provenance and artifact hashes in `.runtime/build.json` and copies the complete build into a private, content-addressed bundle. Startup verifies that bundle; it does not search `PATH`, reuse an old `bin/`, or load the global plugin cache. Rebuild after changing Server or Core.
 
 Build dependencies may need to be fetched the first time. For an already provisioned offline workspace, set `CARGO_NET_OFFLINE=true`. Serialize builds when sharing a Cargo target directory with another tutorial or agent.
 
@@ -99,7 +99,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
 The helper:
 
 1. Verifies the matching local artifact bundle, then starts **owned, labeled** PostgreSQL and MySQL containers. It initializes empty databases with three preparing orders and three parked vehicles. Re-running it **preserves existing database rows** rather than deleting volumes or reseeding.
-2. Starts Drasi Server with plugin auto-install disabled and only the five verified local plugin files. Signature verification is bypassed specifically for these locally built development plugins, not registry downloads.
+2. Starts Drasi Server with plugin auto-install disabled and only the six verified local plugin files. Signature verification is bypassed specifically for these locally built development plugins, not registry downloads.
 3. Starts the operations console and waits for this instance's ComputationGraph, both sources, all seven queries, the dashboard reaction, and both console database connections to be ready.
 
 Wait for:

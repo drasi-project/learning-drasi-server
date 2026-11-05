@@ -120,8 +120,11 @@ Then build the matching artifacts:
 RUSTUP_TOOLCHAIN=1.95.0 python3 scripts/demo.py build
 ```
 
-This builds Server and exactly four plugins from the sibling Core checkout:
-PostgreSQL source, PostgreSQL bootstrap, dashboard reaction, and log reaction.
+This builds Server and exactly five plugins from the sibling Core checkout:
+PostgreSQL source, PostgreSQL bootstrap, dashboard reaction, log reaction, and
+`drasi-computation-transformer-query`. Server explicitly registers the loaded
+native query factory; the ordinary query configuration still uses the same
+ComputationGraph. The query library includes the standard middleware and system JQ.
 It uses `drasi-server/target` by default, then copies a matching set into the
 tutorial's private `.runtime/builds/` directory. `.runtime/build.json` records
 repository revisions, working-tree status, compiler version, and artifact hashes.

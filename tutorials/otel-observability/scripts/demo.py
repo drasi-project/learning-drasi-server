@@ -26,6 +26,7 @@ import local_build
 
 INSTANCE = "otel-observability-server"
 PLUGINS = (
+    "drasi-computation-transformer-query",
     "drasi-source-postgres", "drasi-bootstrap-postgres",
     "drasi-source-kubernetes", "drasi-bootstrap-kubernetes", "drasi-source-otel",
     "drasi-reaction-dashboard", "drasi-reaction-log", "drasi-reaction-http",

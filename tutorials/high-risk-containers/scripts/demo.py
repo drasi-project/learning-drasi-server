@@ -26,6 +26,7 @@ import local_build
 
 INSTANCE = "high-risk-containers-server"
 PLUGINS = (
+    "drasi-computation-transformer-query",
     "drasi-source-postgres", "drasi-bootstrap-postgres",
     "drasi-source-kubernetes", "drasi-bootstrap-kubernetes",
     "drasi-reaction-dashboard", "drasi-reaction-http",

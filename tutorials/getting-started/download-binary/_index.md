@@ -31,7 +31,7 @@ python3 scripts/demo.py verify-build
 
 The build commands create private, verified artifacts and provenance under
 `.runtime/build`. Source path dependencies do not rebuild dynamically loaded
-plugins automatically, so the build explicitly compiles all six required
+plugins automatically, so the build explicitly compiles all seven required
 plugins. Start and stream helpers reject mismatched artifacts rather than
 silently downloading them. `scripts/download.sh` now delegates to the local
 Server/plugin build; it no longer downloads releases.

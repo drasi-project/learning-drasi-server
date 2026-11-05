@@ -25,6 +25,7 @@ import local_build
 
 INSTANCE = "curbside-pickup-server"
 PLUGINS = (
+    "drasi-computation-transformer-query",
     "drasi-source-postgres", "drasi-bootstrap-postgres",
     "drasi-source-mysql", "drasi-bootstrap-mysql", "drasi-reaction-dashboard",
 )

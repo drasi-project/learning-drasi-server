@@ -103,8 +103,12 @@ def build(state, plugins, server_repo=None):
         files["server"] = staging / binary
         shutil.copy2(target / "debug" / binary, files["server"])
         for package in plugins:
+            features = "dynamic-plugin"
+            if package == "drasi-computation-transformer-query":
+                # Query middleware belongs to the plugin, not the Server process.
+                features += ",middleware-jq"
             _run(["cargo", "build", "--manifest-path", core / "Cargo.toml", *common,
-                  "-p", package, "--lib", "--features", "dynamic-plugin"], cwd=core)
+                  "-p", package, "--lib", "--features", features], cwd=core)
             name = prefix + package.replace("-", "_") + extension
             files[package] = staging / "plugins" / name
             shutil.copy2(target / "debug" / name, files[package])

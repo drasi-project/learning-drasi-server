@@ -43,6 +43,13 @@ library from the shared Cargo target. Rebuild after changing Core or Server.
 The SSE CLI has its own [source-build and verification helper](tutorials/sse-cli)
 so callers use this repository's CLI, not a similarly named Server example.
 
+Every Server tutorial explicitly includes `drasi-computation-transformer-query`
+in its required plugin set. The shared builder enables its standard middleware
+and system JQ support, and Server registers its query factory before creating
+queries. Rebuilding only Server or retaining a pre-query-plugin bundle is not
+sufficient. SSE CLI is a client of an existing running tutorial, not another
+query host.
+
 Use the documented Rust toolchain (currently 1.95.0), Python 3.11 or newer, and
 the native dependencies listed by the tutorial. Before a locked build, generate
 Core's untracked workspace lockfile if it is absent:
@@ -86,8 +93,8 @@ entry points rather than generated `_index.md` pages.
 
 ### Prerequisites
 
-- [Hugo Extended](https://gohugo.io/installation/) `0.152.2` or newer
-- [Go](https://go.dev/dl/) `1.24` or newer (for Hugo Modules)
+- [Hugo Extended](https://gohugo.io/installation/) `0.169.0` or newer
+- [Go](https://go.dev/dl/) `1.24.5` or newer (for Hugo Modules)
 - [Node.js](https://nodejs.org/) `18` or newer with npm (for the PostCSS pipeline)
 
 ### Build
@@ -107,6 +114,11 @@ hugo server
 ```
 
 Then open <http://localhost:1313>.
+
+The content mounts exclude tutorial runtime directories, local environment
+files and application dependencies. Node's permission model remains enabled;
+PostCSS can read the package manifests plus Hugo's automatically allowed assets
+and installed modules, not the entire checkout or unrelated virtualenv targets.
 
 > Hugo writes the `public/webfonts/*` files as read-only, which can make a later
 > rebuild fail with a "permission denied" error. If that happens, remove the

@@ -100,10 +100,12 @@ python3 scripts/demo.py build
 python3 scripts/demo.py verify-build
 ```
 
-The shared builder compiles Server and **separately rebuilds** these six dynamic
+The shared builder compiles Server and **separately rebuilds** these seven dynamic
 plugins from local Core: `drasi-source-postgres`, `drasi-bootstrap-postgres`,
 `drasi-source-kubernetes`, `drasi-bootstrap-kubernetes`,
-`drasi-reaction-dashboard` and `drasi-reaction-http`. It records revisions and
+`drasi-reaction-dashboard`, `drasi-reaction-http` and
+`drasi-computation-transformer-query`. Server registers the loaded native query
+factory, including its standard middleware and system JQ support. The builder records revisions and
 artifact hashes and stages a private bundle. Server startup checks those hashes
 and does not use `PATH`, `bin/plugins` or a global plugin cache. Signature
 verification is bypassed only for this explicit local development bundle.
@@ -148,6 +150,13 @@ graph failure/wait observations and dashboard availability. Inspect the graph
 and Server logs if it fails. A missing Kubernetes tool, denied list/watch
 permission, unavailable API or Pod image-pull failure is an error, not a
 simulated successful run.
+
+The first image download can outlast the bounded 180-second Pod readiness wait.
+Inspect it with `python3 scripts/demo.py kubectl get pods` and
+`python3 scripts/demo.py kubectl describe pod my-app-1`. Resolve any image-pull
+error; if downloading is simply slow, wait for both Pods to become Ready and
+rerun `start-demo`. The helper checks ownership and reuses the same cluster and
+Pods without resetting their images or the database.
 
 ### Startup and restart guarantees
 
