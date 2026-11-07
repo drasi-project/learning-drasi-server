@@ -106,19 +106,21 @@ def assert_rows(actual, expected, label):
 
 def capture(name):
     demo.check()
+    identities = demo.query_ids()
     expected = expected_results(source_rooms())
     deadline = time.monotonic() + 30
     while True:
         snapshots = {}
         try:
             for query in demo.QUERIES:
-                response = demo.get_json(demo.api_url() + f"/queries/{query}/results")
+                query_id = identities[query]
+                response = demo.get_json(demo.api_url() + f"/queries/{query_id}/results")
                 if response.get("success") is not True:
                     raise RuntimeError(f"Query read failed: {response}")
                 assert_rows(response["data"], expected[query], f"Server {query}")
                 snapshot = demo.get_json(
                     f"http://127.0.0.1:{os.environ.get('DASHBOARD_PORT', '3000')}"
-                    f"/api/queries/{query}/snapshot")
+                    f"/api/queries/{query_id}/snapshot")
                 keys = [row["k"] for row in snapshot["rows"]]
                 if len(set(keys)) != len(keys):
                     raise AssertionError(f"Duplicate dashboard row identities for {query}: {keys}")

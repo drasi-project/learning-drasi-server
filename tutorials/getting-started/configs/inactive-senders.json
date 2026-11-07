@@ -1,5 +1,5 @@
 {
-  "id": "inactive-senders",
+  "name": "inactive-senders",
   "autoStart": true,
   "inputs": ["my-postgres"],
   "result": {"label": "InactiveSender"},

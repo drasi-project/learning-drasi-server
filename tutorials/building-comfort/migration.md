@@ -87,9 +87,8 @@ an `executionMode` field, or a new query language just to use the new runtime.
 `autoInstallPlugins` is now false because startup loads the prepared libraries
 instead of downloading unrelated releases.
 
-The source list also contains the library's internal `__component_graph__`
-source. Its name does not indicate an old execution engine. Readiness accepts
-that known internal source while still requiring every configured component.
+The source list contains only the configured sources. Readiness requires the
+exact configured components and rejects unexpected entries.
 
 ### Treat source data and query state separately
 

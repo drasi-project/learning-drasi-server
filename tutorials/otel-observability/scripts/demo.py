@@ -23,6 +23,7 @@ import uuid
 TUTORIAL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
 import local_build
+from component_ids import component_ids
 
 INSTANCE = "otel-observability-server"
 PLUGINS = (
@@ -332,8 +333,16 @@ def api():
     return f"http://127.0.0.1:{os.environ['SERVER_PORT']}/api/v1/instances/{INSTANCE}"
 
 
+def query_ids():
+    response = get_json(api() + "/queries")
+    if response.get("success") is not True:
+        raise RuntimeError(f"Query inspection failed: {response}")
+    return component_ids(response.get("data"), QUERIES, "queries")
+
+
 def results(query):
-    response = get_json(api() + f"/queries/{query}/results")
+    query_id = query_ids()[query]
+    response = get_json(api() + f"/queries/{query_id}/results")
     if response.get("success") is not True:
         raise RuntimeError(f"Query inspection failed: {response}")
     if not isinstance(response.get("data"), list):
@@ -345,6 +354,7 @@ def check():
     proof = get_json(api() + "/runtime")
     if proof.get("success") is not True or proof.get("data") != {
         "instanceId": INSTANCE, "runtime": "computationGraph", "running": True,
+        "allowExternalComponentIds": False,
     }:
         raise RuntimeError(f"Wrong runtime identity/readiness: {proof}")
     for kind, expected in (("sources", {"slo", "k8s", "otel"}),
@@ -354,7 +364,7 @@ def check():
         if response.get("success") is not True:
             raise RuntimeError(f"Cannot inspect {kind}: {response}")
         components = response["data"]
-        if not expected <= {item["id"] for item in components}:
+        if not expected <= set(component_ids(components, kind=kind)):
             raise RuntimeError(f"Missing {kind}: {components}")
         if any(item["status"].lower() != "running" for item in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")

@@ -315,7 +315,7 @@ The downstream query consumes the inventory rather than subscribing to
 Kubernetes again:
 
 ```yaml
-- id: high-risk-containers
+- name: high-risk-containers
   autoStart: true
   queryLanguage: Cypher
   inputs:
@@ -360,9 +360,12 @@ Use `requests.http` for the instance-scoped API requests, including:
 ```text
 GET /api/v1/instances/high-risk-containers-server/runtime
 GET /api/v1/instances/high-risk-containers-server/computation
-GET /api/v1/instances/high-risk-containers-server/queries/pod-containers/results
-GET /api/v1/instances/high-risk-containers-server/queries/high-risk-containers/results
+GET /api/v1/instances/high-risk-containers-server/components/by-name/high-risk-containers
+GET /api/v1/instances/high-risk-containers-server/queries/<returned-uuid>/results
 ```
+
+The paired requests in `requests.http` resolve each name and use its returned
+UUID. The inventory query is named `pod-containers`; it has a separate UUID.
 
 Or run:
 

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from uuid import uuid4
 from unittest.mock import patch
 
 import demo
@@ -101,6 +102,7 @@ class DemoTests(unittest.TestCase):
         with patch.object(demo, "get_json", return_value={
             "success": True, "data": {
                 "instanceId": "another-instance", "runtime": "computationGraph", "running": True,
+                "allowExternalComponentIds": False,
             },
         }):
             with self.assertRaisesRegex(RuntimeError, "this instance"):
@@ -109,11 +111,12 @@ class DemoTests(unittest.TestCase):
     def test_all_components_and_console_must_be_ready(self):
         proof = {"success": True, "data": {
             "instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True,
+            "allowExternalComponentIds": False,
         }}
         responses = [proof]
         for identifiers in (("retail-ops", "physical-ops"), demo.QUERIES, ("curbside-dashboard",)):
             responses.append({"success": True, "data": [
-                {"id": name, "status": "Running"} for name in identifiers
+                {"id": str(uuid4()), "name": name, "status": "Running"} for name in identifiers
             ]})
         responses.extend([[{"id": "curbside-pickup"}], {"connecting": True}])
         with patch.object(demo, "get_json", side_effect=responses):

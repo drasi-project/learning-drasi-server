@@ -48,7 +48,7 @@ instances:
     sources:
   # Retail Operations - PostgreSQL source: the customer orders.
       - kind: postgres
-        id: retail-ops
+        name: retail-ops
         autoStart: true
 
         host: "${POSTGRES_HOST:-localhost}"
@@ -83,7 +83,7 @@ instances:
   # database/docker-compose.yml starts MySQL with ROW-based logging, full row
   # images/metadata and GTID mode.
       - kind: mysql
-        id: physical-ops
+        name: physical-ops
         autoStart: true
 
         host: "${MYSQL_HOST:-localhost}"
@@ -139,7 +139,7 @@ instances:
   # orders-preparing: orders still being prepared (status != 'ready'). As soon as
   # an order becomes 'ready' it drops out of this result and appears in
   # orders-ready - so the order visibly moves between the two dashboard panels.
-      - id: orders-preparing
+      - name: orders-preparing
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -159,7 +159,7 @@ instances:
             o.status AS status
 
   # orders-ready: orders that are ready for pickup (status = 'ready').
-      - id: orders-ready
+      - name: orders-ready
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -181,7 +181,7 @@ instances:
   # vehicles-parking: vehicles still in the parking lot (location = 'Parking').
   # When a driver pulls up to the curb the vehicle drops out of this result and
   # appears in vehicles-curbside - so the car visibly moves between the panels.
-      - id: vehicles-parking
+      - name: vehicles-parking
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -201,7 +201,7 @@ instances:
             v.location AS location
 
   # vehicles-curbside: vehicles waiting at the curb (location = 'Curbside').
-      - id: vehicles-curbside
+      - name: vehicles-curbside
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -221,7 +221,7 @@ instances:
             v.location AS location
 
   # Calculate the cross-database join once, then fan out to both decisions.
-      - id: pickup-state
+      - name: pickup-state
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -258,7 +258,7 @@ instances:
             drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) AS readyTimestamp
 
   # delivery: orders that are READY whose driver has ARRIVED at the curbside.
-      - id: delivery
+      - name: delivery
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -281,7 +281,7 @@ instances:
   # delay: a driver is at the curbside but the order is NOT yet ready, and they
   # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
   # re-evaluation so the row appears the instant the threshold is crossed.
-      - id: delay
+      - name: delay
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -311,7 +311,7 @@ instances:
   # filtered continuous queries, an order or vehicle disappears from one panel
   # and appears in the other the instant its status/location changes.
       - kind: dashboard
-        id: curbside-dashboard
+        name: curbside-dashboard
         autoStart: true
         queries:
           - orders-preparing

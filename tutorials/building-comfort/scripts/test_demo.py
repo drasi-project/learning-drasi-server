@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
 import demo
 import verify_demo
@@ -169,23 +170,35 @@ class DemoTests(unittest.TestCase):
 
     def test_wrong_runtime_instance_rejected(self):
         with patch.object(demo, "get_json", return_value={
-            "success": True, "data": {"instanceId": "wrong", "runtime": "computationGraph", "running": True},
+            "success": True, "data": {"instanceId": "wrong", "runtime": "computationGraph", "running": True, "allowExternalComponentIds": False},
         }):
             with self.assertRaisesRegex(RuntimeError, "Expected this instance"):
                 demo.check()
 
-    def test_readiness_includes_internal_source(self):
+    def test_readiness_requires_only_configured_components(self):
         def components(names):
-            return {"success": True, "data": [{"id": name, "status": "Running"} for name in names]}
+            return {"success": True, "data": [{"id": str(uuid4()), "name": name, "status": "Running"} for name in names]}
         responses = [
-            {"success": True, "data": {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True}},
-            components(["building-facilities", "__component_graph__"]),
+            {"success": True, "data": {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True, "allowExternalComponentIds": False}},
+            components(["building-facilities"]),
             components(demo.QUERIES),
             components(["building-comfort-dashboard", "console-log"]),
             [{"id": "building-comfort"}],
         ]
         with patch.object(demo, "get_json", side_effect=responses):
             self.assertTrue(demo.check()["success"])
+
+    def test_readiness_rejects_unexpected_sources(self):
+        responses = [
+            {"success": True, "data": {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True, "allowExternalComponentIds": False}},
+            {"success": True, "data": [
+                {"id": str(uuid4()), "name": "building-facilities", "status": "Running"},
+                {"id": str(uuid4()), "name": "unexpected-source", "status": "Running"},
+            ]},
+        ]
+        with patch.object(demo, "get_json", side_effect=responses):
+            with self.assertRaisesRegex(RuntimeError, "Unexpected sources"):
+                demo.check()
 
     def test_result_check_rejects_missing_duplicate_and_wrong_rows(self):
         expected = [{"RoomId": "r", "ComfortLevel": 46}]

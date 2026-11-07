@@ -1,5 +1,5 @@
 {
-  "id": "message-counts",
+  "name": "message-counts",
   "autoStart": true,
   "inputs": ["all-messages"],
   "result": {"label": "MessageCount"},

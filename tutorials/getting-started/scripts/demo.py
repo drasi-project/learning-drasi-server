@@ -15,10 +15,13 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+import uuid
 
 
 TUTORIAL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
+from component_ids import component_ids
 INSTANCE = "getting-started-server"
 PLUGINS = (
     "drasi-computation-transformer-query",
@@ -205,15 +208,96 @@ def api(path, *, method="GET", body=None):
 
 def check():
     proof = api("runtime")
-    if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True}:
+    if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True,
+                 "allowExternalComponentIds": False}:
         raise RuntimeError(f"Unexpected runtime identity/readiness: {proof}")
     for kind in ("sources", "queries", "reactions"):
         components = api(kind)
+        component_ids(components, kind=kind)
         if any(component["status"].lower() != "running" for component in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")
-    if not any(query["id"] == "all-messages" for query in api("queries")):
+    if "all-messages" not in component_ids(api("queries"), kind="queries"):
         raise RuntimeError("Missing all-messages query")
     return proof
+
+
+def component_id(name):
+    value = api("components/by-name/" + urllib.parse.quote(name, safe=""))
+    return component_ids([value], {name})[name]
+
+
+def configure_component(kind, definition, identifier=None):
+    current = api("computation/desired")
+    request_id = str(uuid.uuid4())
+    path = "computation/ordinary-definitions"
+    if identifier is not None:
+        path += "/" + str(uuid.UUID(identifier))
+    try:
+        receipt = api(path, method="POST" if identifier is None else "PUT", body={
+            "expectedRevision": current["revision"], "requestId": request_id,
+            "component": {"type": kind, "definition": definition},
+        })
+    except (RuntimeError, urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError(
+            f"Configuration request {request_id} was not confirmed. Inspect its receipt "
+            f"before retrying: {error}") from error
+    if receipt.get("requestId") != request_id:
+        raise RuntimeError(f"Unexpected configuration receipt: {receipt}")
+    if identifier is not None:
+        if receipt.get("components") != []:
+            raise RuntimeError(f"Update unexpectedly assigned new components: {receipt}")
+        return identifier
+    return component_ids(receipt.get("components"), {definition["name"]})[definition["name"]]
+
+
+def create_query(definition):
+    return configure_component("query", definition)
+
+
+def delete_component(kind, name):
+    collection = {"source": "sources", "query": "queries", "reaction": "reactions"}[kind]
+    identifier = component_id(name)
+    component_ids([api(f"{collection}/{identifier}")], {name})
+    current = api("computation/desired")
+    request_id = str(uuid.uuid4())
+    try:
+        receipt = api(f"computation/ordinary-definitions/{identifier}", method="DELETE", body={
+            "expectedRevision": current["revision"], "requestId": request_id,
+        })
+    except (RuntimeError, urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError(
+            f"Removal request {request_id} was not confirmed. Inspect its receipt "
+            f"before retrying or recreating {name}: {error}") from error
+    if receipt.get("requestId") != request_id or receipt.get("components") != []:
+        raise RuntimeError(f"Unexpected removal receipt: {receipt}")
+    deadline = time.monotonic() + 60
+    try:
+        while identifier in component_ids(api(collection), kind=collection).values():
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"{identifier} is still present")
+            time.sleep(0.1)
+    except (RuntimeError, urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError(
+            f"Removal request {request_id} was accepted, but disappearance was not confirmed: {error}") from error
+    return identifier
+
+
+
+def query_results(name):
+    return api(f"queries/{component_id(name)}/results")
+
+
+def wait_running(kind, identifier):
+    deadline = time.monotonic() + 60
+    collection = {"source": "sources", "query": "queries", "reaction": "reactions"}[kind]
+    while True:
+        component = api(f"{collection}/{identifier}")
+        status = component["status"].lower()
+        if status == "running":
+            return
+        if status in ("error", "failed") or time.monotonic() >= deadline:
+            raise RuntimeError(f"{kind} {identifier} is not running: {component}")
+        time.sleep(0.1)
 
 
 def working_config(content):
@@ -306,6 +390,18 @@ def main():
     delete.add_argument("id", type=int)
     results = commands.add_parser("results")
     results.add_argument("query", nargs="?", default="all-messages")
+    create = commands.add_parser("create", help="Create one component with a library-assigned UUID")
+    create.add_argument("kind", choices=("source", "query", "reaction"))
+    create.add_argument("file", help="JSON definition file, or - for stdin")
+    update = commands.add_parser("update", help="Request a factory-supported update, preserving its UUID")
+    update.add_argument("kind", choices=("source", "query", "reaction"))
+    update.add_argument("name")
+    update.add_argument("file", help="JSON definition file, or - for stdin")
+    remove = commands.add_parser("delete", help="Explicitly remove a named component by its current UUID")
+    remove.add_argument("kind", choices=("source", "query", "reaction"))
+    remove.add_argument("name")
+    identity = commands.add_parser("id", help="Resolve an exact component name")
+    identity.add_argument("name")
     stream = commands.add_parser("stream")
     stream.add_argument("query")
     args = parser.parse_args()
@@ -339,9 +435,18 @@ def main():
                 raise RuntimeError(f"Expected one deleted message, got {result!r}")
             print(result)
         elif args.action == "results":
-            if not re.fullmatch(r"[a-z][a-z0-9-]*", args.query):
-                raise ValueError("Invalid query ID")
-            print(json.dumps(api(f"queries/{args.query}/results"), indent=2))
+            print(json.dumps(query_results(args.query), indent=2))
+        elif args.action == "id":
+            print(component_id(args.name))
+        elif args.action == "delete":
+            print(delete_component(args.kind, args.name))
+        elif args.action in ("create", "update"):
+            definition = json.loads(sys.stdin.read() if args.file == "-" else Path(args.file).read_text())
+            identifier = component_id(args.name) if args.action == "update" else None
+            identifier = configure_component(args.kind, definition, identifier)
+            print(identifier, flush=True)
+            if definition.get("autoStart", True):
+                wait_running(args.kind, identifier)
         elif args.action == "stream":
             binary = cli_build(verify=True)
             free_port(os.environ["SSE_PORT"])

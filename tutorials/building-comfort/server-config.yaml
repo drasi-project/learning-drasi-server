@@ -40,7 +40,7 @@ instances:
   - id: building-comfort-server
     sources:
       - kind: postgres
-        id: building-facilities
+        name: building-facilities
         autoStart: true
 
     # Connection settings.
@@ -88,7 +88,7 @@ instances:
 # Each alert query consumes the corresponding level's result nodes.
     queries:
   # Query 1: shared room comfort and hierarchy for rollups, alerts and display.
-      - id: room-comfort
+      - name: room-comfort
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -131,7 +131,7 @@ instances:
                 property: id
 
   # Query 2: per-floor comfort, calculated from shared room results.
-      - id: floor-comfort-level-calc
+      - name: floor-comfort-level-calc
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -148,7 +148,7 @@ instances:
           - room-comfort
 
   # Query 3: overall building comfort (avg of floor averages, not room-weighted).
-      - id: building-comfort-level-calc
+      - name: building-comfort-level-calc
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -163,7 +163,7 @@ instances:
           - floor-comfort-level-calc
 
   # Query 4: rooms outside the comfortable band (40-50).
-      - id: room-alert
+      - name: room-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -179,7 +179,7 @@ instances:
           - room-comfort
 
   # Query 5: floors whose average comfort is outside 40-50.
-      - id: floor-alert
+      - name: floor-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -195,7 +195,7 @@ instances:
           - floor-comfort-level-calc
 
   # Query 6: the building when its overall comfort is outside 40-50.
-      - id: building-alert
+      - name: building-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -219,7 +219,7 @@ instances:
   # mostly from markdown (text) widgets that use the reaction's Handlebars
   # helpers to recreate the Building -> Floor -> Room comfort view.
       - kind: dashboard
-        id: building-comfort-dashboard
+        name: building-comfort-dashboard
         autoStart: true
         queries:
           - room-comfort
@@ -325,7 +325,7 @@ instances:
 
   # Log reaction - prints alert activity to the server console.
       - kind: log
-        id: console-log
+        name: console-log
         autoStart: true
         queries:
           - room-alert

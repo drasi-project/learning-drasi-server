@@ -64,6 +64,36 @@ the documented `kubectl` and `k3d` tools; a dev container is not proof that its
 container engine or Kubernetes prerequisites work on every host. If sharing
 `drasi-server/target`, run Rust/plugin builds one at a time.
 
+## Component names and identities
+
+Tutorial configurations give components a `name` and omit `id`. DrasiLib assigns
+an immutable UUID, also used as that component's computation-graph node ID.
+Names are unique within an instance and can change without changing the UUID.
+Input strings refer to names; an explicit `{"id":"UUID"}` selects an identity.
+The default policy rejects IDs supplied for new components rather than replacing
+them silently.
+
+The helpers discover UUIDs from the running instance before calling component
+endpoints. Use the paired name-lookup requests in each tutorial's `requests.http`
+instead of putting a name into a UUID-addressed URL. Database row IDs, join names,
+dashboard/widget IDs and output aliases are separate identifiers.
+
+An in-memory configuration store lasts for that DrasiLib instance; a fresh
+memory-only instance receives new UUIDs. With configuration persistence enabled,
+accepted definitions and UUIDs are restored from the configured store. The
+Getting Started tutorial uses Server's companion YAML store and preserves
+identities across restarts. Saved configuration does not itself persist query
+results or source data.
+
+Live configuration updates require a registered factory that implements the
+requested update. Ordinary Source/Reaction lifecycle hooks alone do not provide
+that capability. Where the walkthrough changes a creation-only reaction, it uses
+explicit removal and creation with a new UUID, not an automatic update fallback.
+Core currently rejects query updates that require rebootstrap, even when a
+bootstrap provider exists; initial bootstrap is unaffected. This boundary and
+the missing reset coordination are tracked as CW-92 in Core's remaining-work
+document.
+
 ## Run in a Dev Container
 
 From the repository root:

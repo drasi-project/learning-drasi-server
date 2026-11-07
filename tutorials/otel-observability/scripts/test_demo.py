@@ -122,14 +122,17 @@ class DemoTests(unittest.TestCase):
 
     def test_instance_runtime_identity_is_required(self):
         with patch.object(demo, "get_json", return_value={
-            "success": True, "data": {"instanceId": "foreign", "runtime": "computationGraph", "running": True},
+            "success": True, "data": {"instanceId": "foreign", "runtime": "computationGraph", "running": True, "allowExternalComponentIds": False},
         }):
             with self.assertRaisesRegex(RuntimeError, "runtime identity"):
                 demo.check()
 
     def test_query_results_are_current_api_array(self):
-        with patch.object(demo, "get_json", return_value={"success": True, "data": [{"service": "checkout"}]}):
+        identifier = "b20c42ee-59a1-441f-a549-87a72be1f1e9"
+        with patch.object(demo, "query_ids", return_value={"checkout-health": identifier}), \
+                patch.object(demo, "get_json", return_value={"success": True, "data": [{"service": "checkout"}]}) as request:
             self.assertEqual(demo.results("checkout-health"), [{"service": "checkout"}])
+            request.assert_called_once_with(demo.api() + f"/queries/{identifier}/results")
 
     def test_kubectl_always_scopes_namespace_and_kubeconfig(self):
         demo.environment()

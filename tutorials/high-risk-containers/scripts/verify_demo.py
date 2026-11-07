@@ -46,6 +46,7 @@ def assert_rows(actual, expected, label):
 
 def capture(name):
     demo.check()
+    identities = demo.query_ids()
     pods, risks = sources()
     expected = expected_results(pods, risks)
     deadline = time.monotonic() + 30
@@ -53,11 +54,11 @@ def capture(name):
         try:
             actual = {}
             for query in ("pod-containers", "high-risk-containers"):
-                actual[query] = demo.api(f"queries/{query}/results")
+                actual[query] = demo.api(f"queries/{identities[query]}/results")
                 assert_rows(actual[query], expected[query], query)
             dashboard = demo.get_json(
                 f"http://127.0.0.1:{demo.ownership()['ports']['DASHBOARD_PORT']}"
-                "/api/queries/high-risk-containers/snapshot")
+                f"/api/queries/{identities['high-risk-containers']}/snapshot")
             keys = [row["k"] for row in dashboard["rows"]]
             if len(set(keys)) != len(keys):
                 raise AssertionError(f"Duplicate dashboard row identities: {keys}")

@@ -138,7 +138,7 @@ provider and then follows database changes through CDC.
 Here is the first query:
 
 ```yaml
-- id: all-messages
+- name: all-messages
   autoStart: true
   inputs: [my-postgres]
   result:
@@ -160,6 +160,11 @@ properties and timestamps. Later queries can match this label by naming
 `all-messages` in `inputs`. Setting the label does not change the output
 contract: query output is always **canonical graph-change v1**.
 
+`name` is the editable component name, not its identity. DrasiLib assigns an
+immutable UUID because these definitions omit `id`. Input strings resolve names
+to UUIDs; renaming an upstream component does not redirect an existing binding.
+New caller-supplied UUIDs are rejected under the tutorial's default policy.
+
 In **Terminal 1**:
 
 ```bash
@@ -168,8 +173,11 @@ python3 scripts/demo.py start
 
 On first start this copies the step-3 configuration to
 `.runtime/getting-started-cg/getting-started.yaml`. Subsequent starts retain
-that working copy. REST changes are saved there because `persistConfig: true`;
-the checked-in reference configurations are never modified.
+that working copy. With `persistConfig: true`, Server saves its settings there
+and stores accepted component definitions, UUIDs and request receipts in the
+companion `getting-started.yaml.drasi-state.yaml` file. Existing stored state,
+including an intentionally empty configuration, takes precedence over startup
+definitions. The checked-in reference configurations are never modified.
 
 Server loads only the local hash-checked plugin directory.
 `autoInstallPlugins: false` prevents registry fallback. `--skip-verification`
@@ -189,7 +197,7 @@ curl --fail-with-body http://127.0.0.1:8180/api/v1/instances/getting-started-ser
 The successful runtime response must contain exactly:
 
 ```json
-{"instanceId":"getting-started-server","runtime":"computationGraph","running":true}
+{"instanceId":"getting-started-server","allowExternalComponentIds":false,"runtime":"computationGraph","running":true}
 ```
 
 This is the `data` inside the API's `{success, data, error}` response envelope.
@@ -197,11 +205,12 @@ This is the `data` inside the API's `{success, data, error}` response envelope.
 running. If startup fails, read the Server error; do not stop unrelated
 processes to free a port or use a released binary as a substitute.
 
-If a later REST command returns `PERSISTENCE_FAILED`, stop the walkthrough and
-inspect the response, live component state, and working configuration. The
-operation may have been applied in memory even though saving it failed.
-Do not blindly repeat a `POST`, assume it rolled back, or disable persistence
-to turn the failure into a success.
+Configuration changes carry an expected revision and a unique request ID.
+The helpers obtain the revision, submit the definition, retain its assigned
+UUID and wait for startup. Acceptance is not the same as successful construction.
+If a request fails or its reply is lost, inspect its receipt at
+`computation/receipts/<requestId>` before retrying. Reuse the same request ID only
+for the same operation; do not assume a lost reply means nothing was accepted.
 
 ### View the current results
 
@@ -212,7 +221,8 @@ python3 scripts/demo.py results all-messages
 Equivalent REST request:
 
 ```bash
-curl --fail-with-body http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries/all-messages/results
+QUERY_ID=$(python3 scripts/demo.py id all-messages)
+curl --fail-with-body "http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries/$QUERY_ID/results"
 ```
 
 There should be four rows, including:
@@ -270,7 +280,7 @@ Who sent messages containing exactly `Hello World`? Add a query to the running
 Server without restarting:
 
 ```yaml
-- id: hello-world-senders
+- name: hello-world-senders
   autoStart: true
   inputs: [all-messages]
   result: {label: HelloWorldSender}
@@ -287,27 +297,29 @@ and then consumes its live changes. It needs neither a second PostgreSQL
 connection nor an intermediate re-ingestion Source.
 
 `WHERE` filters the result; `RETURN` renames the fields to `Id` and `Sender`.
-The complete request body is `configs/hello-world-senders.json`. In Terminal 2:
+The component definition is `configs/hello-world-senders.json`. In Terminal 2:
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries \
-  -H 'Content-Type: application/json' --data-binary @configs/hello-world-senders.json
+python3 scripts/demo.py create query configs/hello-world-senders.json
 ```
 
-Subscribe the Log Reaction to both queries using the current API's `PUT`
-operation. It replaces the reaction and resumes it if it was running, without
-requiring a separate delete and create:
+Subscribe the Log Reaction to both queries by explicitly removing and recreating
+it. This ordinary plugin has no managed update implementation. The delete
+command targets its current UUID and checks the removal receipt; creation omits
+`id`, so the replacement receives a **new UUID**:
 
 ```bash
-curl --fail-with-body -X PUT http://127.0.0.1:8180/api/v1/instances/getting-started-server/reactions/log-reaction \
-  -H 'Content-Type: application/json' \
-  -d '{"kind":"log","id":"log-reaction","autoStart":true,"queries":["all-messages","hello-world-senders"]}'
+python3 scripts/demo.py delete reaction log-reaction &&
+python3 scripts/demo.py create reaction - <<'JSON'
+{"kind":"log","name":"log-reaction","autoStart":true,"queries":["all-messages","hello-world-senders"]}
+JSON
 python3 scripts/demo.py results hello-world-senders
 ```
 
 Brian Kernighan is already in the current results: `{"Id":2,"Sender":"Brian Kernighan"}`.
 Adding a reaction later is not a promise to replay changes that happened before
 it subscribed; use the results endpoint to inspect current state.
+This is not an in-place update or an atomic, zero-downtime replacement.
 Replacing a reaction can replay retained changes, so repeated console messages
 are not evidence of duplicate database writes or exactly-once delivery.
 
@@ -331,7 +343,7 @@ and the same database changes drive both result sets.
 `message-counts` counts how many times each message text appears:
 
 ```yaml
-- id: message-counts
+- name: message-counts
   autoStart: true
   inputs: [all-messages]
   result: {label: MessageCount}
@@ -346,8 +358,7 @@ The non-aggregate field `MessageText` defines each group. Drasi maintains
 reuses the same labeled message projection as the filter.
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries \
-  -H 'Content-Type: application/json' --data-binary @configs/message-counts.json
+python3 scripts/demo.py create query configs/message-counts.json
 python3 scripts/demo.py results message-counts
 ```
 
@@ -434,7 +445,7 @@ data changes. `drasi.trueLater` schedules another evaluation so that a sender
 can become inactive even when no further data arrives.
 
 ```yaml
-- id: inactive-senders
+- name: inactive-senders
   autoStart: true
   inputs: [my-postgres]
   result: {label: InactiveSender}
@@ -456,8 +467,7 @@ message also counts as activity; this is not a durable record of when somebody
 last sent a message, and deleting rows removes them from the calculation.
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries \
-  -H 'Content-Type: application/json' --data-binary @configs/inactive-senders.json
+python3 scripts/demo.py create query configs/inactive-senders.json
 ```
 
 In Terminal 3:
@@ -516,12 +526,13 @@ location changes.
 Both plugins were built in Step 1. In Terminal 2:
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/sources \
-  -H 'Content-Type: application/json' -d '{
-    "kind":"http", "id":"location-tracker", "autoStart":true,
-    "host":"127.0.0.1", "port":8182,
-    "bootstrapProvider":{"kind":"scriptfile","filePaths":["../../locations.jsonl"]}
-  }'
+python3 scripts/demo.py create source - <<'JSON'
+{
+  "kind":"http", "name":"location-tracker", "autoStart":true,
+  "host":"127.0.0.1", "port":8182,
+  "bootstrapProvider":{"kind":"scriptfile","filePaths":["../../locations.jsonl"]}
+}
+JSON
 ```
 
 The helper runs Server in `.runtime/<run-id>/`, so `../../locations.jsonl`
@@ -535,7 +546,7 @@ the actual absolute tutorial path into its new working configuration.
 The join query reads the message **query output** and the new **Source output**:
 
 ```yaml
-- id: messages-with-location
+- name: messages-with-location
   autoStart: true
   inputs: [all-messages, location-tracker]
   result: {label: LocatedMessage}
@@ -557,8 +568,7 @@ Both inputs use the same graph contract, so a derived message node joins just
 like a Source node.
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries \
-  -H 'Content-Type: application/json' --data-binary @configs/messages-with-location.json
+python3 scripts/demo.py create query configs/messages-with-location.json
 python3 scripts/demo.py results messages-with-location
 ```
 
@@ -574,7 +584,8 @@ python3 scripts/demo.py stream messages-with-location
 In Terminal 2:
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8182/sources/location-tracker/events \
+LOCATION_ID=$(python3 scripts/demo.py id location-tracker)
+curl --fail-with-body -X POST "http://127.0.0.1:8182/sources/$LOCATION_ID/events" \
   -H 'Content-Type: application/json' -d '{
     "operation":"update",
     "element":{"type":"node","id":"brian","labels":["UserLocation"],
@@ -602,7 +613,7 @@ Carol is **not** in the joined result yet, although she is in `all-messages`:
 there is no matching location. Add it:
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8182/sources/location-tracker/events \
+curl --fail-with-body -X POST "http://127.0.0.1:8182/sources/$LOCATION_ID/events" \
   -H 'Content-Type: application/json' -d '{
     "operation":"insert",
     "element":{"type":"node","id":"carol","labels":["UserLocation"],

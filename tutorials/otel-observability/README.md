@@ -175,8 +175,11 @@ For example:
 
 ```bash
 curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/runtime
-curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/queries/current-health/results
+curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/components/by-name/current-health
 ```
+
+Use the returned `data.id` UUID in `/queries/<uuid>/results`. The paired requests
+in `requests.http` do this explicitly; the component name is not its UUID.
 
 ## Step 4 of 4: Drive Change
 Use **Terminal 2**. The following commands act on Kubernetes, PostgreSQL, and the

@@ -17,6 +17,7 @@
 # =============================================================================
 # Use with the VSCode REST Client extension (humao.rest-client) or similar.
 # API documentation is served at http://localhost:8380/api/v1/docs/
+# Run each named lookup before its paired UUID-addressed request.
 
 @baseUrl = http://localhost:8380
 @dashboardUrl = http://localhost:3000
@@ -42,8 +43,12 @@ GET {{instanceUrl}}/runtime
 ### List all sources
 GET {{instanceUrl}}/sources
 
+### Resolve the building-facilities source
+# @name facilities
+GET {{instanceUrl}}/components/by-name/building-facilities
+
 ### Get the building-facilities source status
-GET {{instanceUrl}}/sources/building-facilities
+GET {{instanceUrl}}/sources/{{facilities.response.body.$.data.id}}
 
 ### ==========================================================================
 ### Continuous Queries
@@ -52,23 +57,47 @@ GET {{instanceUrl}}/sources/building-facilities
 ### List all queries
 GET {{instanceUrl}}/queries
 
+### Resolve shared room comfort
+# @name roomComfort
+GET {{instanceUrl}}/components/by-name/room-comfort
+
 ### Shared room comfort (feeds floor rollups, room alerts and the building view)
-GET {{instanceUrl}}/queries/room-comfort/results
+GET {{instanceUrl}}/queries/{{roomComfort.response.body.$.data.id}}/results
+
+### Resolve overall building comfort
+# @name buildingComfort
+GET {{instanceUrl}}/components/by-name/building-comfort-level-calc
 
 ### Overall building comfort level
-GET {{instanceUrl}}/queries/building-comfort-level-calc/results
+GET {{instanceUrl}}/queries/{{buildingComfort.response.body.$.data.id}}/results
+
+### Resolve floor comfort
+# @name floorComfort
+GET {{instanceUrl}}/components/by-name/floor-comfort-level-calc
 
 ### Per-floor comfort levels
-GET {{instanceUrl}}/queries/floor-comfort-level-calc/results
+GET {{instanceUrl}}/queries/{{floorComfort.response.body.$.data.id}}/results
+
+### Resolve room alerts
+# @name roomAlert
+GET {{instanceUrl}}/components/by-name/room-alert
 
 ### Rooms outside the comfortable band (alerts)
-GET {{instanceUrl}}/queries/room-alert/results
+GET {{instanceUrl}}/queries/{{roomAlert.response.body.$.data.id}}/results
+
+### Resolve floor alerts
+# @name floorAlert
+GET {{instanceUrl}}/components/by-name/floor-alert
 
 ### Floors outside the comfortable band (alerts)
-GET {{instanceUrl}}/queries/floor-alert/results
+GET {{instanceUrl}}/queries/{{floorAlert.response.body.$.data.id}}/results
+
+### Resolve building alerts
+# @name buildingAlert
+GET {{instanceUrl}}/components/by-name/building-alert
 
 ### Building outside the comfortable band (alert)
-GET {{instanceUrl}}/queries/building-alert/results
+GET {{instanceUrl}}/queries/{{buildingAlert.response.body.$.data.id}}/results
 
 ### ==========================================================================
 ### Reactions
@@ -77,8 +106,12 @@ GET {{instanceUrl}}/queries/building-alert/results
 ### List all reactions
 GET {{instanceUrl}}/reactions
 
+### Resolve the dashboard reaction
+# @name dashboard
+GET {{instanceUrl}}/components/by-name/building-comfort-dashboard
+
 ### Get the dashboard reaction status
-GET {{instanceUrl}}/reactions/building-comfort-dashboard
+GET {{instanceUrl}}/reactions/{{dashboard.response.body.$.data.id}}
 
 ### Open the dashboard in a browser instead: {{dashboardUrl}}
 ### The seeded "Building Comfort" dashboard is available via the dashboard API:

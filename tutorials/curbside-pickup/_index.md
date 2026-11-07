@@ -206,7 +206,7 @@ Each `orders` row becomes an `orders` node; each `vehicles` row becomes a `vehic
 `pickup-state` connects the two sources by plate using a synthetic relationship. There is no cross-database foreign key:
 
 ```yaml
-- id: pickup-state
+- name: pickup-state
   autoStart: true
   queryLanguage: Cypher
   inputs:

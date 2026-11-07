@@ -12,20 +12,24 @@ import subprocess
 import tempfile
 import threading
 import unittest
+import uuid
 
 
 BINARY = os.environ.get("DRASI_SSE_CLI")
+QUERY_ID = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
 
 
 @unittest.skipUnless(BINARY, "set DRASI_SSE_CLI to a locally built tutorial binary")
 class CliTests(unittest.TestCase):
     def setUp(self):
         self.requests = []
-        self.payload = b'data: {"queryId":"q","results":[],"timestamp":1}\n\n'
+        self.payload = ('data: ' + json.dumps({"queryId": QUERY_ID, "results": [], "timestamp": 1}) + '\n\n').encode()
         self.content_type = "text/event-stream; charset=utf-8"
         self.create_status = 200
-        self.create_body = b'{"success":true,"data":{"message":"created"}}'
+        self.create_body = None
         self.delete_status = 200
+        self.revision = 0
+        self.reaction_id = None
         self.keep_open = False
         self.connected = threading.Event()
         self.release = threading.Event()
@@ -37,19 +41,46 @@ class CliTests(unittest.TestCase):
 
             def do_POST(self):
                 payload = self.rfile.read(int(self.headers["Content-Length"]))
-                case.requests.append(("POST", self.path, json.loads(payload)))
+                body = json.loads(payload)
+                case.requests.append(("POST", self.path, body))
+                case.reaction_id = str(uuid.uuid4())
+                case.revision += 1
                 self.send_response(case.create_status)
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(case.create_body)
+                self.wfile.write(case.create_body if case.create_body is not None else json.dumps({
+                    "success": True, "data": {
+                        "requestId": body["requestId"], "revision": case.revision, "durable": False,
+                        "components": [{"id": case.reaction_id, "name": body["component"]["definition"]["name"]}],
+                    },
+                }).encode())
 
             def do_DELETE(self):
-                case.requests.append(("DELETE", self.path, None))
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                case.requests.append(("DELETE", self.path, body))
+                case.revision += 1
                 self.send_response(case.delete_status)
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(b'{"success":true}')
+                self.wfile.write(json.dumps({"success": True, "data": {
+                    "requestId": body["requestId"], "revision": case.revision,
+                    "durable": False, "components": [],
+                }}).encode())
 
             def do_GET(self):
                 case.requests.append(("GET", self.path, None))
+                if self.path != "/events":
+                    responses = {
+                        "/api/v1/instances/selected/components/by-name/q": {"id": QUERY_ID, "name": "q"},
+                        f"/api/v1/instances/selected/queries/{QUERY_ID}": {"id": QUERY_ID, "name": "q", "status": "Running"},
+                        "/api/v1/instances/selected/computation/desired": {"revision": case.revision},
+                        f"/api/v1/instances/selected/reactions/{case.reaction_id}": {"id": case.reaction_id, "status": "Running"},
+                    }
+                    self.send_response(200 if self.path in responses else 404)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": self.path in responses, "data": responses.get(self.path)}).encode())
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", case.content_type)
                 self.end_headers()
@@ -86,10 +117,16 @@ class CliTests(unittest.TestCase):
 
     def assert_cleanup(self):
         post = next(item for item in self.requests if item[0] == "POST")
-        self.assertEqual(post[1], "/api/v1/instances/selected/reactions")
-        expected = f"{post[1]}/{post[2]['id']}"
-        self.assertIn(("DELETE", expected, None), self.requests)
-        return post[2]
+        self.assertEqual(post[1], "/api/v1/instances/selected/computation/ordinary-definitions")
+        expected = f"{post[1]}/{self.reaction_id}"
+        delete = next(item for item in self.requests if item[:2] == ("DELETE", expected))
+        self.assertEqual(delete[2]["expectedRevision"], post[2]["expectedRevision"] + 1)
+        uuid.UUID(delete[2]["requestId"])
+        definition = post[2]["component"]["definition"]
+        self.assertEqual(definition["queries"], [{"id": QUERY_ID}])
+        self.assertNotIn("id", definition)
+        self.assertTrue(definition["name"].startswith("sse-cli-"))
+        return definition
 
     def test_adapter_payload_log_and_disconnect_cleanup(self):
         self.payload = (
@@ -153,9 +190,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("PERSISTENCE_FAILED", result.stderr)
         self.assertIn("Creation was not confirmed", result.stderr)
-        self.assertEqual(len(self.requests), 1)
-        self.assertEqual(self.requests[0][0], "POST")
-        self.assertIn(self.requests[0][2]["id"], result.stderr)
+        posts = [item for item in self.requests if item[0] == "POST"]
+        self.assertEqual(len(posts), 1)
+        self.assertFalse(any(item[0] == "DELETE" for item in self.requests))
+        self.assertIn(posts[0][2]["requestId"], result.stderr)
+        self.assertIn(posts[0][2]["component"]["definition"]["name"], result.stderr)
         self.assertEqual(result.stdout, "")
 
     def test_ctrl_c_cleanup_and_cleanup_failure_exit_status(self):
@@ -185,10 +224,10 @@ class CliTests(unittest.TestCase):
                         process.kill()
                         process.communicate()
                 self.assertEqual(process.returncode, exit_status, stderr)
-                self.assertEqual(json.loads(stdout)["queryId"], "q")
+                self.assertEqual(json.loads(stdout)["queryId"], QUERY_ID)
                 self.assertEqual(self.assert_cleanup()["host"], "0.0.0.0")
                 if delete_status == 500:
-                    self.assertIn("Failed to delete reaction", stderr)
+                    self.assertIn("Could not delete reaction", stderr)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ TUTORIAL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
 import local_build
 from local_build import sha256
+from component_ids import component_ids
 
 
 INSTANCE = "building-comfort-server"
@@ -227,11 +228,18 @@ def get_json(url):
 def api_url():
     return f"http://127.0.0.1:{os.environ.get('SERVER_PORT', '8380')}/api/v1/instances/{INSTANCE}"
 
+def query_ids():
+    response = get_json(api_url() + "/queries")
+    if response.get("success") is not True:
+        raise RuntimeError(f"Query inspection failed: {response}")
+    return component_ids(response.get("data"), QUERIES, "queries")
+
 
 def check():
     proof = get_json(api_url() + "/runtime")
     if proof.get("success") is not True or proof.get("data") != {
         "instanceId": INSTANCE, "runtime": "computationGraph", "running": True,
+        "allowExternalComponentIds": False,
     }:
         raise RuntimeError(f"Expected this instance's running ComputationGraph, got {proof}")
     for kind, expected in (
@@ -243,10 +251,7 @@ def check():
         if response.get("success") is not True:
             raise RuntimeError(f"{kind} inspection failed: {response}")
         components = response["data"]
-        identities = {component["id"] for component in components}
-        allowed = expected | ({"__component_graph__"} if kind == "sources" else set())
-        if not expected <= identities or not identities <= allowed:
-            raise RuntimeError(f"Unexpected {kind}: {components}")
+        component_ids(components, expected, kind)
         if any(component["status"].lower() != "running" for component in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")
     dashboard = f"http://127.0.0.1:{os.environ.get('DASHBOARD_PORT', '3000')}"

@@ -23,6 +23,7 @@ import uuid
 TUTORIAL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
 import local_build
+from component_ids import component_ids
 
 INSTANCE = "high-risk-containers-server"
 PLUGINS = (
@@ -336,14 +337,14 @@ def api(path):
 
 def check():
     proof = api("runtime")
-    if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True}:
+    if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True,
+                 "allowExternalComponentIds": False}:
         raise RuntimeError(f"Wrong runtime identity/state: {proof}")
     for kind, expected in (("sources", {"k8s", "devops"}), ("queries", QUERIES),
                            ("reactions", {"high-risk-containers-dashboard"})):
         items = api(kind)
-        actual = {item["id"] for item in items}
-        allowed = expected | ({"__component_graph__"} if kind == "sources" else
-                              {"discord-alerts"} if kind == "reactions" else set())
+        actual = set(component_ids(items, kind=kind))
+        allowed = expected | ({"discord-alerts"} if kind == "reactions" else set())
         if not expected <= actual <= allowed or any(item["status"].lower() != "running" for item in items):
             raise RuntimeError(f"{kind} not ready: {items}")
     inspection = api("computation")
@@ -357,6 +358,9 @@ def check():
     if not any(item["id"] == "high-risk-containers" for item in dashboards):
         raise RuntimeError("Predefined dashboard is not available")
     return {"runtime": proof, "computation": inspection}
+
+def query_ids():
+    return component_ids(api("queries"), QUERIES, "queries")
 
 
 def config():

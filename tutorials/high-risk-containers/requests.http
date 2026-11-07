@@ -17,6 +17,7 @@
 # =============================================================================
 # Use with the VSCode REST Client extension (humao.rest-client) or similar.
 # API documentation is served at http://localhost:8380/api/v1/docs/
+# Run each named lookup before its paired UUID-addressed request.
 
 @baseUrl = http://localhost:8380
 @dashboardUrl = http://localhost:3000
@@ -45,11 +46,19 @@ GET {{instance}}/computation
 ### List all sources
 GET {{instance}}/sources
 
+### Resolve the PostgreSQL source
+# @name devops
+GET {{instance}}/components/by-name/devops
+
 ### Get the PostgreSQL (RiskyImage) source status
-GET {{instance}}/sources/devops
+GET {{instance}}/sources/{{devops.response.body.$.data.id}}
+
+### Resolve the Kubernetes source
+# @name kubernetes
+GET {{instance}}/components/by-name/k8s
 
 ### Get the Kubernetes source status
-GET {{instance}}/sources/k8s
+GET {{instance}}/sources/{{kubernetes.response.body.$.data.id}}
 
 ### ==========================================================================
 ### Continuous Query
@@ -58,11 +67,19 @@ GET {{instance}}/sources/k8s
 ### List all queries
 GET {{instance}}/queries
 
+### Resolve the inventory query
+# @name inventory
+GET {{instance}}/components/by-name/pod-containers
+
 ### Shared inventory: graph-change v1 nodes labeled ContainerImage
-GET {{instance}}/queries/pod-containers/results
+GET {{instance}}/queries/{{inventory.response.body.$.data.id}}/results
+
+### Resolve the risk query
+# @name risk
+GET {{instance}}/components/by-name/high-risk-containers
 
 ### Running high risk containers (the dashboard feed)
-GET {{instance}}/queries/high-risk-containers/results
+GET {{instance}}/queries/{{risk.response.body.$.data.id}}/results
 
 ### ==========================================================================
 ### Reactions
@@ -71,8 +88,12 @@ GET {{instance}}/queries/high-risk-containers/results
 ### List all reactions
 GET {{instance}}/reactions
 
+### Resolve the dashboard reaction
+# @name dashboard
+GET {{instance}}/components/by-name/high-risk-containers-dashboard
+
 ### Get the dashboard reaction status
-GET {{instance}}/reactions/high-risk-containers-dashboard
+GET {{instance}}/reactions/{{dashboard.response.body.$.data.id}}
 
 ### Open the dashboard in a browser instead: {{dashboardUrl}}
 ### The seeded "High Risk Containers" dashboard is available via the dashboard API:

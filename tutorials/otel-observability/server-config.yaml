@@ -38,7 +38,7 @@ instances:
   - id: otel-observability-server
     sources:
       - kind: postgres
-        id: slo
+        name: slo
         autoStart: true
         host: "127.0.0.1"
         port: ${POSTGRES_PORT:-5732}
@@ -59,7 +59,7 @@ instances:
           kind: postgres
 
       - kind: kubernetes
-        id: k8s
+        name: k8s
         autoStart: true
         resources:
           - apiVersion: apps/v1
@@ -74,7 +74,7 @@ instances:
   # No bootstrap: late subscribers wait for the next OTLP export. The mock
   # services keep sending, so the graph fills in within a few seconds.
       - kind: otel
-        id: otel
+        name: otel
         autoStart: true
         grpcBind: "${OTEL_GRPC_BIND:-0.0.0.0:14317}"
         httpBind: "${OTEL_HTTP_BIND:-0.0.0.0:14318}"
@@ -94,7 +94,7 @@ instances:
     queries:
   # Always-on view of the current deployment + live p99. Used by the dashboard
   # even when no SLO alert is firing.
-      - id: current-health
+      - name: current-health
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -138,7 +138,7 @@ instances:
 
   # KPI / gauge must not aggregate frontend and payments (80 / 120 / 400)
   # or the dashboard jumps as those rows arrive.
-      - id: checkout-health
+      - name: checkout-health
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -155,7 +155,7 @@ instances:
 
   # Validated OSMC story query: fire only after the metric stays above the
   # policy threshold for five seconds.
-      - id: slo-alert
+      - name: slo-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -184,7 +184,7 @@ instances:
                 property: service
               - label: service_slo_policy
                 property: service_name
-      - id: service-dependencies
+      - name: service-dependencies
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -200,7 +200,7 @@ instances:
               - DEPENDS_ON
 
   # Live pulse. value > 0 is on; 0 is an explicit /heartbeat/off.
-      - id: checkout-heartbeat
+      - name: checkout-heartbeat
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -223,7 +223,7 @@ instances:
 
   # Missing when checkout sends pulse 0, or when the last pulse is older
   # than 10 seconds (process gone, no export at all).
-      - id: missing-heartbeat
+      - name: missing-heartbeat
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -246,7 +246,7 @@ instances:
 # =============================================================================
     reactions:
       - kind: dashboard
-        id: otel-observability-dashboard
+        name: otel-observability-dashboard
         autoStart: true
         queries:
           - current-health
@@ -363,7 +363,7 @@ instances:
                     {{/if}}
 
       - kind: log
-        id: console-log
+        name: console-log
         autoStart: true
         queries:
           - slo-alert

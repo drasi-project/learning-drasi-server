@@ -17,6 +17,7 @@
 # =============================================================================
 # Use with the VSCode REST Client extension (humao.rest-client) or similar.
 # API documentation is served at http://localhost:8380/api/v1/docs/
+# Run each named lookup before its paired UUID-addressed request.
 
 @baseUrl = http://localhost:8380
 @instanceId = otel-observability-server
@@ -44,14 +45,26 @@ GET {{baseUrl}}/api/versions
 ### List all sources
 GET {{instanceUrl}}/sources
 
+### Resolve the PostgreSQL SLO source
+# @name sloSource
+GET {{instanceUrl}}/components/by-name/slo
+
 ### Get the PostgreSQL SLO source status
-GET {{instanceUrl}}/sources/slo
+GET {{instanceUrl}}/sources/{{sloSource.response.body.$.data.id}}
+
+### Resolve the Kubernetes source
+# @name kubernetes
+GET {{instanceUrl}}/components/by-name/k8s
 
 ### Get the Kubernetes source status
-GET {{instanceUrl}}/sources/k8s
+GET {{instanceUrl}}/sources/{{kubernetes.response.body.$.data.id}}
+
+### Resolve the OTel source
+# @name otelSource
+GET {{instanceUrl}}/components/by-name/otel
 
 ### Get the OTel source status
-GET {{instanceUrl}}/sources/otel
+GET {{instanceUrl}}/sources/{{otelSource.response.body.$.data.id}}
 
 ### ==========================================================================
 ### Continuous Queries
@@ -60,17 +73,33 @@ GET {{instanceUrl}}/sources/otel
 ### List all queries
 GET {{instanceUrl}}/queries
 
+### Resolve current health
+# @name currentHealth
+GET {{instanceUrl}}/components/by-name/current-health
+
 ### Current health (always-on deployment/metric view)
-GET {{instanceUrl}}/queries/current-health/results
+GET {{instanceUrl}}/queries/{{currentHealth.response.body.$.data.id}}/results
+
+### Resolve SLO alerts
+# @name sloAlert
+GET {{instanceUrl}}/components/by-name/slo-alert
 
 ### Active SLO alerts
-GET {{instanceUrl}}/queries/slo-alert/results
+GET {{instanceUrl}}/queries/{{sloAlert.response.body.$.data.id}}/results
+
+### Resolve service dependencies
+# @name serviceDependencies
+GET {{instanceUrl}}/components/by-name/service-dependencies
 
 ### Service dependency edges
-GET {{instanceUrl}}/queries/service-dependencies/results
+GET {{instanceUrl}}/queries/{{serviceDependencies.response.body.$.data.id}}/results
+
+### Resolve missing heartbeats
+# @name missingHeartbeat
+GET {{instanceUrl}}/components/by-name/missing-heartbeat
 
 ### Missing heartbeats
-GET {{instanceUrl}}/queries/missing-heartbeat/results
+GET {{instanceUrl}}/queries/{{missingHeartbeat.response.body.$.data.id}}/results
 
 ### ==========================================================================
 ### Reactions
@@ -79,8 +108,12 @@ GET {{instanceUrl}}/queries/missing-heartbeat/results
 ### List all reactions
 GET {{instanceUrl}}/reactions
 
+### Resolve the dashboard reaction
+# @name dashboard
+GET {{instanceUrl}}/components/by-name/otel-observability-dashboard
+
 ### Get the dashboard reaction status
-GET {{instanceUrl}}/reactions/otel-observability-dashboard
+GET {{instanceUrl}}/reactions/{{dashboard.response.body.$.data.id}}
 
 ### Seeded dashboards
 GET {{dashboardUrl}}/api/dashboards

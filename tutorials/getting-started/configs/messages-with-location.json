@@ -1,5 +1,5 @@
 {
-  "id": "messages-with-location",
+  "name": "messages-with-location",
   "autoStart": true,
   "inputs": ["all-messages", "location-tracker"],
   "result": {"label": "LocatedMessage"},

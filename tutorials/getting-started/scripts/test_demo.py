@@ -6,10 +6,12 @@ import json
 import io
 import os
 from pathlib import Path
+import re
 import socket
 import tempfile
 import unittest
 import urllib.error
+from uuid import UUID
 from unittest.mock import patch
 
 import yaml
@@ -41,7 +43,8 @@ class TutorialTests(unittest.TestCase):
             self.assertNotIn("pluginRegistry", config)
             instance, = config["instances"]
             self.assertEqual(instance["id"], demo.INSTANCE)
-            queries = {item["id"]: item for item in instance["queries"]}
+            queries = {item["name"]: item for item in instance["queries"]}
+            self.assertTrue(all("id" not in item for item in instance["queries"]))
             self.assertEqual(list(queries), expected[:step - 2])
             for name, query in previous.items():
                 self.assertEqual(queries[name], query)
@@ -53,12 +56,12 @@ class TutorialTests(unittest.TestCase):
                                      fixture | {"query": " ".join(fixture["query"].split())})
             previous = queries
         complete = yaml.safe_load((demo.TUTORIAL / "server-config.yaml").read_text())["instances"][0]
-        self.assertEqual([q["id"] for q in complete["queries"]], expected + ["messages-with-location"])
+        self.assertEqual([q["name"] for q in complete["queries"]], expected + ["messages-with-location"])
         for query in complete["queries"]:
-            if query["id"] in previous:
-                self.assertEqual(query, previous[query["id"]])
+            if query["name"] in previous:
+                self.assertEqual(query, previous[query["name"]])
         self.assertEqual(complete["queries"][-1]["inputs"], ["all-messages", "location-tracker"])
-        location_source = next(s for s in complete["sources"] if s["id"] == "location-tracker")
+        location_source = next(s for s in complete["sources"] if s["name"] == "location-tracker")
         path = location_source["bootstrapProvider"]["filePaths"][0]
         self.assertEqual((demo.state() / path).resolve(), demo.TUTORIAL / "locations.jsonl")
         self.assertEqual(previous["all-messages"]["result"]["label"], "Message")
@@ -73,10 +76,32 @@ class TutorialTests(unittest.TestCase):
         self.assertNotIn("PG_CREATE_LOGICAL_REPLICATION_SLOT", sql)
         self.assertIn('CREATE TABLE "MESSAGE"', sql)
 
+    def test_revisioned_http_queries_match_authoring_definitions(self):
+        definitions = {}
+        for request in (demo.TUTORIAL / "requests.http").read_text().split("###"):
+            marker = "Content-Type: application/json\n\n"
+            if marker not in request:
+                continue
+            body = re.sub(r"\{\{[^{}]+\}\}", "0", request.split(marker, 1)[1]).strip()
+            payload = json.loads(body)
+            component = payload.get("component", {})
+            if component.get("type") != "query":
+                continue
+            self.assertEqual(payload["expectedRevision"], 0)
+            self.assertTrue(payload["requestId"])
+            definition = component["definition"]
+            definitions[definition["name"]] = definition
+        self.assertEqual(set(definitions), {
+            "hello-world-senders", "message-counts", "inactive-senders", "messages-with-location",
+        })
+        for name, definition in definitions.items():
+            fixture = json.loads((demo.TUTORIAL / f"configs/{name}.json").read_text())
+            self.assertEqual(definition, fixture)
+
     def test_generated_reference_uses_absolute_scriptfile_path(self):
         content = (demo.TUTORIAL / "server-config.yaml").read_text()
         config = yaml.safe_load(demo.working_config(content))
-        source = next(s for s in config["instances"][0]["sources"] if s["id"] == "location-tracker")
+        source = next(s for s in config["instances"][0]["sources"] if s["name"] == "location-tracker")
         self.assertEqual(source["bootstrapProvider"]["filePaths"],
                          [str(demo.TUTORIAL / "locations.jsonl")])
 
@@ -175,7 +200,7 @@ class TutorialTests(unittest.TestCase):
             {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": False},
             {"instanceId": demo.INSTANCE, "runtime": "legacy", "running": True},
         ):
-            with patch.object(demo, "api", return_value=runtime):
+            with patch.object(demo, "api", return_value={**runtime, "allowExternalComponentIds": False}):
                 with self.assertRaisesRegex(RuntimeError, "runtime"):
                     demo.check()
 
@@ -188,6 +213,95 @@ class TutorialTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PERSISTENCE_FAILED"):
                 demo.api("reactions", method="POST", body={"kind": "log"})
             self.assertEqual(request.call_count, 1)
+
+    def test_creation_uses_revision_and_receipt_assigned_uuid(self):
+        identifier = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
+        request_id = "32408b47-4678-45b1-b77d-917519d6fdb4"
+        definition = {"name": "new-query", "query": "RETURN 1"}
+        with patch.object(demo.uuid, "uuid4", return_value=UUID(request_id)), \
+                patch.object(demo, "api", side_effect=[
+                    {"revision": 7},
+                    {"requestId": request_id, "components": [{"id": identifier, "name": "new-query"}]},
+                ]) as api:
+            self.assertEqual(demo.create_query(definition), identifier)
+        api.assert_called_with("computation/ordinary-definitions", method="POST", body={
+            "expectedRevision": 7, "requestId": request_id,
+            "component": {"type": "query", "definition": definition},
+        })
+        self.assertNotIn("id", definition)
+
+    def test_update_retains_uuid_and_does_not_create_new_members(self):
+        identifier = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
+        request_id = "32408b47-4678-45b1-b77d-917519d6fdb4"
+        with patch.object(demo.uuid, "uuid4", return_value=UUID(request_id)), \
+                patch.object(demo, "api", side_effect=[
+                    {"revision": 8}, {"requestId": request_id, "components": []},
+                ]) as api:
+            self.assertEqual(demo.configure_component("reaction", {"name": "log"}, identifier), identifier)
+        self.assertEqual(api.call_args.args[0], f"computation/ordinary-definitions/{identifier}")
+        self.assertEqual(api.call_args.kwargs["method"], "PUT")
+
+    def test_creation_failure_reports_nonce_without_retry(self):
+        request_id = "32408b47-4678-45b1-b77d-917519d6fdb4"
+        with patch.object(demo.uuid, "uuid4", return_value=UUID(request_id)), \
+                patch.object(demo, "api", side_effect=[{"revision": 8}, TimeoutError("lost reply")]) as api:
+            with self.assertRaisesRegex(RuntimeError, request_id):
+                demo.create_query({"name": "new-query"})
+        self.assertEqual(api.call_count, 2)
+
+    def test_explicit_deletion_uses_the_bound_uuid_and_revision(self):
+        identifier = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
+        request_id = "32408b47-4678-45b1-b77d-917519d6fdb4"
+        with patch.object(demo, "component_id", return_value=identifier), \
+                patch.object(demo.uuid, "uuid4", return_value=UUID(request_id)), \
+                patch.object(demo, "api", side_effect=[
+                    {"id": identifier, "name": "log-reaction"}, {"revision": 8},
+                    {"requestId": request_id, "components": []}, [],
+                ]) as api:
+            self.assertEqual(demo.delete_component("reaction", "log-reaction"), identifier)
+        self.assertEqual(api.call_args_list[2].args, (f"computation/ordinary-definitions/{identifier}",))
+        self.assertEqual(api.call_args_list[2].kwargs, {
+            "method": "DELETE", "body": {"expectedRevision": 8, "requestId": request_id},
+        })
+
+    def test_uncertain_deletion_does_not_retry_or_recreate(self):
+        identifier = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
+        request_id = "32408b47-4678-45b1-b77d-917519d6fdb4"
+        with patch.object(demo, "component_id", return_value=identifier), \
+                patch.object(demo.uuid, "uuid4", return_value=UUID(request_id)), \
+                patch.object(demo, "api", side_effect=[
+                    {"id": identifier, "name": "log-reaction"}, {"revision": 8}, TimeoutError("lost reply"),
+                ]) as api:
+            with self.assertRaisesRegex(RuntimeError, request_id):
+                demo.delete_component("reaction", "log-reaction")
+        self.assertEqual(api.call_count, 3)
+
+    def test_unsupported_update_never_falls_back_to_replacement(self):
+        identifier = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
+        with patch.object(demo, "api", side_effect=[
+            {"revision": 8}, RuntimeError("factory does not support updates"),
+        ]) as api:
+            with self.assertRaisesRegex(RuntimeError, "factory does not support updates"):
+                demo.configure_component("reaction", {"name": "log-reaction"}, identifier)
+        self.assertEqual(api.call_count, 2)
+        self.assertEqual(api.call_args.kwargs["method"], "PUT")
+
+    def test_name_lookup_and_results_keep_names_separate_from_uuid(self):
+        identifier = "08f93596-5c0d-4c5d-890a-cf015bb3d809"
+        with patch.object(demo, "api", side_effect=[
+            {"id": identifier, "name": "orders/v1"}, [{"count": 2}],
+        ]) as api:
+            self.assertEqual(demo.query_results("orders/v1"), [{"count": 2}])
+        self.assertEqual(api.call_args_list[0].args, ("components/by-name/orders%2Fv1",))
+        self.assertEqual(api.call_args_list[1].args, (f"queries/{identifier}/results",))
+
+    def test_waiting_uses_query_collection_and_reports_failures(self):
+        with patch.object(demo, "api", return_value={"status": "Running"}) as api:
+            demo.wait_running("query", "08f93596-5c0d-4c5d-890a-cf015bb3d809")
+        self.assertEqual(api.call_args.args, ("queries/08f93596-5c0d-4c5d-890a-cf015bb3d809",))
+        with patch.object(demo, "api", return_value={"status": "Error", "errorMessage": "factory failed"}):
+            with self.assertRaisesRegex(RuntimeError, "factory failed"):
+                demo.wait_running("reaction", "32408b47-4678-45b1-b77d-917519d6fdb4")
 
 
 if __name__ == "__main__":

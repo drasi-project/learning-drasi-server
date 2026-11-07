@@ -378,7 +378,7 @@ factory configuration to express this demo.
 ```yaml
 sources:
   - kind: postgres
-    id: building-facilities
+    name: building-facilities
     autoStart: true
 
     # Connection (supplied via environment variables, with defaults)
@@ -496,7 +496,7 @@ The floor query reads `RoomComfort` nodes, grouping by their floor and building
 properties. It needs neither the original database joins nor the room formula:
 
 ```yaml
-- id: floor-comfort-level-calc
+- name: floor-comfort-level-calc
   inputs: [room-comfort]
   result:
     label: FloorComfort
@@ -511,7 +511,7 @@ The building query averages those floor results. Each floor contributes once,
 so a floor with more rooms does not receive extra weight:
 
 ```yaml
-- id: building-comfort-level-calc
+- name: building-comfort-level-calc
   inputs: [floor-comfort-level-calc]
   result:
     label: BuildingComfort
@@ -525,7 +525,7 @@ Alerts are simple filters over the corresponding maintained output. For example,
 the building alert does no aggregation itself:
 
 ```yaml
-- id: building-alert
+- name: building-alert
   inputs: [building-comfort-level-calc]
   result:
     label: BuildingAlert
@@ -547,7 +547,7 @@ the same rule over their corresponding inputs.
 ```yaml
 reactions:
   - kind: dashboard
-    id: building-comfort-dashboard
+    name: building-comfort-dashboard
     queries:
       - room-comfort
       - building-comfort-level-calc
@@ -630,9 +630,11 @@ acceptance exercises.
 > You can also query Drasi Server's REST API while the demo runs — see `requests.http` for ready-made requests, for example:
 >
 > ```text
-> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/room-comfort/results
-> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/room-alert/results
+> GET http://localhost:8380/api/v1/instances/building-comfort-server/components/by-name/room-comfort
+> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/<returned-uuid>/results
 > ```
+> The paired requests in `requests.http` pass the returned UUID automatically.
+> Component names are not valid substitutes for UUIDs in query-result URLs.
 
 ## Clean Up
 When you're finished, stop Drasi Server with **Ctrl+C** in Terminal 1, then remove the database container:

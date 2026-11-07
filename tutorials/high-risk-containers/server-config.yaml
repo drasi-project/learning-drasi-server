@@ -40,7 +40,7 @@ instances:
     sources:
   # PostgreSQL source: the list of high risk image tags.
       - kind: postgres
-        id: devops
+        name: devops
         autoStart: true
 
     # Connection settings.
@@ -75,7 +75,7 @@ instances:
   # spec into top-level properties, including a `containers` list of
   # { name, image, ... } objects that the query unwinds below.
       - kind: kubernetes
-        id: k8s
+        name: k8s
         autoStart: true
         resources:
           - apiVersion: v1
@@ -97,7 +97,7 @@ instances:
     queries:
   # Normalize Pod container arrays once. Other queries can consume this
   # graph-change v1 output without repeating the Kubernetes subscription/unwind.
-      - id: pod-containers
+      - name: pod-containers
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -127,7 +127,7 @@ instances:
             c.image AS image
 
   # The risky-image join consumes derived ContainerImage nodes, not raw Pods.
-      - id: high-risk-containers
+      - name: high-risk-containers
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -162,7 +162,7 @@ instances:
   # The "High Risk Containers" dashboard is seeded on first startup: a count
   # KPI, the live table of risky containers, and a Markdown detail panel.
       - kind: dashboard
-        id: high-risk-containers-dashboard
+        name: high-risk-containers-dashboard
         autoStart: true
         queries:
           - high-risk-containers
@@ -230,7 +230,7 @@ instances:
   # See the "Optional: Discord Alerts" step in the README for the full walkthrough.
   #
       # - kind: http
-      #   id: discord-alerts
+      #   name: discord-alerts
       #   autoStart: true
       #   queries:
       #     - high-risk-containers

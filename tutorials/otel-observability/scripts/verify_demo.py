@@ -124,8 +124,9 @@ def main():
         observe("restored exporter timer Removed", "missing-heartbeat", empty)
         observe("restored dependency edges", "service-dependencies", dependencies)
 
+        identities = demo.query_ids()
         for query in demo.QUERIES:
-            result = demo.get_json(dashboard + f"/api/queries/{query}/snapshot")
+            result = demo.get_json(dashboard + f"/api/queries/{identities[query]}/snapshot")
             rows = [row["v"] for row in result["rows"]]
             snapshots["dashboard " + query] = rows
             if query in ("slo-alert", "missing-heartbeat") and rows:
@@ -138,7 +139,7 @@ def main():
         messages = [json.loads(line) for line in events.read_text().splitlines()]
         for query in ("slo-alert", "missing-heartbeat"):
             operations = {
-                diff["op"] for message in messages if message.get("query_id") == query
+                diff["op"] for message in messages if message.get("query_id") == identities[query]
                 for diff in message.get("results", [])
             }
             if not {"add", "delete"} <= operations:

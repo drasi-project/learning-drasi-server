@@ -1,70 +1,214 @@
 # Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
 # Run sections in walkthrough order. Change ports here if you changed .env.
+# Run each named lookup/revision request before the operation that uses it.
+# Keep a requestId for retries of that operation; change it for a new operation.
 @baseUrl = http://127.0.0.1:8180
 @instance = getting-started-server
 @api = {{baseUrl}}/api/v1/instances/{{instance}}
-@locations = http://127.0.0.1:8182/sources/location-tracker/events
+@locations = http://127.0.0.1:8182/sources/{{locationSource.response.body.$.data.id}}/events
 
 ### Exact runtime readiness
 GET {{api}}/runtime
 
+### Resolve the PostgreSQL source
+# @name postgresSource
+GET {{api}}/components/by-name/my-postgres
+
 ### Source status
-GET {{api}}/sources/my-postgres
+GET {{api}}/sources/{{postgresSource.response.body.$.data.id}}
+
+### Resolve the first query
+# @name allMessages
+GET {{api}}/components/by-name/all-messages
 
 ### Step 3: first result set
-GET {{api}}/queries/all-messages/results
+GET {{api}}/queries/{{allMessages.response.body.$.data.id}}/results
+
+### Read the revision before adding the filtered query
+# @name beforeHello
+GET {{api}}/computation/desired
 
 ### Step 4: consume the all-messages query output
-POST {{api}}/queries
-Content-Type: application/json
-
-< ./configs/hello-world-senders.json
-
-### Replace the Log reaction to subscribe to both queries
-PUT {{api}}/reactions/log-reaction
-Content-Type: application/json
-
-{"kind":"log","id":"log-reaction","queries":["all-messages","hello-world-senders"],"autoStart":true}
-
-### Filtered result set
-GET {{api}}/queries/hello-world-senders/results
-
-### Step 5: aggregation
-POST {{api}}/queries
-Content-Type: application/json
-
-< ./configs/message-counts.json
-
-### Aggregated result set
-GET {{api}}/queries/message-counts/results
-
-### Step 6: source-based change timestamps
-POST {{api}}/queries
-Content-Type: application/json
-
-< ./configs/inactive-senders.json
-
-### Inactive senders
-GET {{api}}/queries/inactive-senders/results
-
-### Step 7: locations source (relative to Server's .runtime/<run-id> working directory)
-POST {{api}}/sources
+# @name createHello
+POST {{api}}/computation/ordinary-definitions
 Content-Type: application/json
 
 {
-  "kind":"http", "id":"location-tracker", "autoStart":true,
-  "host":"127.0.0.1", "port":8182,
-  "bootstrapProvider":{"kind":"scriptfile","filePaths":["../../locations.jsonl"]}
+  "expectedRevision": {{beforeHello.response.body.$.data.revision}},
+  "requestId": "getting-started/hello-world-senders/1",
+  "component": {
+    "type": "query",
+    "definition": {
+      "name": "hello-world-senders", "autoStart": true,
+      "inputs": ["all-messages"], "result": {"label": "HelloWorldSender"},
+      "query": "MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender",
+      "queryLanguage": "Cypher"
+    }
+  }
 }
 
-### Join the query output with location data
-POST {{api}}/queries
+### Resolve the existing Log reaction
+# @name logReaction
+GET {{api}}/components/by-name/log-reaction
+
+### Read the revision before changing its inputs
+# @name beforeLog
+GET {{api}}/computation/desired
+
+### Explicitly remove the creation-only Log reaction
+DELETE {{api}}/computation/ordinary-definitions/{{logReaction.response.body.$.data.id}}
 Content-Type: application/json
 
-< ./configs/messages-with-location.json
+{
+  "expectedRevision": {{beforeLog.response.body.$.data.revision}},
+  "requestId": "getting-started/remove-log/1"
+}
+
+### Read the revision after confirmed removal
+# @name afterLogRemoval
+GET {{api}}/computation/desired
+
+### Recreate the Log reaction with a newly assigned UUID
+POST {{api}}/computation/ordinary-definitions
+Content-Type: application/json
+
+{
+  "expectedRevision": {{afterLogRemoval.response.body.$.data.revision}},
+  "requestId": "getting-started/recreate-log/1",
+  "component": {
+    "type": "reaction",
+    "definition": {"kind":"log","name":"log-reaction","queries":["all-messages","hello-world-senders"],"autoStart":true}
+  }
+}
+
+### Resolve the filtered query
+# @name helloWorld
+GET {{api}}/components/by-name/hello-world-senders
+
+### Filtered result set
+GET {{api}}/queries/{{helloWorld.response.body.$.data.id}}/results
+
+### Read the revision before adding aggregation
+# @name beforeCounts
+GET {{api}}/computation/desired
+
+### Step 5: aggregation
+# @name createCounts
+POST {{api}}/computation/ordinary-definitions
+Content-Type: application/json
+
+{
+  "expectedRevision": {{beforeCounts.response.body.$.data.revision}},
+  "requestId": "getting-started/message-counts/1",
+  "component": {
+    "type": "query",
+    "definition": {
+      "name": "message-counts", "autoStart": true,
+      "inputs": ["all-messages"], "result": {"label": "MessageCount"},
+      "query": "MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count",
+      "queryLanguage": "Cypher"
+    }
+  }
+}
+
+### Resolve the aggregation query
+# @name messageCounts
+GET {{api}}/components/by-name/message-counts
+
+### Aggregated result set
+GET {{api}}/queries/{{messageCounts.response.body.$.data.id}}/results
+
+### Read the revision before adding inactivity detection
+# @name beforeInactive
+GET {{api}}/computation/desired
+
+### Step 6: source-based change timestamps
+# @name createInactive
+POST {{api}}/computation/ordinary-definitions
+Content-Type: application/json
+
+{
+  "expectedRevision": {{beforeInactive.response.body.$.data.revision}},
+  "requestId": "getting-started/inactive-senders/1",
+  "component": {
+    "type": "query",
+    "definition": {
+      "name": "inactive-senders", "autoStart": true,
+      "inputs": ["my-postgres"], "result": {"label": "InactiveSender"},
+      "query": "MATCH (m:Message) WITH m.From AS MessageFrom, max(drasi.changeDateTime(m)) AS LastMessageTimestamp WHERE LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }) OR drasi.trueLater(LastMessageTimestamp <= datetime.realtime() - duration({ seconds: 20 }), LastMessageTimestamp + duration({ seconds: 20 })) RETURN MessageFrom, LastMessageTimestamp",
+      "queryLanguage": "Cypher"
+    }
+  }
+}
+
+### Resolve the inactivity query
+# @name inactiveSenders
+GET {{api}}/components/by-name/inactive-senders
+
+### Inactive senders
+GET {{api}}/queries/{{inactiveSenders.response.body.$.data.id}}/results
+
+### Read the revision before adding locations
+# @name beforeLocations
+GET {{api}}/computation/desired
+
+### Step 7: locations source (relative to Server's .runtime/<run-id> working directory)
+POST {{api}}/computation/ordinary-definitions
+Content-Type: application/json
+
+{
+  "expectedRevision": {{beforeLocations.response.body.$.data.revision}},
+  "requestId": "getting-started/location-tracker/1",
+  "component": {
+    "type": "source",
+    "definition": {
+      "kind":"http", "name":"location-tracker", "autoStart":true,
+      "host":"127.0.0.1", "port":8182,
+      "bootstrapProvider":{"kind":"scriptfile","filePaths":["../../locations.jsonl"]}
+    }
+  }
+}
+
+### Resolve the HTTP source for its event URL
+# @name locationSource
+GET {{api}}/components/by-name/location-tracker
+
+### Read the revision before adding the join
+# @name beforeJoin
+GET {{api}}/computation/desired
+
+### Join the query output with location data
+# @name createJoin
+POST {{api}}/computation/ordinary-definitions
+Content-Type: application/json
+
+{
+  "expectedRevision": {{beforeJoin.response.body.$.data.revision}},
+  "requestId": "getting-started/messages-with-location/1",
+  "component": {
+    "type": "query",
+    "definition": {
+      "name": "messages-with-location", "autoStart": true,
+      "inputs": ["all-messages", "location-tracker"], "result": {"label": "LocatedMessage"},
+      "query": "MATCH (m:Message)-[:FROM_USER]->(u:UserLocation) RETURN m.MessageId AS Id, m.Message AS Message, m.From AS Sender, u.location AS Location, u.status AS Status",
+      "queryLanguage": "Cypher",
+      "joins": [{
+        "id": "FROM_USER",
+        "keys": [
+          {"label": "Message", "property": "From"},
+          {"label": "UserLocation", "property": "name"}
+        ]
+      }]
+    }
+  }
+}
+
+### Resolve the joined query
+# @name messagesWithLocation
+GET {{api}}/components/by-name/messages-with-location
 
 ### Joined current result set
-GET {{api}}/queries/messages-with-location/results
+GET {{api}}/queries/{{messagesWithLocation.response.body.$.data.id}}/results
 
 ### Move Brian
 POST {{locations}}

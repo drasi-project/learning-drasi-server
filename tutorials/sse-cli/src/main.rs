@@ -50,12 +50,16 @@ struct Args {
     )]
     instance: Option<String>,
 
-    /// Query ID to subscribe to
-    #[arg(short, long, env = "DRASI_QUERY", required_unless_present = "sse_url")]
+    /// Exact query name to resolve once, even when it looks like a UUID
+    #[arg(short, long, env = "DRASI_QUERY", required_unless_present_any = ["sse_url", "query_id"], conflicts_with = "query_id")]
     query: Option<String>,
 
+    /// Existing query UUID, instead of resolving a name
+    #[arg(long, env = "DRASI_QUERY_ID", conflicts_with = "query")]
+    query_id: Option<uuid::Uuid>,
+
     /// Observe an existing SSE endpoint without creating or deleting a reaction
-    #[arg(long, conflicts_with_all = ["server", "instance", "query", "sse_port", "sse_host"])]
+    #[arg(long, conflicts_with_all = ["server", "instance", "query", "query_id", "sse_port", "sse_host"])]
     sse_url: Option<String>,
 
     /// Show heartbeat messages (debug mode)
@@ -86,12 +90,17 @@ fn http_url(value: &str) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
-fn reaction_api_url(
+fn instance_api_url(
     server: &str,
     instance: &str,
-    reaction: Option<&str>,
+    segments: &[&str],
 ) -> Result<reqwest::Url, String> {
-    if instance.is_empty() || matches!(instance, "." | "..") {
+    if instance.is_empty()
+        || matches!(instance, "." | "..")
+        || segments
+            .iter()
+            .any(|segment| segment.is_empty() || matches!(*segment, "." | ".."))
+    {
         return Err("A valid instance ID is required".into());
     }
     let mut url = http_url(server)?;
@@ -103,12 +112,21 @@ fn reaction_api_url(
             .path_segments_mut()
             .map_err(|_| "Server URL cannot be used as a base".to_string())?;
         path.pop_if_empty()
-            .extend(["api", "v1", "instances", instance, "reactions"]);
-        if let Some(reaction) = reaction {
-            path.push(reaction);
-        }
+            .extend(["api", "v1", "instances", instance])
+            .extend(segments);
     }
     Ok(url)
+}
+
+fn reaction_api_url(
+    server: &str,
+    instance: &str,
+    reaction: Option<&str>,
+) -> Result<reqwest::Url, String> {
+    match reaction {
+        Some(id) => instance_api_url(server, instance, &["reactions", id]),
+        None => instance_api_url(server, instance, &["reactions"]),
+    }
 }
 
 fn reaction_stream_url(server: &str, port: u16) -> Result<reqwest::Url, String> {
@@ -132,15 +150,15 @@ async fn response_error(resp: reqwest::Response, operation: &str) -> String {
 }
 
 fn reaction_config(
-    reaction_id: &str,
+    reaction_name: &str,
     query_id: &str,
     sse_port: u16,
     sse_host: std::net::IpAddr,
 ) -> serde_json::Value {
     serde_json::json!({
         "kind": "sse",
-        "id": reaction_id,
-        "queries": [query_id],
+        "name": reaction_name,
+        "queries": [{"id": query_id}],
         "autoStart": true,
         "host": sse_host.to_string(),
         "port": sse_port,
@@ -148,32 +166,149 @@ fn reaction_config(
     })
 }
 
+#[derive(serde::Deserialize)]
+struct ApiResponse<T> {
+    success: bool,
+    data: Option<T>,
+}
+
+#[derive(serde::Deserialize)]
+struct AssignedComponent {
+    id: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigurationReceipt {
+    request_id: String,
+    components: Vec<AssignedComponent>,
+}
+
+#[derive(serde::Deserialize)]
+struct ConfigurationRevision {
+    revision: u64,
+}
+
+async fn api_request<T: serde::de::DeserializeOwned>(
+    request: reqwest::RequestBuilder,
+    operation: &str,
+) -> Result<T, String> {
+    let response = request
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|error| format!("{operation}: {error}"))?;
+    if !response.status().is_success() {
+        return Err(response_error(response, operation).await);
+    }
+    let response: ApiResponse<T> = response
+        .json()
+        .await
+        .map_err(|error| format!("{operation}: invalid API response: {error}"))?;
+    if !response.success {
+        return Err(format!("{operation}: server did not confirm success"));
+    }
+    response
+        .data
+        .ok_or_else(|| format!("{operation}: server omitted response data"))
+}
+
+async fn query_identity(
+    client: &reqwest::Client,
+    server: &str,
+    instance: &str,
+    name: Option<&str>,
+    id: Option<uuid::Uuid>,
+) -> Result<String, String> {
+    let id = match id {
+        Some(id) => id.to_string(),
+        None => {
+            let name = name
+                .filter(|name| !name.is_empty())
+                .ok_or("A query name or UUID is required")?;
+            let component: AssignedComponent = api_request(
+                client.get(instance_api_url(
+                    server,
+                    instance,
+                    &["components", "by-name", name],
+                )?),
+                "Could not resolve query name",
+            )
+            .await?;
+            if component.name != name {
+                return Err("Name lookup returned a different component name".into());
+            }
+            component.id
+        }
+    };
+    let canonical = uuid::Uuid::parse_str(&id)
+        .map_err(|error| format!("Invalid query UUID: {error}"))?
+        .to_string();
+    if canonical != id {
+        return Err("Server returned a noncanonical query UUID".into());
+    }
+    let status: serde_json::Value = api_request(
+        client.get(instance_api_url(server, instance, &["queries", &id])?),
+        "Could not inspect query",
+    )
+    .await?;
+    if status["id"] != id || status["status"] != "Running" {
+        return Err(format!("Query '{id}' is not running: {}", status["status"]));
+    }
+    Ok(id)
+}
+
+async fn revision(client: &reqwest::Client, server: &str, instance: &str) -> Result<u64, String> {
+    let configuration: ConfigurationRevision = api_request(
+        client.get(instance_api_url(
+            server,
+            instance,
+            &["computation", "desired"],
+        )?),
+        "Could not read configuration revision",
+    )
+    .await?;
+    Ok(configuration.revision)
+}
+
 /// Create the SSE Reaction on the Drasi Server.
 async fn create_reaction(
     client: &reqwest::Client,
     server: &str,
     instance: &str,
-    reaction_id: &str,
-    query_id: &str,
-    sse_port: u16,
-    sse_host: std::net::IpAddr,
-) -> Result<(), String> {
-    let url = reaction_api_url(server, instance, None)?;
-    let body = reaction_config(reaction_id, query_id, sse_port, sse_host);
-
-    let resp = client
-        .post(url)
-        .timeout(Duration::from_secs(30))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to contact Drasi Server: {e}"))?;
-
-    if resp.status().is_success() {
-        Ok(())
-    } else {
-        Err(response_error(resp, "Failed to create reaction").await)
+    definition: &serde_json::Value,
+    request_id: &str,
+) -> Result<String, String> {
+    let receipt: ConfigurationReceipt = api_request(
+        client
+            .post(instance_api_url(
+                server,
+                instance,
+                &["computation", "ordinary-definitions"],
+            )?)
+            .json(&serde_json::json!({
+                "expectedRevision": revision(client, server, instance).await?,
+                "requestId": request_id,
+                "component": {"type": "reaction", "definition": definition}
+            })),
+        "Could not create reaction",
+    )
+    .await?;
+    if receipt.request_id != request_id
+        || receipt.components.len() != 1
+        || definition["name"] != receipt.components[0].name
+    {
+        return Err("Creation receipt did not confirm the requested reaction".into());
     }
+    let id = &receipt.components[0].id;
+    let canonical = uuid::Uuid::parse_str(id)
+        .map_err(|error| format!("Invalid assigned UUID: {error}"))?
+        .to_string();
+    if canonical != *id {
+        return Err("Creation receipt returned a noncanonical UUID".into());
+    }
+    Ok(canonical)
 }
 
 /// Delete the SSE Reaction from the Drasi Server.
@@ -183,19 +318,58 @@ async fn delete_reaction(
     instance: &str,
     reaction_id: &str,
 ) -> Result<(), String> {
-    let url = reaction_api_url(server, instance, Some(reaction_id))?;
-    let resp = client
-        .delete(url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .map_err(|error| format!("Failed to delete reaction '{reaction_id}': {error}"))?;
-    if resp.status().is_success() {
-        eprintln!("Reaction '{reaction_id}' deleted.");
-        Ok(())
-    } else {
-        Err(response_error(resp, &format!("Failed to delete reaction '{reaction_id}'")).await)
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let receipt: ConfigurationReceipt = api_request(
+        client
+            .delete(instance_api_url(
+                server,
+                instance,
+                &["computation", "ordinary-definitions", reaction_id],
+            )?)
+            .json(&serde_json::json!({
+                "expectedRevision": revision(client, server, instance).await?,
+                "requestId": request_id,
+            })),
+        &format!("Could not delete reaction '{reaction_id}'"),
+    )
+    .await?;
+    if receipt.request_id != request_id || !receipt.components.is_empty() {
+        return Err("Removal receipt did not confirm the requested operation".into());
     }
+    eprintln!("Removal accepted for reaction '{reaction_id}'.");
+    Ok(())
+}
+
+async fn wait_for_reaction(
+    client: &reqwest::Client,
+    server: &str,
+    instance: &str,
+    id: &str,
+) -> Result<(), String> {
+    let url = reaction_api_url(server, instance, Some(id))?;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let component: serde_json::Value =
+                api_request(client.get(url.clone()), "Could not inspect reaction").await?;
+            if component["id"] != id {
+                return Err("Reaction inspection returned a different UUID".into());
+            }
+            match component["status"].as_str() {
+                Some("Running") => return Ok(()),
+                Some("Added" | "Starting" | "Stopped" | "Reconfiguring") => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                status => {
+                    return Err(format!(
+                        "Reaction '{id}' cannot start: {status:?}; {}",
+                        component["errorMessage"]
+                    ))
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| format!("Timed out waiting for reaction '{id}' to start"))?
 }
 
 /// Preserve the endpoint's JSON payload, without interpreting row identities or changes.
@@ -306,38 +480,42 @@ async fn run(args: Args) -> Result<(), String> {
     }
     let server = args.server.ok_or("A server URL is required")?;
     let instance = args.instance.ok_or("An instance ID is required")?;
-    let query = args
-        .query
-        .filter(|value| !value.is_empty())
-        .ok_or("A query ID is required")?;
-    let reaction_id = format!("sse-cli-{}", uuid::Uuid::new_v4());
+    let query = query_identity(
+        &client,
+        &server,
+        &instance,
+        args.query.as_deref(),
+        args.query_id,
+    )
+    .await?;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let reaction_name = format!("sse-cli-{request_id}");
     reaction_api_url(&server, &instance, None)?;
     let sse_url = reaction_stream_url(&server, args.sse_port)?;
 
     // Create the SSE Reaction
     eprint!(
-        "Creating SSE reaction '{reaction_id}' for query '{}'... ",
+        "Creating SSE reaction '{reaction_name}' for query '{}'... ",
         query
     );
-    if let Err(e) = create_reaction(
+    let definition = reaction_config(&reaction_name, &query, args.sse_port, args.sse_host);
+    let reaction_id = create_reaction(
         &client,
         &server,
         &instance,
-        &reaction_id,
-        &query,
-        args.sse_port,
-        args.sse_host,
-    )
-    .await
-    {
-        return Err(format!(
-            "{e}\nCreation was not confirmed. Check reaction '{reaction_id}' in instance '{instance}' if the server completed the request despite the error."
-        ));
-    }
+        &definition,
+        &request_id,
+    ).await.map_err(|error| format!(
+        "{error}\nCreation was not confirmed. Inspect request receipt '{request_id}' in instance '{instance}' before retrying; the reaction name is '{reaction_name}'."
+    ))?;
     eprintln!("done.");
     eprintln!("Streaming events (Ctrl-C to stop)...\n");
 
-    let result = until_interrupt(stream_events(&client, sse_url, args.debug, log_file)).await;
+    let result = until_interrupt(async {
+        wait_for_reaction(&client, &server, &instance, &reaction_id).await?;
+        stream_events(&client, sse_url, args.debug, log_file).await
+    })
+    .await;
     let cleanup = delete_reaction(&client, &server, &instance, &reaction_id).await;
     match (result, cleanup) {
         (Err(error), Err(cleanup)) => Err(format!("{error}\nCleanup also failed: {cleanup}")),
@@ -374,6 +552,9 @@ async fn main() -> std::process::ExitCode {
 mod tests {
     use super::*;
 
+    const QUERY_ID: &str = "08f93596-5c0d-4c5d-890a-cf015bb3d809";
+    const REACTION_ID: &str = "32408b47-4678-45b1-b77d-917519d6fdb4";
+
     #[test]
     fn reaction_urls_require_and_encode_the_instance() {
         for instance in ["", ".", ".."] {
@@ -406,6 +587,7 @@ mod tests {
             ["--server", "http://localhost:8080"],
             ["--instance", "selected"],
             ["--query", "q"],
+            ["--query-id", QUERY_ID],
             ["--sse-port", "8091"],
             ["--sse-host", "0.0.0.0"],
         ] {
@@ -439,16 +621,16 @@ mod tests {
         ];
         let args = Args::try_parse_from(command).unwrap();
         assert_eq!(
-            reaction_config("r", "q", args.sse_port, args.sse_host),
+            reaction_config("r", QUERY_ID, args.sse_port, args.sse_host),
             serde_json::json!({
-                "kind": "sse", "id": "r", "queries": ["q"], "autoStart": true,
+                "kind": "sse", "name": "r", "queries": [{"id": QUERY_ID}], "autoStart": true,
                 "host": "127.0.0.1", "port": 8090, "ssePath": "/events"
             })
         );
         let remote =
             Args::try_parse_from(command.into_iter().chain(["--sse-host", "0.0.0.0"])).unwrap();
         assert_eq!(
-            reaction_config("r", "q", remote.sse_port, remote.sse_host)["host"],
+            reaction_config("r", QUERY_ID, remote.sse_port, remote.sse_host)["host"],
             "0.0.0.0"
         );
         assert_eq!(
@@ -471,6 +653,224 @@ mod tests {
             assert!(http_url(value).is_err());
         }
         assert!(reaction_api_url("http://host/?query=1", "i", None).is_err());
+    }
+
+    #[test]
+    fn query_uuid_is_an_explicit_selector_not_a_name_guess() {
+        let command = [
+            "drasi-sse-cli",
+            "--server",
+            "http://localhost:8080",
+            "--instance",
+            "selected",
+        ];
+        let named = Args::try_parse_from(command.into_iter().chain(["--query", QUERY_ID])).unwrap();
+        assert_eq!(named.query.as_deref(), Some(QUERY_ID));
+        assert!(named.query_id.is_none());
+        let identified =
+            Args::try_parse_from(command.into_iter().chain(["--query-id", QUERY_ID])).unwrap();
+        assert_eq!(identified.query_id.unwrap().to_string(), QUERY_ID);
+        assert!(identified.query.is_none());
+        assert!(
+            Args::try_parse_from(command.into_iter().chain(["--query-id", "query-name"])).is_err()
+        );
+        assert!(Args::try_parse_from(command.into_iter().chain([
+            "--query",
+            "q",
+            "--query-id",
+            QUERY_ID
+        ]))
+        .is_err());
+    }
+
+    async fn mock_api(
+        responses: Vec<serde_json::Value>,
+    ) -> (
+        String,
+        tokio::task::JoinHandle<Vec<(String, serde_json::Value)>>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for mut data in responses {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                let end = loop {
+                    if let Some(position) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                        break position + 4;
+                    }
+                    let mut buffer = [0; 1024];
+                    let count = socket.read(&mut buffer).await.unwrap();
+                    assert!(count > 0 && bytes.len() < 65_536);
+                    bytes.extend_from_slice(&buffer[..count]);
+                };
+                let headers = String::from_utf8(bytes[..end].to_vec()).unwrap();
+                let length = headers
+                    .lines()
+                    .filter_map(|line| line.split_once(':'))
+                    .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                    .map(|(_, length)| length.trim().parse::<usize>().unwrap())
+                    .unwrap_or(0);
+                while bytes.len() - end < length {
+                    let mut buffer = [0; 1024];
+                    let count = socket.read(&mut buffer).await.unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&buffer[..count]);
+                }
+                let body = if length == 0 {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::from_slice(&bytes[end..end + length]).unwrap()
+                };
+                if data["requestId"] == "$requestId" {
+                    data["requestId"] = body["requestId"].clone();
+                }
+                requests.push((headers.lines().next().unwrap().to_string(), body));
+                let response = serde_json::json!({"success": true, "data": data}).to_string();
+                socket.write_all(format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    response.len(), response,
+                ).as_bytes()).await.unwrap();
+            }
+            requests
+        });
+        (address, server)
+    }
+
+    #[tokio::test]
+    async fn name_lookup_binds_once_to_returned_uuid() {
+        let (address, server) = mock_api(vec![
+            serde_json::json!({"id": REACTION_ID, "name": QUERY_ID}),
+            serde_json::json!({"id": REACTION_ID, "name": "renamed", "status": "Running"}),
+        ])
+        .await;
+        let id = query_identity(
+            &reqwest::Client::new(),
+            &address,
+            "selected",
+            Some(QUERY_ID),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(id, REACTION_ID);
+        let requests = server.await.unwrap();
+        assert_eq!(
+            requests[0].0,
+            format!("GET /api/v1/instances/selected/components/by-name/{QUERY_ID} HTTP/1.1")
+        );
+        assert_eq!(
+            requests[1].0,
+            format!("GET /api/v1/instances/selected/queries/{REACTION_ID} HTTP/1.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_uuid_does_not_perform_name_lookup() {
+        let (address, server) = mock_api(vec![
+            serde_json::json!({"id": QUERY_ID, "name": "q", "status": "Running"}),
+        ])
+        .await;
+        assert_eq!(
+            query_identity(
+                &reqwest::Client::new(),
+                &address,
+                "selected",
+                None,
+                Some(uuid::Uuid::parse_str(QUERY_ID).unwrap())
+            )
+            .await
+            .unwrap(),
+            QUERY_ID
+        );
+        let requests = server.await.unwrap();
+        assert_eq!(
+            requests[0].0,
+            format!("GET /api/v1/instances/selected/queries/{QUERY_ID} HTTP/1.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn revisioned_creation_waits_for_and_removes_only_the_assigned_reaction() {
+        let (address, server) = mock_api(vec![
+            serde_json::json!({"revision": 4}),
+            serde_json::json!({"requestId": "create", "components": [{"id": REACTION_ID, "name": "temporary"}]}),
+            serde_json::json!({"id": REACTION_ID, "status": "Starting"}),
+            serde_json::json!({"id": REACTION_ID, "status": "Running"}),
+            serde_json::json!({"revision": 5}),
+            serde_json::json!({"requestId": "$requestId", "components": []}),
+        ]).await;
+        let client = reqwest::Client::new();
+        let definition = reaction_config("temporary", QUERY_ID, 8090, "127.0.0.1".parse().unwrap());
+        let assigned = create_reaction(&client, &address, "selected", &definition, "create")
+            .await
+            .unwrap();
+        assert_eq!(assigned, REACTION_ID);
+        wait_for_reaction(&client, &address, "selected", &assigned)
+            .await
+            .unwrap();
+        delete_reaction(&client, &address, "selected", &assigned)
+            .await
+            .unwrap();
+        let requests = server.await.unwrap();
+        assert_eq!(
+            requests[1].0,
+            "POST /api/v1/instances/selected/computation/ordinary-definitions HTTP/1.1"
+        );
+        assert_eq!(
+            requests[1].1,
+            serde_json::json!({
+                "expectedRevision": 4, "requestId": "create",
+                "component": {"type": "reaction", "definition": definition}
+            })
+        );
+        assert!(requests[1].1["component"]["definition"].get("id").is_none());
+        assert_eq!(requests[5].0, format!("DELETE /api/v1/instances/selected/computation/ordinary-definitions/{REACTION_ID} HTTP/1.1"));
+        assert_eq!(requests[5].1["expectedRevision"], 5);
+        assert!(uuid::Uuid::parse_str(requests[5].1["requestId"].as_str().unwrap()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn invalid_creation_receipts_never_confirm_ownership() {
+        for (request, components) in [
+            (
+                "different-request",
+                serde_json::json!([{"id": REACTION_ID, "name": "temporary"}]),
+            ),
+            ("create", serde_json::json!([])),
+            (
+                "create",
+                serde_json::json!([{"id": REACTION_ID, "name": "someone-else"}]),
+            ),
+            (
+                "create",
+                serde_json::json!([{"id": "temporary", "name": "temporary"}]),
+            ),
+            (
+                "create",
+                serde_json::json!([{"id": REACTION_ID.to_uppercase(), "name": "temporary"}]),
+            ),
+        ] {
+            let (address, server) = mock_api(vec![
+                serde_json::json!({"revision": 4}),
+                serde_json::json!({"requestId": request, "components": components}),
+            ])
+            .await;
+            let definition =
+                reaction_config("temporary", QUERY_ID, 8090, "127.0.0.1".parse().unwrap());
+            assert!(create_reaction(
+                &reqwest::Client::new(),
+                &address,
+                "selected",
+                &definition,
+                "create"
+            )
+            .await
+            .is_err());
+            assert_eq!(server.await.unwrap().len(), 2);
+        }
     }
 
     fn printed(data: &str) -> String {

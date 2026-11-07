@@ -10,6 +10,7 @@ import re
 import socket
 import tempfile
 import unittest
+from uuid import uuid4
 from unittest.mock import patch
 
 import demo
@@ -200,6 +201,7 @@ class DemoTests(unittest.TestCase):
         self.record()
         with patch.object(demo, "api", return_value={
             "instanceId": "different-server", "runtime": "computationGraph", "running": True,
+            "allowExternalComponentIds": False,
         }):
             with self.assertRaisesRegex(RuntimeError, "Wrong runtime"):
                 demo.check()
@@ -207,12 +209,12 @@ class DemoTests(unittest.TestCase):
     def test_graph_waiting_dependency_blocks_readiness(self):
         self.record()
         responses = [
-            {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True},
-            [{"id": name, "status": "Running"} for name in ("k8s", "devops")],
-            [{"id": name, "status": "Running"} for name in demo.QUERIES],
-            [{"id": "high-risk-containers-dashboard", "status": "Running"}],
+            {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True, "allowExternalComponentIds": False},
+            [{"id": str(uuid4()), "name": name, "status": "Running"} for name in ("k8s", "devops")],
+            [{"id": str(uuid4()), "name": name, "status": "Running"} for name in demo.QUERIES],
+            [{"id": str(uuid4()), "name": "high-risk-containers-dashboard", "status": "Running"}],
             {"graph": {"driverFailed": False}, "components": [
-                {"id": "pod-containers", "waitingFor": ["k8s"]}]},
+                {"id": str(uuid4()), "name": "pod-containers", "waitingFor": ["k8s"]}]},
         ]
         with patch.object(demo, "api", side_effect=responses):
             with self.assertRaisesRegex(RuntimeError, "failed or waiting"):

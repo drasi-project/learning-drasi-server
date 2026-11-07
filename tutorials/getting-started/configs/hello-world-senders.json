@@ -1,5 +1,5 @@
 {
-  "id": "hello-world-senders",
+  "name": "hello-world-senders",
   "autoStart": true,
   "inputs": ["all-messages"],
   "result": {"label": "HelloWorldSender"},
