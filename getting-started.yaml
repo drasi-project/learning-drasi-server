@@ -28,10 +28,12 @@ hotReloadPlugins: false
 hotReloadDebounceMs: 2000
 instances:
   - id: ccc77569-0c72-4865-ac2b-3cde1ef03d8d
+    allowExternalComponentIds: true
     persistIndex: false
     sources:
       - kind: postgres
-        id: my-postgres
+        id: b898ddaf-e587-4ff9-8080-e415973d9a17
+        name: my-postgres
         autoStart: true
         database: getting_started
         host: ${DB_HOST:-localhost}
@@ -48,7 +50,8 @@ instances:
           - Message
         user: drasi_user
     queries:
-      - id: all-messages
+      - id: 3ec258b5-cc13-4b58-946e-abd4767e5197
+        name: all-messages
         autoStart: true
         query: |
           MATCH (m:Message)
@@ -56,7 +59,7 @@ instances:
         queryLanguage: GQL
         middleware: []
         inputs:
-          - component: my-postgres
+          - component: {id: b898ddaf-e587-4ff9-8080-e415973d9a17}
             nodes: []
             relations: []
             pipeline: []
@@ -65,26 +68,28 @@ instances:
         dispatchBufferCapacity: 1000
         outboxCapacity: 1000
         bootstrapTimeoutSecs: 300
-      - id: hello-world-senders
+      - id: b53116e6-d1e8-41e4-b9e6-56e2a11544cb
+        name: hello-world-senders
         autoStart: true
         query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
         queryLanguage: Cypher
         middleware: []
         inputs:
-          - component: my-postgres
+          - component: {id: b898ddaf-e587-4ff9-8080-e415973d9a17}
             nodes: []
             relations: []
             pipeline: []
         enableBootstrap: true
         outboxCapacity: 1000
         bootstrapTimeoutSecs: 300
-      - id: message-counts
+      - id: f6fe8946-2df9-4ddf-9384-cf120b6427aa
+        name: message-counts
         autoStart: true
         query: MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count
         queryLanguage: Cypher
         middleware: []
         inputs:
-          - component: my-postgres
+          - component: {id: b898ddaf-e587-4ff9-8080-e415973d9a17}
             nodes: []
             relations: []
             pipeline: []
@@ -93,9 +98,10 @@ instances:
         bootstrapTimeoutSecs: 300
     reactions:
       - kind: log
-        id: log-reaction
+        id: b1ca5c77-5a52-4fec-a2bc-eb3040deb6bc
+        name: log-reaction
         queries:
-          - all-messages
-          - hello-world-senders
+          - {id: 3ec258b5-cc13-4b58-946e-abd4767e5197}
+          - {id: b53116e6-d1e8-41e4-b9e6-56e2a11544cb}
         autoStart: true
     identityProviders: []

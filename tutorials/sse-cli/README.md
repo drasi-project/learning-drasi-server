@@ -65,7 +65,7 @@ Keep the [Getting Started](../getting-started) server running. In another termin
 tutorials/sse-cli/bin/drasi-sse-cli \
   --server http://127.0.0.1:8080 \
   --instance getting-started-server \
-  --query message-counts
+  --query ac1a10bb-59c8-4572-9bf7-c610f166c19d
 ```
 
 Wait for `Connected to SSE stream`, then perform the tutorial's next
@@ -91,7 +91,7 @@ drasi-sse-cli --sse-url URL [--debug] [--log-file FILE]
 | --- | --- |
 | `-s`, `--server` | Server API base URL; alternatively `DRASI_SERVER_URL` |
 | `-i`, `--instance` | Explicit instance; alternatively `DRASI_INSTANCE_ID` |
-| `-q`, `--query` | Existing query ID; alternatively `DRASI_QUERY` |
+| `-q`, `--query` | Existing query UUID; alternatively `DRASI_QUERY` |
 | `-p`, `--sse-port` | Temporary reaction's HTTP port, default `8090`; choose an unused nonzero port |
 | `--sse-host` | Reaction bind IP, default **`127.0.0.1`** |
 | `--sse-url` | Connect to an existing endpoint; no creation or deletion |

@@ -113,7 +113,12 @@ class DemoTests(unittest.TestCase):
         responses = [proof]
         for identifiers in (("retail-ops", "physical-ops"), demo.QUERIES, ("curbside-dashboard",)):
             responses.append({"success": True, "data": [
-                {"id": name, "status": "Running"} for name in identifiers
+                {
+                    "id": demo.component_id(name),
+                    "name": name,
+                    "status": "Running",
+                }
+                for name in identifiers
             ]})
         responses.extend([[{"id": "curbside-pickup"}], {"connecting": True}])
         with patch.object(demo, "get_json", side_effect=responses):

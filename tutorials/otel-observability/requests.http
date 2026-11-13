@@ -45,13 +45,13 @@ GET {{baseUrl}}/api/versions
 GET {{instanceUrl}}/sources
 
 ### Get the PostgreSQL SLO source status
-GET {{instanceUrl}}/sources/slo
+GET {{instanceUrl}}/sources/d0b24e57-1f5e-4855-98e8-fcf797dc34e5
 
 ### Get the Kubernetes source status
-GET {{instanceUrl}}/sources/k8s
+GET {{instanceUrl}}/sources/36a47b94-1435-4e1c-87cd-2a1270883f52
 
 ### Get the OTel source status
-GET {{instanceUrl}}/sources/otel
+GET {{instanceUrl}}/sources/7de527cf-aed8-478b-93a3-c4008991ade1
 
 ### ==========================================================================
 ### Continuous Queries
@@ -61,16 +61,16 @@ GET {{instanceUrl}}/sources/otel
 GET {{instanceUrl}}/queries
 
 ### Current health (always-on deployment/metric view)
-GET {{instanceUrl}}/queries/current-health/results
+GET {{instanceUrl}}/queries/97471d43-3175-45e4-a663-0cbf726b2739/results
 
 ### Active SLO alerts
-GET {{instanceUrl}}/queries/slo-alert/results
+GET {{instanceUrl}}/queries/7b55919e-aefa-4510-8f9e-4fe4b05fbf33/results
 
 ### Service dependency edges
-GET {{instanceUrl}}/queries/service-dependencies/results
+GET {{instanceUrl}}/queries/d37d4c90-e044-4e98-a66b-6b7a6c2b7f21/results
 
 ### Missing heartbeats
-GET {{instanceUrl}}/queries/missing-heartbeat/results
+GET {{instanceUrl}}/queries/fd251a01-8e67-453b-ac4a-50d6ffb1b6b3/results
 
 ### ==========================================================================
 ### Reactions
@@ -80,7 +80,7 @@ GET {{instanceUrl}}/queries/missing-heartbeat/results
 GET {{instanceUrl}}/reactions
 
 ### Get the dashboard reaction status
-GET {{instanceUrl}}/reactions/otel-observability-dashboard
+GET {{instanceUrl}}/reactions/94ac6021-1d21-4211-ae7a-bbac3158a8b7
 
 ### Seeded dashboards
 GET {{dashboardUrl}}/api/dashboards

@@ -37,10 +37,12 @@ plugins: []
 # =============================================================================
 instances:
   - id: high-risk-containers-server
+    allowExternalComponentIds: true
     sources:
   # PostgreSQL source: the list of high risk image tags.
       - kind: postgres
-        id: devops
+        id: 28df43fc-8635-46b0-8e0c-251857bd0567
+        name: devops
         autoStart: true
 
     # Connection settings.
@@ -75,7 +77,8 @@ instances:
   # spec into top-level properties, including a `containers` list of
   # { name, image, ... } objects that the query unwinds below.
       - kind: kubernetes
-        id: k8s
+        id: cea0f028-8811-42a6-8b67-88e20a7b9a78
+        name: k8s
         autoStart: true
         resources:
           - apiVersion: v1
@@ -97,7 +100,8 @@ instances:
     queries:
   # Normalize Pod container arrays once. Other queries can consume this
   # graph-change v1 output without repeating the Kubernetes subscription/unwind.
-      - id: pod-containers
+      - id: e670943a-e9b5-45d4-9b88-c55ac28ce994
+        name: pod-containers
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -127,7 +131,8 @@ instances:
             c.image AS image
 
   # The risky-image join consumes derived ContainerImage nodes, not raw Pods.
-      - id: high-risk-containers
+      - id: 445f4635-64b3-48c4-9218-18c85c58b6f9
+        name: high-risk-containers
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -162,7 +167,8 @@ instances:
   # The "High Risk Containers" dashboard is seeded on first startup: a count
   # KPI, the live table of risky containers, and a Markdown detail panel.
       - kind: dashboard
-        id: high-risk-containers-dashboard
+        id: 9eb5ad98-218d-4e02-8c2b-1e7e1bfc12ce
+        name: high-risk-containers-dashboard
         autoStart: true
         queries:
           - high-risk-containers
@@ -183,7 +189,7 @@ instances:
                 title: High Risk Containers
                 grid: {x: 0, y: 0, w: 4, h: 2}
                 config:
-                  queryId: high-risk-containers
+                  queryId: 445f4635-64b3-48c4-9218-18c85c58b6f9
                   valueField: image
                   aggregation: count
                   label: Running & Risky
@@ -194,7 +200,7 @@ instances:
                 title: Running High Risk Containers
                 grid: {x: 0, y: 2, w: 12, h: 8}
                 config:
-                  queryId: high-risk-containers
+                  queryId: 445f4635-64b3-48c4-9218-18c85c58b6f9
                   columns:
                     - pod
                     - namespace
@@ -209,7 +215,7 @@ instances:
                 title: Detail
                 grid: {x: 4, y: 0, w: 8, h: 2}
                 config:
-                  queryId: high-risk-containers
+                  queryId: 445f4635-64b3-48c4-9218-18c85c58b6f9
                   template: |
                     {{#if count}}
                     {{#each rows}}

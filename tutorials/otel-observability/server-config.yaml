@@ -36,9 +36,11 @@ pluginRegistry: "${DRASI_PLUGINS_DIR}"
 # =============================================================================
 instances:
   - id: otel-observability-server
+    allowExternalComponentIds: true
     sources:
       - kind: postgres
-        id: slo
+        id: d0b24e57-1f5e-4855-98e8-fcf797dc34e5
+        name: slo
         autoStart: true
         host: "127.0.0.1"
         port: ${POSTGRES_PORT:-5732}
@@ -59,7 +61,8 @@ instances:
           kind: postgres
 
       - kind: kubernetes
-        id: k8s
+        id: 36a47b94-1435-4e1c-87cd-2a1270883f52
+        name: k8s
         autoStart: true
         resources:
           - apiVersion: apps/v1
@@ -74,7 +77,8 @@ instances:
   # No bootstrap: late subscribers wait for the next OTLP export. The mock
   # services keep sending, so the graph fills in within a few seconds.
       - kind: otel
-        id: otel
+        id: 7de527cf-aed8-478b-93a3-c4008991ade1
+        name: otel
         autoStart: true
         grpcBind: "${OTEL_GRPC_BIND:-0.0.0.0:14317}"
         httpBind: "${OTEL_HTTP_BIND:-0.0.0.0:14318}"
@@ -94,7 +98,8 @@ instances:
     queries:
   # Always-on view of the current deployment + live p99. Used by the dashboard
   # even when no SLO alert is firing.
-      - id: current-health
+      - id: 97471d43-3175-45e4-a663-0cbf726b2739
+        name: current-health
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -138,7 +143,8 @@ instances:
 
   # KPI / gauge must not aggregate frontend and payments (80 / 120 / 400)
   # or the dashboard jumps as those rows arrive.
-      - id: checkout-health
+      - id: 0569fc47-5ba8-470d-87d1-eb007dadeb5e
+        name: checkout-health
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -155,7 +161,8 @@ instances:
 
   # Validated OSMC story query: fire only after the metric stays above the
   # policy threshold for five seconds.
-      - id: slo-alert
+      - id: 7b55919e-aefa-4510-8f9e-4fe4b05fbf33
+        name: slo-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -184,7 +191,8 @@ instances:
                 property: service
               - label: service_slo_policy
                 property: service_name
-      - id: service-dependencies
+      - id: d37d4c90-e044-4e98-a66b-6b7a6c2b7f21
+        name: service-dependencies
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -200,7 +208,8 @@ instances:
               - DEPENDS_ON
 
   # Live pulse. value > 0 is on; 0 is an explicit /heartbeat/off.
-      - id: checkout-heartbeat
+      - id: a7024e87-9e2a-4d9e-b65f-99df9c471a26
+        name: checkout-heartbeat
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -223,7 +232,8 @@ instances:
 
   # Missing when checkout sends pulse 0, or when the last pulse is older
   # than 10 seconds (process gone, no export at all).
-      - id: missing-heartbeat
+      - id: fd251a01-8e67-453b-ac4a-50d6ffb1b6b3
+        name: missing-heartbeat
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -246,7 +256,8 @@ instances:
 # =============================================================================
     reactions:
       - kind: dashboard
-        id: otel-observability-dashboard
+        id: 94ac6021-1d21-4211-ae7a-bbac3158a8b7
+        name: otel-observability-dashboard
         autoStart: true
         queries:
           - current-health
@@ -271,7 +282,7 @@ instances:
                 title: Active SLO Alerts
                 grid: {x: 0, y: 0, w: 3, h: 3}
                 config:
-                  queryId: slo-alert
+                  queryId: 7b55919e-aefa-4510-8f9e-4fe4b05fbf33
                   valueField: service
                   aggregation: count
                   label: Firing
@@ -281,7 +292,7 @@ instances:
                 title: Checkout p99
                 grid: {x: 3, y: 0, w: 3, h: 3}
                 config:
-                  queryId: checkout-health
+                  queryId: 0569fc47-5ba8-470d-87d1-eb007dadeb5e
                   valueField: latencyMs
                   aggregation: max
                   label: ms
@@ -291,7 +302,7 @@ instances:
                 title: Checkout Latency
                 grid: {x: 6, y: 0, w: 3, h: 4}
                 config:
-                  queryId: checkout-health
+                  queryId: 0569fc47-5ba8-470d-87d1-eb007dadeb5e
                   valueField: latencyMs
                   aggregation: max
                   min: 0
@@ -302,7 +313,7 @@ instances:
                 title: Missing Heartbeats
                 grid: {x: 9, y: 0, w: 3, h: 3}
                 config:
-                  queryId: missing-heartbeat
+                  queryId: fd251a01-8e67-453b-ac4a-50d6ffb1b6b3
                   valueField: service
                   aggregation: count
                   label: Stale
@@ -312,7 +323,7 @@ instances:
                 title: Current Health
                 grid: {x: 0, y: 3, w: 6, h: 4}
                 config:
-                  queryId: current-health
+                  queryId: 97471d43-3175-45e4-a663-0cbf726b2739
                   columns:
                     - deployVersion
                     - service
@@ -323,7 +334,7 @@ instances:
                 title: SLO Alerts
                 grid: {x: 9, y: 3, w: 3, h: 4}
                 config:
-                  queryId: slo-alert
+                  queryId: 7b55919e-aefa-4510-8f9e-4fe4b05fbf33
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -338,7 +349,7 @@ instances:
                 title: Service Dependencies
                 grid: {x: 0, y: 7, w: 6, h: 5}
                 config:
-                  queryId: service-dependencies
+                  queryId: d37d4c90-e044-4e98-a66b-6b7a6c2b7f21
                   nodeField: fromService
                   connectsToField: toService
                   layout: force
@@ -348,7 +359,7 @@ instances:
                 title: Checkout heartbeat
                 grid: {x: 6, y: 4, w: 3, h: 7}
                 config:
-                  queryId: checkout-heartbeat
+                  queryId: a7024e87-9e2a-4d9e-b65f-99df9c471a26
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -363,7 +374,8 @@ instances:
                     {{/if}}
 
       - kind: log
-        id: console-log
+        id: c51cd132-93fb-4a07-b4d9-7e14d120ae41
+        name: console-log
         autoStart: true
         queries:
           - slo-alert

@@ -11,19 +11,25 @@ import sys
 import time
 from urllib.parse import urlparse
 
-from demo import INSTANCE, STATE, command, request, runtime_ready, wait_for
+from demo import INSTANCE, STATE, command, component_id, request, runtime_ready, wait_for
 
 
-ALERT = {
-    "id": "tutorial-price-alerts", "queryLanguage": "Cypher",
-    "query": "MATCH (p:Result) WHERE p.price > 200 RETURN p.symbol AS symbol, p.price AS price",
-    "inputs": ["price-ticker-query"], "result": {"label": "PriceAlert"}, "autoStart": True,
-}
-COUNT = {
-    "id": "tutorial-price-alert-count", "queryLanguage": "Cypher",
-    "query": "MATCH (p:PriceAlert) RETURN count(p) AS alertCount",
-    "inputs": [ALERT["id"]], "result": {"label": "PriceAlertCount"}, "autoStart": True,
-}
+def definitions(components):
+    alert = {
+        "id": component_id("tutorial-price-alerts"), "name": "tutorial-price-alerts",
+        "queryLanguage": "Cypher",
+        "query": "MATCH (p:Result) WHERE p.price > 200 RETURN p.symbol AS symbol, p.price AS price",
+        "inputs": [{"id": components["price-ticker-query"]}],
+        "result": {"label": "PriceAlert"}, "autoStart": True,
+    }
+    count = {
+        "id": component_id("tutorial-price-alert-count"), "name": "tutorial-price-alert-count",
+        "queryLanguage": "Cypher",
+        "query": "MATCH (p:PriceAlert) RETURN count(p) AS alertCount",
+        "inputs": [{"id": alert["id"]}],
+        "result": {"label": "PriceAlertCount"}, "autoStart": True,
+    }
+    return alert, count
 
 
 def owned_run(work):
@@ -46,6 +52,16 @@ def owned_run(work):
 def exercise(work):
     record = owned_run(work)
     urls = record["urls"]
+    components = record.get("components")
+    if not isinstance(components, dict):
+        raise ValueError("Run record does not contain authoritative component identities")
+    required = {
+        "price-feed", "price-ticker-query", "watchlist-query", "portfolio-query",
+        "portfolio-summary-query", "top-gainers-query", "top-losers-query",
+    }
+    if not required <= components.keys():
+        raise ValueError(f"Run record is missing component identities: {required - components.keys()}")
+    alert, count_query = definitions(components)
     api = urls["server"] + f"/api/v1/instances/{INSTANCE}"
     if not runtime_ready(request(api + "/runtime")):
         raise RuntimeError("The expected local ComputationGraph is not running")
@@ -57,13 +73,19 @@ def exercise(work):
     observations = {}
 
     def rows(query):
-        body = request(api + f"/queries/{query}/results")
+        body = request(api + f"/queries/{components[query]}/results")
         if body.get("success") is not True or not isinstance(body.get("data"), list):
             raise RuntimeError(f"Invalid snapshot for {query}")
         return body["data"]
 
+    def created_rows(definition):
+        body = request(api + f"/queries/{definition['id']}/results")
+        if body.get("success") is not True or not isinstance(body.get("data"), list):
+            raise RuntimeError(f"Invalid snapshot for {definition['name']}")
+        return body["data"]
+
     def price(properties):
-        body = request(urls["source"] + "/sources/price-feed/events", {
+        body = request(urls["source"] + f"/sources/{components['price-feed']}/events", {
             "operation": "update", "timestamp": time.time_ns(),
             "element": {"type": "node", "id": seed["id"], "labels": ["stock_prices"],
                         "properties": properties},
@@ -113,28 +135,37 @@ def exercise(work):
 
         if not original_views_match(seed["properties"]["price"]):
             raise RuntimeError("The original views are not at their seed values; start a fresh --no-prices run")
-        for definition in (ALERT, COUNT):
+        for definition in (alert, count_query):
             body = request(api + "/queries", definition)
             if body.get("success") is not True:
                 raise RuntimeError(f"Query creation failed: {body}")
-            created.append(definition["id"])
-            wait_for(definition["id"], lambda: request(api + f"/queries/{definition['id']}")["data"]["status"] == "Running")
+            created.append((definition["id"], definition["name"]))
+            wait_for(definition["name"], lambda: request(
+                api + f"/queries/{definition['id']}")["data"]["status"] == "Running")
         expected = sorted((row["symbol"], row["price"]) for row in baseline)
         wait_for("downstream snapshot without new price events",
-                 lambda: sorted((row["symbol"], row["price"]) for row in rows(ALERT["id"])) == expected
-                 and rows(COUNT["id"]) == [{"alertCount": len(baseline)}])
-        observations["initial"] = {"alerts": rows(ALERT["id"]), "count": rows(COUNT["id"])}
+                 lambda: sorted((row["symbol"], row["price"]) for row in created_rows(alert))
+                 == expected
+                 and created_rows(count_query) == [{"alertCount": len(baseline)}])
+        observations["initial"] = {
+            "alerts": created_rows(alert),
+            "count": created_rows(count_query),
+        }
         for value, count in [(210.0, len(baseline) + 1), (170.0, len(baseline))]:
             changed_price = True
             price({**seed["properties"], "price": value})
             wait_for(f"AAPL {value}: original dashboard calculations plus both downstream queries",
                      lambda: has_apple("price-ticker-query", value)
                      and original_views_match(value)
-                     and (has_apple(ALERT["id"], value) if value > 200
-                          else not any(row["symbol"] == "AAPL" for row in rows(ALERT["id"])))
-                     and rows(COUNT["id"]) == [{"alertCount": count}])
+                     and (any(row.get("symbol") == "AAPL" and row.get("price") == value
+                              for row in created_rows(alert))
+                          if value > 200 else not any(
+                              row["symbol"] == "AAPL"
+                              for row in created_rows(alert)))
+                     and created_rows(count_query) == [{"alertCount": count}])
             observations[str(value)] = {
-                "alerts": rows(ALERT["id"]), "count": rows(COUNT["id"]),
+                "alerts": created_rows(alert),
+                "count": created_rows(count_query),
                 "watchlist": rows("watchlist-query"), "portfolio": rows("portfolio-query"),
                 "summary": rows("portfolio-summary-query"),
             }
@@ -143,9 +174,12 @@ def exercise(work):
         price(seed["properties"])
         wait_for("restored AAPL seed price", lambda: has_apple("price-ticker-query", seed["properties"]["price"])
                  and original_views_match(seed["properties"]["price"])
-                 and rows(COUNT["id"]) == [{"alertCount": len(baseline)}])
+                 and created_rows(count_query) == [{"alertCount": len(baseline)}])
         changed_price = False
-        observations["restored"] = {"alerts": rows(ALERT["id"]), "count": rows(COUNT["id"])}
+        observations["restored"] = {
+            "alerts": created_rows(alert),
+            "count": created_rows(count_query),
+        }
         (work / "chaining.json").write_text(json.dumps(observations, indent=2) + "\n")
     finally:
         errors = []
@@ -154,11 +188,12 @@ def exercise(work):
                 price(seed["properties"])
             except (OSError, ValueError, RuntimeError) as error:
                 errors.append(error)
-        for query in reversed(created):
+        for query_id, query_name in reversed(created):
             try:
-                body = request(api + f"/queries/{query}", method="DELETE")
+                body = request(api + f"/queries/{query_id}", method="DELETE")
                 if body.get("success") is not True:
-                    raise RuntimeError(f"Failed to remove owned exercise query {query}: {body}")
+                    raise RuntimeError(
+                        f"Failed to remove owned exercise query {query_name}: {body}")
             except (OSError, ValueError, RuntimeError) as error:
                 errors.append(error)
         if added_watchlist:

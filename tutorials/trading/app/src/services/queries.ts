@@ -96,6 +96,7 @@ export const ORDER_HAS_PRICE: QueryJoin = {
 // ============================================================================
 
 export interface QueryDefinition {
+  componentId: string;
   id: string;
   description: string;
   query: string;
@@ -116,6 +117,7 @@ export interface QueryDefinition {
  * - Data from PostgreSQL CDC + HTTP source
  */
 export const WATCHLIST_QUERY: QueryDefinition = {
+  componentId: '068158da-8e0a-443e-b394-fc41ab183fc0',
   id: 'watchlist-query',
   description: 'Real-time watchlist with prices from three-way join',
   query: `
@@ -142,6 +144,7 @@ export const WATCHLIST_QUERY: QueryDefinition = {
  * - Multi-source joins
  */
 export const PORTFOLIO_QUERY: QueryDefinition = {
+  componentId: '5b2f45b9-ccdc-4b27-a69c-d49d52cc73f6',
   id: 'portfolio-query',
   description: 'Portfolio positions with real-time P&L calculations',
   query: `
@@ -180,6 +183,7 @@ export const PORTFOLIO_QUERY: QueryDefinition = {
  * - Real-time filtering as prices change
  */
 export const TOP_GAINERS_QUERY: QueryDefinition = {
+  componentId: 'c076e8a6-1c62-41cb-acc5-6df655ca252b',
   id: 'top-gainers-query',
   description: 'Stocks with positive price change',
   query: `
@@ -206,6 +210,7 @@ export const TOP_GAINERS_QUERY: QueryDefinition = {
  * - Stocks move between gainers/losers as prices change
  */
 export const TOP_LOSERS_QUERY: QueryDefinition = {
+  componentId: 'c4aca3eb-e139-4565-9795-5bbfa52946e9',
   id: 'top-losers-query',
   description: 'Stocks with negative price change',
   query: `
@@ -231,6 +236,7 @@ export const TOP_LOSERS_QUERY: QueryDefinition = {
  * - Volume-based analysis
  */
 export const HIGH_VOLUME_QUERY: QueryDefinition = {
+  componentId: '71020a41-6470-44a2-b20b-9e358555212f',
   id: 'high-volume-query',
   description: 'Stocks with high trading volume',
   query: `
@@ -257,6 +263,7 @@ export const HIGH_VOLUME_QUERY: QueryDefinition = {
  * - Minimal query for high-frequency updates
  */
 export const PRICE_TICKER_QUERY: QueryDefinition = {
+  componentId: 'adcf3898-5db4-4c1f-a5d4-207f1a85f277',
   id: 'price-ticker-query',
   description: 'Simple price feed for scrolling ticker',
   query: `
@@ -281,6 +288,7 @@ export const PRICE_TICKER_QUERY: QueryDefinition = {
  * - Real-time aggregation updates as prices change
  */
 export const SECTOR_PERFORMANCE_QUERY: QueryDefinition = {
+  componentId: '49b90d68-9083-4a18-9f81-7da62ba2d00b',
   id: 'sector-performance-query',
   description: 'Real-time sector aggregations',
   query: `
@@ -308,6 +316,7 @@ export const SECTOR_PERFORMANCE_QUERY: QueryDefinition = {
  * - Single-row result set
  */
 export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
+  componentId: '57a7cf5e-d01d-4de9-af72-e517e113c9aa',
   id: 'portfolio-summary-query',
   description: 'Real-time portfolio summary statistics',
   query: `
@@ -340,6 +349,7 @@ export const PORTFOLIO_SUMMARY_QUERY: QueryDefinition = {
  * - Real-time price status
  */
 export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
+  componentId: '1b9bae27-79b6-4a5e-bb3e-feaa1822b6ad',
   id: 'active-orders-query',
   description: 'Limit orders with real-time price comparison',
   query: `
@@ -370,6 +380,7 @@ export const ACTIVE_ORDERS_QUERY: QueryDefinition = {
  * - Staleness threshold derived from order expiry time
  */
 export const STALE_ORDERS_QUERY: QueryDefinition = {
+  componentId: '0f135a47-65be-4d83-9518-676eda276c21',
   id: 'stale-orders-query',
   description: 'Pending orders past half their lifetime (drasi.trueFor demo)',
   query: `
@@ -402,6 +413,7 @@ export const STALE_ORDERS_QUERY: QueryDefinition = {
  * - Detecting time-based expiry without polling
  */
 export const EXPIRING_ORDERS_QUERY: QueryDefinition = {
+  componentId: '47ee60a1-70c7-4fa1-9e6d-9f0aacfffacb',
   id: 'expiring-orders-query',
   description: 'Orders that expired (drasi.trueFor demo)',
   query: `

@@ -15,7 +15,8 @@ EVIDENCE = []
 
 
 def rows(query):
-    response = demo.get_json(demo.api_url() + f"/queries/{query}/results")
+    response = demo.get_json(
+        demo.api_url() + f"/queries/{demo.component_id(query)}/results")
     if response.get("success") is not True:
         raise RuntimeError(f"{query} results failed: {response}")
     return response["data"]
@@ -29,7 +30,8 @@ def snapshots():
     values = {query: rows(query) for query in demo.QUERIES}
     for query in demo.PANELS:
         snapshot = demo.get_json(
-            f"http://127.0.0.1:{os.environ['DASHBOARD_PORT']}/api/queries/{query}/snapshot")
+            f"http://127.0.0.1:{os.environ['DASHBOARD_PORT']}/api/queries/"
+            f"{demo.component_id(query)}/snapshot")
         if canonical([row["v"] for row in snapshot["rows"]]) != canonical(values[query]):
             raise RuntimeError(f"Dashboard {query} snapshot differs from query results")
         keys = [row["k"] for row in snapshot["rows"]]

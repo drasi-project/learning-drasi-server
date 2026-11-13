@@ -332,8 +332,30 @@ def api():
     return f"http://127.0.0.1:{os.environ['SERVER_PORT']}/api/v1/instances/{INSTANCE}"
 
 
+COMPONENT_IDS = {
+    "slo": "d0b24e57-1f5e-4855-98e8-fcf797dc34e5",
+    "k8s": "36a47b94-1435-4e1c-87cd-2a1270883f52",
+    "otel": "7de527cf-aed8-478b-93a3-c4008991ade1",
+    "current-health": "97471d43-3175-45e4-a663-0cbf726b2739",
+    "checkout-health": "0569fc47-5ba8-470d-87d1-eb007dadeb5e",
+    "slo-alert": "7b55919e-aefa-4510-8f9e-4fe4b05fbf33",
+    "service-dependencies": "d37d4c90-e044-4e98-a66b-6b7a6c2b7f21",
+    "checkout-heartbeat": "a7024e87-9e2a-4d9e-b65f-99df9c471a26",
+    "missing-heartbeat": "fd251a01-8e67-453b-ac4a-50d6ffb1b6b3",
+    "otel-observability-dashboard": "94ac6021-1d21-4211-ae7a-bbac3158a8b7",
+    "console-log": "c51cd132-93fb-4a07-b4d9-7e14d120ae41",
+}
+
+
+def component_id(name):
+    try:
+        return COMPONENT_IDS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown configured component name: {name}") from error
+
+
 def results(query):
-    response = get_json(api() + f"/queries/{query}/results")
+    response = get_json(api() + f"/queries/{component_id(query)}/results")
     if response.get("success") is not True:
         raise RuntimeError(f"Query inspection failed: {response}")
     if not isinstance(response.get("data"), list):
@@ -354,7 +376,9 @@ def check():
         if response.get("success") is not True:
             raise RuntimeError(f"Cannot inspect {kind}: {response}")
         components = response["data"]
-        if not expected <= {item["id"] for item in components}:
+        actual = {(item["id"], item["name"]) for item in components}
+        required = {(component_id(name), name) for name in expected}
+        if not required <= actual:
             raise RuntimeError(f"Missing {kind}: {components}")
         if any(item["status"].lower() != "running" for item in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")

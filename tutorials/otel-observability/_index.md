@@ -185,7 +185,7 @@ For example:
 
 ```bash
 curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/runtime
-curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/queries/current-health/results
+curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/queries/97471d43-3175-45e4-a663-0cbf726b2739/results
 ```
 
 ## Step 4 of 4: Drive Change {#drive}

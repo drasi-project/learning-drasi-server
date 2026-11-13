@@ -37,18 +37,29 @@ class TutorialContractTests(unittest.TestCase):
         self.assertEqual(len(demo.PLUGINS), len(set(demo.PLUGINS)))
 
     def test_chain_consumes_projected_result_and_label(self):
-        self.assertEqual(exercise.ALERT["inputs"], ["price-ticker-query"])
-        self.assertEqual(exercise.COUNT["inputs"], [exercise.ALERT["id"]])
-        self.assertIn("p:PriceAlert", exercise.COUNT["query"])
-        self.assertEqual(exercise.ALERT["result"], {"label": "PriceAlert"})
-        for query in (exercise.ALERT, exercise.COUNT):
+        alert, count = exercise.definitions({
+            "price-ticker-query": "00000000-0000-4000-8000-000000000001"
+        })
+        self.assertEqual(
+            alert["inputs"],
+            [{"id": "00000000-0000-4000-8000-000000000001"}],
+        )
+        self.assertEqual(count["inputs"], [{"id": alert["id"]}])
+        self.assertEqual(alert["name"], "tutorial-price-alerts")
+        self.assertEqual(count["name"], "tutorial-price-alert-count")
+        self.assertIn("p:PriceAlert", count["query"])
+        self.assertEqual(alert["result"], {"label": "PriceAlert"})
+        for query in (alert, count):
             self.assertNotIn("sources", query)
             self.assertEqual(query["queryLanguage"], "Cypher")
 
     def test_documented_chained_query_matches_the_executed_declaration(self):
         readme = (demo.TUTORIAL / "README.md").read_text()
         declarations = [json.loads(block) for block in re.findall(r"```json\n(.*?)\n```", readme, re.S)]
-        self.assertIn(exercise.ALERT, declarations)
+        alert, _ = exercise.definitions({
+            "price-ticker-query": "adcf3898-5db4-4c1f-a5d4-207f1a85f277"
+        })
+        self.assertIn(alert, declarations)
         for script in re.findall(r"python3 (scripts/[a-z_]+\.py)", readme):
             self.assertTrue((demo.TUTORIAL / script).is_file(), script)
 
@@ -96,7 +107,16 @@ class TutorialContractTests(unittest.TestCase):
             if arguments[:2] == ["podman", "port"]:
                 return "127.0.0.1:55123"
             if "inspect" in arguments:
-                return json.dumps({"instances": [{"id": demo.INSTANCE}]})
+                return json.dumps({"instances": [{
+                    "id": demo.INSTANCE,
+                    "allowExternalComponentIds": True,
+                    "sources": [
+                        {"id": f"00000000-0000-4000-8000-{index:012d}", "name": name}
+                        for index, name in enumerate(
+                            ("postgres-stocks", "postgres-broker", "price-feed"), 1
+                        )
+                    ],
+                }]})
             return "{}"
 
         def spawn(*args, **kwargs):
@@ -107,11 +127,16 @@ class TutorialContractTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state"
+            query_response = {"success": True, "data": [
+                {"id": f"10000000-0000-4000-8000-{index:012d}", "name": name}
+                for index, name in enumerate(sorted(demo.TRADING_QUERY_NAMES), 1)
+            ]}
             with patch.object(demo, "STATE", state), \
                     patch.object(demo, "verified_build", return_value=(Path("/local/server"), Path("/local/plugins"), Path("/local/generator"))), \
                     patch.object(demo, "command", side_effect=execute), \
                     patch.object(demo, "available_port", side_effect=range(55100, 55105)), \
                     patch.object(demo, "wait_for", side_effect=[None, RuntimeError("API unavailable")] if fail_api else None), \
+                    patch.object(demo, "request", return_value=query_response), \
                     patch.object(demo.subprocess, "Popen", side_effect=spawn), \
                     patch.object(demo.time, "sleep", side_effect=KeyboardInterrupt), \
                     patch("builtins.print"):

@@ -148,7 +148,8 @@ provider and then follows database changes through CDC.
 Here is the first query:
 
 ```yaml
-- id: all-messages
+- id: 67ff1d64-e938-4a9b-b80e-074666bdef95
+  name: all-messages
   autoStart: true
   inputs: [my-postgres]
   result:
@@ -222,7 +223,7 @@ python3 scripts/demo.py results all-messages
 Equivalent REST request:
 
 ```bash
-curl --fail-with-body http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries/all-messages/results
+curl --fail-with-body http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries/67ff1d64-e938-4a9b-b80e-074666bdef95/results
 ```
 
 There should be four rows, including:
@@ -281,9 +282,10 @@ Who sent messages containing exactly `Hello World`? Add a query to the running
 Server without restarting:
 
 ```yaml
-- id: hello-world-senders
+- id: 420bc6f5-d87a-4f99-9c79-7f88a7f0a88e
+  name: hello-world-senders
   autoStart: true
-  inputs: [all-messages]
+  inputs: [{id: 67ff1d64-e938-4a9b-b80e-074666bdef95}]
   result: {label: HelloWorldSender}
   query: |
     MATCH (m:Message)
@@ -310,9 +312,9 @@ operation. It replaces the reaction and resumes it if it was running, without
 requiring a separate delete and create:
 
 ```bash
-curl --fail-with-body -X PUT http://127.0.0.1:8180/api/v1/instances/getting-started-server/reactions/log-reaction \
+curl --fail-with-body -X PUT http://127.0.0.1:8180/api/v1/instances/getting-started-server/reactions/92e8fa7a-bd91-46a3-95ff-8c364677f077 \
   -H 'Content-Type: application/json' \
-  -d '{"kind":"log","id":"log-reaction","autoStart":true,"queries":["all-messages","hello-world-senders"]}'
+  -d '{"kind":"log","id":"92e8fa7a-bd91-46a3-95ff-8c364677f077","name":"log-reaction","autoStart":true,"queries":[{"id":"67ff1d64-e938-4a9b-b80e-074666bdef95"},{"id":"420bc6f5-d87a-4f99-9c79-7f88a7f0a88e"}]}'
 python3 scripts/demo.py results hello-world-senders
 ```
 
@@ -343,9 +345,10 @@ and the same database changes drive both result sets.
 `message-counts` counts how many times each message text appears:
 
 ```yaml
-- id: message-counts
+- id: ac1a10bb-59c8-4572-9bf7-c610f166c19d
+  name: message-counts
   autoStart: true
-  inputs: [all-messages]
+  inputs: [{id: 67ff1d64-e938-4a9b-b80e-074666bdef95}]
   result: {label: MessageCount}
   query: |
     MATCH (m:Message)
@@ -447,9 +450,10 @@ data changes. `drasi.trueLater` schedules another evaluation so that a sender
 can become inactive even when no further data arrives.
 
 ```yaml
-- id: inactive-senders
+- id: 193fae0b-7cc9-4cfc-bc87-1672662fa02c
+  name: inactive-senders
   autoStart: true
-  inputs: [my-postgres]
+  inputs: [{id: 7d38f9ea-27f0-4a2d-830c-da910ed68b6b}]
   result: {label: InactiveSender}
   query: |
     MATCH (m:Message)
@@ -532,7 +536,8 @@ Both plugins were built in Step 1. In Terminal 2:
 ```bash
 curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/sources \
   -H 'Content-Type: application/json' -d '{
-    "kind":"http", "id":"location-tracker", "autoStart":true,
+    "kind":"http", "id":"9b42f663-9f3d-4655-9843-47120021c01d",
+    "name":"location-tracker", "autoStart":true,
     "host":"127.0.0.1", "port":8182,
     "bootstrapProvider":{"kind":"scriptfile","filePaths":["../../locations.jsonl"]}
   }'
@@ -549,9 +554,12 @@ the actual absolute tutorial path into its new working configuration.
 The join query reads the message **query output** and the new **Source output**:
 
 ```yaml
-- id: messages-with-location
+- id: 1261cc70-9cbe-47b9-8ab3-eada717ac2b3
+  name: messages-with-location
   autoStart: true
-  inputs: [all-messages, location-tracker]
+  inputs:
+    - {id: 67ff1d64-e938-4a9b-b80e-074666bdef95}
+    - {id: 9b42f663-9f3d-4655-9843-47120021c01d}
   result: {label: LocatedMessage}
   query: |
     MATCH (m:Message)-[:FROM_USER]->(u:UserLocation)
@@ -588,7 +596,7 @@ python3 scripts/demo.py stream messages-with-location
 In Terminal 2:
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8182/sources/location-tracker/events \
+curl --fail-with-body -X POST http://127.0.0.1:8182/sources/9b42f663-9f3d-4655-9843-47120021c01d/events \
   -H 'Content-Type: application/json' -d '{
     "operation":"update",
     "element":{"type":"node","id":"brian","labels":["UserLocation"],
@@ -616,7 +624,7 @@ Carol is **not** in the joined result yet, although she is in `all-messages`:
 there is no matching location. Add it:
 
 ```bash
-curl --fail-with-body -X POST http://127.0.0.1:8182/sources/location-tracker/events \
+curl --fail-with-body -X POST http://127.0.0.1:8182/sources/9b42f663-9f3d-4655-9843-47120021c01d/events \
   -H 'Content-Type: application/json' -d '{
     "operation":"insert",
     "element":{"type":"node","id":"carol","labels":["UserLocation"],

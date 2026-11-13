@@ -46,10 +46,10 @@ GET {{instance}}/computation
 GET {{instance}}/sources
 
 ### Get the PostgreSQL (RiskyImage) source status
-GET {{instance}}/sources/devops
+GET {{instance}}/sources/28df43fc-8635-46b0-8e0c-251857bd0567
 
 ### Get the Kubernetes source status
-GET {{instance}}/sources/k8s
+GET {{instance}}/sources/cea0f028-8811-42a6-8b67-88e20a7b9a78
 
 ### ==========================================================================
 ### Continuous Query
@@ -59,10 +59,10 @@ GET {{instance}}/sources/k8s
 GET {{instance}}/queries
 
 ### Shared inventory: graph-change v1 nodes labeled ContainerImage
-GET {{instance}}/queries/pod-containers/results
+GET {{instance}}/queries/e670943a-e9b5-45d4-9b88-c55ac28ce994/results
 
 ### Running high risk containers (the dashboard feed)
-GET {{instance}}/queries/high-risk-containers/results
+GET {{instance}}/queries/445f4635-64b3-48c4-9218-18c85c58b6f9/results
 
 ### ==========================================================================
 ### Reactions
@@ -72,7 +72,7 @@ GET {{instance}}/queries/high-risk-containers/results
 GET {{instance}}/reactions
 
 ### Get the dashboard reaction status
-GET {{instance}}/reactions/high-risk-containers-dashboard
+GET {{instance}}/reactions/9eb5ad98-218d-4e02-8c2b-1e7e1bfc12ce
 
 ### Open the dashboard in a browser instead: {{dashboardUrl}}
 ### The seeded "High Risk Containers" dashboard is available via the dashboard API:

@@ -10,10 +10,12 @@ enableUi: false
 autoInstallPlugins: false
 instances:
   - id: getting-started-server
+    allowExternalComponentIds: true
     persistIndex: false
     sources:
       - kind: postgres
-        id: my-postgres
+        id: 7d38f9ea-27f0-4a2d-830c-da910ed68b6b
+        name: my-postgres
         autoStart: true
         host: 127.0.0.1
         port: ${POSTGRES_PORT:-5532}
@@ -30,7 +32,8 @@ instances:
         bootstrapProvider:
           kind: postgres
       - kind: http
-        id: location-tracker
+        id: 9b42f663-9f3d-4655-9843-47120021c01d
+        name: location-tracker
         autoStart: true
         host: 127.0.0.1
         port: ${HTTP_PORT:-8182}
@@ -38,29 +41,33 @@ instances:
           kind: scriptfile
           filePaths: ["../../locations.jsonl"]
     queries:
-      - id: all-messages
+      - id: 67ff1d64-e938-4a9b-b80e-074666bdef95
+        name: all-messages
         autoStart: true
-        inputs: [my-postgres]
+        inputs: [{id: 7d38f9ea-27f0-4a2d-830c-da910ed68b6b}]
         result: {label: Message}
         query: |
           MATCH (m:Message)
           RETURN m.MessageId AS MessageId, m.From AS From, m.Message AS Message
         queryLanguage: GQL
-      - id: hello-world-senders
+      - id: 420bc6f5-d87a-4f99-9c79-7f88a7f0a88e
+        name: hello-world-senders
         autoStart: true
-        inputs: [all-messages]
+        inputs: [{id: 67ff1d64-e938-4a9b-b80e-074666bdef95}]
         result: {label: HelloWorldSender}
         query: MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender
         queryLanguage: Cypher
-      - id: message-counts
+      - id: ac1a10bb-59c8-4572-9bf7-c610f166c19d
+        name: message-counts
         autoStart: true
-        inputs: [all-messages]
+        inputs: [{id: 67ff1d64-e938-4a9b-b80e-074666bdef95}]
         result: {label: MessageCount}
         query: MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count
         queryLanguage: Cypher
-      - id: inactive-senders
+      - id: 193fae0b-7cc9-4cfc-bc87-1672662fa02c
+        name: inactive-senders
         autoStart: true
-        inputs: [my-postgres]
+        inputs: [{id: 7d38f9ea-27f0-4a2d-830c-da910ed68b6b}]
         result: {label: InactiveSender}
         query: |
           MATCH (m:Message)
@@ -70,9 +77,12 @@ instances:
                                LastMessageTimestamp + duration({ seconds: 20 }))
           RETURN MessageFrom, LastMessageTimestamp
         queryLanguage: Cypher
-      - id: messages-with-location
+      - id: 1261cc70-9cbe-47b9-8ab3-eada717ac2b3
+        name: messages-with-location
         autoStart: true
-        inputs: [all-messages, location-tracker]
+        inputs:
+          - {id: 67ff1d64-e938-4a9b-b80e-074666bdef95}
+          - {id: 9b42f663-9f3d-4655-9843-47120021c01d}
         result: {label: LocatedMessage}
         query: |
           MATCH (m:Message)-[:FROM_USER]->(u:UserLocation)
@@ -86,6 +96,9 @@ instances:
               - {label: UserLocation, property: name}
     reactions:
       - kind: log
-        id: log-reaction
+        id: 92e8fa7a-bd91-46a3-95ff-8c364677f077
+        name: log-reaction
         autoStart: true
-        queries: [all-messages, hello-world-senders]
+        queries:
+          - {id: 67ff1d64-e938-4a9b-b80e-074666bdef95}
+          - {id: 420bc6f5-d87a-4f99-9c79-7f88a7f0a88e}

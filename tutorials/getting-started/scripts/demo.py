@@ -20,6 +20,16 @@ import urllib.request
 TUTORIAL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TUTORIAL.parents[1] / "scripts"))
 INSTANCE = "getting-started-server"
+COMPONENT_IDS = {
+    "my-postgres": "7d38f9ea-27f0-4a2d-830c-da910ed68b6b",
+    "location-tracker": "9b42f663-9f3d-4655-9843-47120021c01d",
+    "all-messages": "67ff1d64-e938-4a9b-b80e-074666bdef95",
+    "hello-world-senders": "420bc6f5-d87a-4f99-9c79-7f88a7f0a88e",
+    "message-counts": "ac1a10bb-59c8-4572-9bf7-c610f166c19d",
+    "inactive-senders": "193fae0b-7cc9-4cfc-bc87-1672662fa02c",
+    "messages-with-location": "1261cc70-9cbe-47b9-8ab3-eada717ac2b3",
+    "log-reaction": "92e8fa7a-bd91-46a3-95ff-8c364677f077",
+}
 PLUGINS = (
     "drasi-computation-transformer-query",
     "drasi-source-postgres", "drasi-bootstrap-postgres",
@@ -203,16 +213,38 @@ def api(path, *, method="GET", body=None):
     return payload["data"]
 
 
+def component_id(name):
+    try:
+        return COMPONENT_IDS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown configured component name: {name}") from error
+
+
+def component_path(kind, name, suffix=""):
+    return f"{kind}/{component_id(name)}{suffix}"
+
+
 def check():
     proof = api("runtime")
     if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True}:
         raise RuntimeError(f"Unexpected runtime identity/readiness: {proof}")
+    expected_names = {
+        "sources": {"my-postgres", "location-tracker"},
+        "queries": {
+            "all-messages", "hello-world-senders", "message-counts",
+            "inactive-senders", "messages-with-location",
+        },
+        "reactions": {"log-reaction"},
+    }
     for kind in ("sources", "queries", "reactions"):
         components = api(kind)
+        expected = expected_names[kind]
+        actual = {(component["id"], component["name"]) for component in components}
+        required = {(component_id(name), name) for name in expected}
+        if not required <= actual:
+            raise RuntimeError(f"Missing or mismatched {kind}: {components}")
         if any(component["status"].lower() != "running" for component in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")
-    if not any(query["id"] == "all-messages" for query in api("queries")):
-        raise RuntimeError("Missing all-messages query")
     return proof
 
 
@@ -340,14 +372,14 @@ def main():
             print(result)
         elif args.action == "results":
             if not re.fullmatch(r"[a-z][a-z0-9-]*", args.query):
-                raise ValueError("Invalid query ID")
-            print(json.dumps(api(f"queries/{args.query}/results"), indent=2))
+                raise ValueError("Invalid query name")
+            print(json.dumps(api(component_path("queries", args.query, "/results")), indent=2))
         elif args.action == "stream":
             binary = cli_build(verify=True)
             free_port(os.environ["SSE_PORT"])
             os.execv(str(binary), [
                 str(binary), "--server", f"http://127.0.0.1:{os.environ['SERVER_PORT']}",
-                "--instance", INSTANCE, "--query", args.query,
+                "--instance", INSTANCE, "--query", component_id(args.query),
                 "--sse-port", os.environ["SSE_PORT"], "--sse-host", "127.0.0.1",
             ])
     except KeyboardInterrupt:

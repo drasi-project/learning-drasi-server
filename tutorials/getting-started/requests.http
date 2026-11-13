@@ -3,16 +3,16 @@
 @baseUrl = http://127.0.0.1:8180
 @instance = getting-started-server
 @api = {{baseUrl}}/api/v1/instances/{{instance}}
-@locations = http://127.0.0.1:8182/sources/location-tracker/events
+@locations = http://127.0.0.1:8182/sources/9b42f663-9f3d-4655-9843-47120021c01d/events
 
 ### Exact runtime readiness
 GET {{api}}/runtime
 
 ### Source status
-GET {{api}}/sources/my-postgres
+GET {{api}}/sources/7d38f9ea-27f0-4a2d-830c-da910ed68b6b
 
 ### Step 3: first result set
-GET {{api}}/queries/all-messages/results
+GET {{api}}/queries/67ff1d64-e938-4a9b-b80e-074666bdef95/results
 
 ### Step 4: consume the all-messages query output
 POST {{api}}/queries
@@ -21,13 +21,13 @@ Content-Type: application/json
 < ./configs/hello-world-senders.json
 
 ### Replace the Log reaction to subscribe to both queries
-PUT {{api}}/reactions/log-reaction
+PUT {{api}}/reactions/92e8fa7a-bd91-46a3-95ff-8c364677f077
 Content-Type: application/json
 
-{"kind":"log","id":"log-reaction","queries":["all-messages","hello-world-senders"],"autoStart":true}
+{"kind":"log","id":"92e8fa7a-bd91-46a3-95ff-8c364677f077","name":"log-reaction","queries":[{"id":"67ff1d64-e938-4a9b-b80e-074666bdef95"},{"id":"420bc6f5-d87a-4f99-9c79-7f88a7f0a88e"}],"autoStart":true}
 
 ### Filtered result set
-GET {{api}}/queries/hello-world-senders/results
+GET {{api}}/queries/420bc6f5-d87a-4f99-9c79-7f88a7f0a88e/results
 
 ### Step 5: aggregation
 POST {{api}}/queries
@@ -36,7 +36,7 @@ Content-Type: application/json
 < ./configs/message-counts.json
 
 ### Aggregated result set
-GET {{api}}/queries/message-counts/results
+GET {{api}}/queries/ac1a10bb-59c8-4572-9bf7-c610f166c19d/results
 
 ### Step 6: source-based change timestamps
 POST {{api}}/queries
@@ -45,14 +45,15 @@ Content-Type: application/json
 < ./configs/inactive-senders.json
 
 ### Inactive senders
-GET {{api}}/queries/inactive-senders/results
+GET {{api}}/queries/193fae0b-7cc9-4cfc-bc87-1672662fa02c/results
 
 ### Step 7: locations source (relative to Server's .runtime/<run-id> working directory)
 POST {{api}}/sources
 Content-Type: application/json
 
 {
-  "kind":"http", "id":"location-tracker", "autoStart":true,
+  "kind":"http", "id":"9b42f663-9f3d-4655-9843-47120021c01d",
+  "name":"location-tracker", "autoStart":true,
   "host":"127.0.0.1", "port":8182,
   "bootstrapProvider":{"kind":"scriptfile","filePaths":["../../locations.jsonl"]}
 }
@@ -64,7 +65,7 @@ Content-Type: application/json
 < ./configs/messages-with-location.json
 
 ### Joined current result set
-GET {{api}}/queries/messages-with-location/results
+GET {{api}}/queries/1261cc70-9cbe-47b9-8ab3-eada717ac2b3/results
 
 ### Move Brian
 POST {{locations}}

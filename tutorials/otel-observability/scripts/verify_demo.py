@@ -125,7 +125,8 @@ def main():
         observe("restored dependency edges", "service-dependencies", dependencies)
 
         for query in demo.QUERIES:
-            result = demo.get_json(dashboard + f"/api/queries/{query}/snapshot")
+            result = demo.get_json(
+                dashboard + f"/api/queries/{demo.component_id(query)}/snapshot")
             rows = [row["v"] for row in result["rows"]]
             snapshots["dashboard " + query] = rows
             if query in ("slo-alert", "missing-heartbeat") and rows:

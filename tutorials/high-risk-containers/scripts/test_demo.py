@@ -208,9 +208,12 @@ class DemoTests(unittest.TestCase):
         self.record()
         responses = [
             {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True},
-            [{"id": name, "status": "Running"} for name in ("k8s", "devops")],
-            [{"id": name, "status": "Running"} for name in demo.QUERIES],
-            [{"id": "high-risk-containers-dashboard", "status": "Running"}],
+            [{"id": demo.component_id(name), "name": name, "status": "Running"}
+             for name in ("k8s", "devops")],
+            [{"id": demo.component_id(name), "name": name, "status": "Running"}
+             for name in demo.QUERIES],
+            [{"id": demo.component_id("high-risk-containers-dashboard"),
+              "name": "high-risk-containers-dashboard", "status": "Running"}],
             {"graph": {"driverFailed": False}, "components": [
                 {"id": "pod-containers", "waitingFor": ["k8s"]}]},
         ]

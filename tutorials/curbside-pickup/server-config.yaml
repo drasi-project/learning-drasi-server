@@ -45,10 +45,12 @@ autoInstallPlugins: false
 # =============================================================================
 instances:
   - id: curbside-pickup-server
+    allowExternalComponentIds: true
     sources:
   # Retail Operations - PostgreSQL source: the customer orders.
       - kind: postgres
-        id: retail-ops
+        id: 8ec619dc-7515-4721-929a-be905090ded2
+        name: retail-ops
         autoStart: true
 
         host: "${POSTGRES_HOST:-localhost}"
@@ -83,7 +85,8 @@ instances:
   # database/docker-compose.yml starts MySQL with ROW-based logging, full row
   # images/metadata and GTID mode.
       - kind: mysql
-        id: physical-ops
+        id: a0eeaced-9965-47f4-b6c4-20080fb188a9
+        name: physical-ops
         autoStart: true
 
         host: "${MYSQL_HOST:-localhost}"
@@ -139,7 +142,8 @@ instances:
   # orders-preparing: orders still being prepared (status != 'ready'). As soon as
   # an order becomes 'ready' it drops out of this result and appears in
   # orders-ready - so the order visibly moves between the two dashboard panels.
-      - id: orders-preparing
+      - id: 06d6824e-99a3-4c61-9961-78d59d6da38a
+        name: orders-preparing
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -159,7 +163,8 @@ instances:
             o.status AS status
 
   # orders-ready: orders that are ready for pickup (status = 'ready').
-      - id: orders-ready
+      - id: 56a7465f-c326-4827-a270-8411277a8012
+        name: orders-ready
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -181,7 +186,8 @@ instances:
   # vehicles-parking: vehicles still in the parking lot (location = 'Parking').
   # When a driver pulls up to the curb the vehicle drops out of this result and
   # appears in vehicles-curbside - so the car visibly moves between the panels.
-      - id: vehicles-parking
+      - id: ad563c5b-aa09-440d-8900-ed99bebd5ab5
+        name: vehicles-parking
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -201,7 +207,8 @@ instances:
             v.location AS location
 
   # vehicles-curbside: vehicles waiting at the curb (location = 'Curbside').
-      - id: vehicles-curbside
+      - id: 33aec50d-09b2-49e0-9738-496ce44e6406
+        name: vehicles-curbside
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -221,7 +228,8 @@ instances:
             v.location AS location
 
   # Calculate the cross-database join once, then fan out to both decisions.
-      - id: pickup-state
+      - id: 5bc81ea8-a74d-426a-a148-b0817a4dd0f4
+        name: pickup-state
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -258,7 +266,8 @@ instances:
             drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) AS readyTimestamp
 
   # delivery: orders that are READY whose driver has ARRIVED at the curbside.
-      - id: delivery
+      - id: e0061b93-c241-40f8-8610-dba59d35461a
+        name: delivery
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -281,7 +290,8 @@ instances:
   # delay: a driver is at the curbside but the order is NOT yet ready, and they
   # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
   # re-evaluation so the row appears the instant the threshold is crossed.
-      - id: delay
+      - id: 4f1542af-b5af-42a6-9766-f51bf484810e
+        name: delay
         autoStart: true
         queryLanguage: Cypher
         inputs:
@@ -311,7 +321,8 @@ instances:
   # filtered continuous queries, an order or vehicle disappears from one panel
   # and appears in the other the instant its status/location changes.
       - kind: dashboard
-        id: curbside-dashboard
+        id: 680cbd42-cb8f-4570-8417-e02823e55753
+        name: curbside-dashboard
         autoStart: true
         queries:
           - orders-preparing
@@ -337,7 +348,7 @@ instances:
                 title: 🍕 Orders · Preparing
                 grid: {x: 0, y: 0, w: 3, h: 4}
                 config:
-                  queryId: orders-preparing
+                  queryId: 06d6824e-99a3-4c61-9961-78d59d6da38a
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -353,7 +364,7 @@ instances:
                 title: 🍕 Orders · Ready
                 grid: {x: 3, y: 0, w: 3, h: 4}
                 config:
-                  queryId: orders-ready
+                  queryId: 56a7465f-c326-4827-a270-8411277a8012
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -369,7 +380,7 @@ instances:
                 title: 🚗 Vehicles · Parking
                 grid: {x: 6, y: 0, w: 3, h: 4}
                 config:
-                  queryId: vehicles-parking
+                  queryId: ad563c5b-aa09-440d-8900-ed99bebd5ab5
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -385,7 +396,7 @@ instances:
                 title: 🚗 Vehicles · Curbside
                 grid: {x: 9, y: 0, w: 3, h: 4}
                 config:
-                  queryId: vehicles-curbside
+                  queryId: 33aec50d-09b2-49e0-9738-496ce44e6406
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -401,7 +412,7 @@ instances:
                 title: 📦 Matched Orders (ready + at curbside)
                 grid: {x: 0, y: 4, w: 6, h: 4}
                 config:
-                  queryId: delivery
+                  queryId: e0061b93-c241-40f8-8610-dba59d35461a
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -417,7 +428,7 @@ instances:
                 title: ⚠️ Delayed Orders (waiting > 10s, not ready)
                 grid: {x: 6, y: 4, w: 6, h: 4}
                 config:
-                  queryId: delay
+                  queryId: 4f1542af-b5af-42a6-9766-f51bf484810e
                   template: |
                     {{#if count}}
                     {{#each rows}}

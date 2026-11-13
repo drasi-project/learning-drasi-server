@@ -35,7 +35,7 @@ def wait_for(description, predicate, timeout=30):
 
 
 def rows(query):
-    return demo.api(f"queries/{query}/results")
+    return demo.api(demo.component_path("queries", query, "/results"))
 
 
 def selected(query, **values):
@@ -47,12 +47,13 @@ def add_query(name):
     body = json.loads((demo.TUTORIAL / f"configs/{name}.json").read_text())
     demo.api("queries", method="POST", body=body)
     wait_for(f"{name} running",
-             lambda: demo.api(f"queries/{name}")["status"].lower() == "running")
+             lambda: demo.api(demo.component_path("queries", name))["status"].lower() == "running")
 
 
 def location(identifier, name, place, status="online", operation="insert"):
     request = urllib.request.Request(
-        f"http://127.0.0.1:{os.environ['HTTP_PORT']}/sources/location-tracker/events",
+        f"http://127.0.0.1:{os.environ['HTTP_PORT']}/sources/"
+        f"{demo.component_id('location-tracker')}/events",
         method="POST", headers={"Content-Type": "application/json"},
         data=json.dumps({"operation": operation, "element": {
             "type": "node", "id": identifier, "labels": ["UserLocation"],
@@ -82,6 +83,7 @@ class Stream:
 
     def __init__(self, query, directory):
         self.query = query
+        self.query_id = demo.component_id(query)
         self.directory = directory
         self.frames = queue.Queue()
         self.received = []
@@ -122,7 +124,7 @@ class Stream:
                 body = json.loads(line[5:].strip())
                 if body.get("type") == "heartbeat":
                     continue
-                if body.get("queryId") != self.query or not isinstance(body.get("results"), list):
+                if body.get("queryId") != self.query_id or not isinstance(body.get("results"), list):
                     raise AssertionError(f"Unexpected SSE adapter payload: {body}")
                 self.received.append(body)
                 self.frames.put(body)
@@ -238,9 +240,13 @@ def main():
         passed("step 3: insert/update/delete and stable result identity over ordinary SSE")
 
         add_query("hello-world-senders")
-        demo.api("reactions/log-reaction", method="PUT", body={
-            "kind": "log", "id": "log-reaction", "autoStart": True,
-            "queries": ["all-messages", "hello-world-senders"]})
+        demo.api(demo.component_path("reactions", "log-reaction"), method="PUT", body={
+            "kind": "log", "id": demo.component_id("log-reaction"),
+            "name": "log-reaction", "autoStart": True,
+            "queries": [
+                {"id": demo.component_id("all-messages")},
+                {"id": demo.component_id("hello-world-senders")},
+            ]})
         wait_for("chained initial snapshot", lambda: selected("hello-world-senders", Sender="Brian Kernighan"))
         demo.sql("""INSERT INTO "Message" ("From","Message") VALUES
                     ('Alice','Hello World'), ('Bob','Goodbye World');""")
@@ -279,7 +285,8 @@ def main():
         passed("step 6: two source-timestamp active/idle cycles with 20-second timer")
 
         demo.api("sources", method="POST", body={
-            "kind": "http", "id": "location-tracker", "autoStart": True,
+            "kind": "http", "id": demo.component_id("location-tracker"),
+            "name": "location-tracker", "autoStart": True,
             "host": "127.0.0.1", "port": int(os.environ["HTTP_PORT"]),
             "bootstrapProvider": {"kind": "scriptfile", "filePaths": [str(demo.TUTORIAL / "locations.jsonl")]}})
         add_query("messages-with-location")

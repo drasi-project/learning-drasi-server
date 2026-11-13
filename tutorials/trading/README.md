@@ -262,10 +262,11 @@ The exercise creates this ordinary query through the instance-scoped REST API:
 
 ```json
 {
-  "id": "tutorial-price-alerts",
+  "id": "10461b0d-336b-4084-8cc9-1fd20c647c1a",
+  "name": "tutorial-price-alerts",
   "queryLanguage": "Cypher",
   "query": "MATCH (p:Result) WHERE p.price > 200 RETURN p.symbol AS symbol, p.price AS price",
-  "inputs": ["price-ticker-query"],
+  "inputs": [{"id": "adcf3898-5db4-4c1f-a5d4-207f1a85f277"}],
   "result": { "label": "PriceAlert" },
   "autoStart": true
 }

@@ -1,7 +1,11 @@
 {
-  "id": "messages-with-location",
+  "id": "1261cc70-9cbe-47b9-8ab3-eada717ac2b3",
+  "name": "messages-with-location",
   "autoStart": true,
-  "inputs": ["all-messages", "location-tracker"],
+  "inputs": [
+    {"id": "67ff1d64-e938-4a9b-b80e-074666bdef95"},
+    {"id": "9b42f663-9f3d-4655-9843-47120021c01d"}
+  ],
   "result": {"label": "LocatedMessage"},
   "query": "MATCH (m:Message)-[:FROM_USER]->(u:UserLocation) RETURN m.MessageId AS Id, m.Message AS Message, m.From AS Sender, u.location AS Location, u.status AS Status",
   "queryLanguage": "Cypher",

@@ -1,7 +1,8 @@
 {
-  "id": "hello-world-senders",
+  "id": "420bc6f5-d87a-4f99-9c79-7f88a7f0a88e",
+  "name": "hello-world-senders",
   "autoStart": true,
-  "inputs": ["all-messages"],
+  "inputs": [{"id": "67ff1d64-e938-4a9b-b80e-074666bdef95"}],
   "result": {"label": "HelloWorldSender"},
   "query": "MATCH (m:Message) WHERE m.Message = 'Hello World' RETURN m.MessageId AS Id, m.From AS Sender",
   "queryLanguage": "Cypher"

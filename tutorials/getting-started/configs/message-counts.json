@@ -1,7 +1,8 @@
 {
-  "id": "message-counts",
+  "id": "ac1a10bb-59c8-4572-9bf7-c610f166c19d",
+  "name": "message-counts",
   "autoStart": true,
-  "inputs": ["all-messages"],
+  "inputs": [{"id": "67ff1d64-e938-4a9b-b80e-074666bdef95"}],
   "result": {"label": "MessageCount"},
   "query": "MATCH (m:Message) RETURN m.Message AS MessageText, count(m) AS Count",
   "queryLanguage": "Cypher"

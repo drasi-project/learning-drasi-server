@@ -34,7 +34,26 @@ PANELS = (
     "vehicles-curbside", "delivery", "delay",
 )
 QUERIES = (*PANELS, "pickup-state")
+COMPONENT_IDS = {
+    "retail-ops": "8ec619dc-7515-4721-929a-be905090ded2",
+    "physical-ops": "a0eeaced-9965-47f4-b6c4-20080fb188a9",
+    "orders-preparing": "06d6824e-99a3-4c61-9961-78d59d6da38a",
+    "orders-ready": "56a7465f-c326-4827-a270-8411277a8012",
+    "vehicles-parking": "ad563c5b-aa09-440d-8900-ed99bebd5ab5",
+    "vehicles-curbside": "33aec50d-09b2-49e0-9738-496ce44e6406",
+    "pickup-state": "5bc81ea8-a74d-426a-a148-b0817a4dd0f4",
+    "delivery": "e0061b93-c241-40f8-8610-dba59d35461a",
+    "delay": "4f1542af-b5af-42a6-9766-f51bf484810e",
+    "curbside-dashboard": "680cbd42-cb8f-4570-8417-e02823e55753",
+}
 IMAGES = ("docker.io/library/postgres:15-alpine", "docker.io/library/mysql:8.0")
+
+
+def component_id(name):
+    try:
+        return COMPONENT_IDS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown configured component name: {name}") from error
 
 
 def state_dir():
@@ -221,9 +240,9 @@ def check():
         if response.get("success") is not True:
             raise RuntimeError(f"Cannot inspect {kind}: {response}")
         components = response["data"]
-        identities = {component["id"] for component in components}
-        allowed = expected | ({"__component_graph__"} if kind == "sources" else set())
-        if not expected <= identities or not identities <= allowed or any(
+        identities = {(component["id"], component["name"]) for component in components}
+        required = {(component_id(name), name) for name in expected}
+        if not required <= identities or any(
                 component["status"].lower() != "running" for component in components):
             raise RuntimeError(f"Unexpected or stopped {kind}: {components}")
     dashboards = get_json(f"http://127.0.0.1:{os.environ['DASHBOARD_PORT']}/api/dashboards")

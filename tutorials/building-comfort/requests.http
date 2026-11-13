@@ -43,7 +43,7 @@ GET {{instanceUrl}}/runtime
 GET {{instanceUrl}}/sources
 
 ### Get the building-facilities source status
-GET {{instanceUrl}}/sources/building-facilities
+GET {{instanceUrl}}/sources/eb634274-874f-4ca9-827f-ec4b57625581
 
 ### ==========================================================================
 ### Continuous Queries
@@ -53,22 +53,22 @@ GET {{instanceUrl}}/sources/building-facilities
 GET {{instanceUrl}}/queries
 
 ### Shared room comfort (feeds floor rollups, room alerts and the building view)
-GET {{instanceUrl}}/queries/room-comfort/results
+GET {{instanceUrl}}/queries/fc6b056c-0407-41e6-a7d2-19e579239be9/results
 
 ### Overall building comfort level
-GET {{instanceUrl}}/queries/building-comfort-level-calc/results
+GET {{instanceUrl}}/queries/a9955885-c056-4547-9460-cd5e3b48804c/results
 
 ### Per-floor comfort levels
-GET {{instanceUrl}}/queries/floor-comfort-level-calc/results
+GET {{instanceUrl}}/queries/4fc5870a-7f57-4cbf-80a4-229dc4586535/results
 
 ### Rooms outside the comfortable band (alerts)
-GET {{instanceUrl}}/queries/room-alert/results
+GET {{instanceUrl}}/queries/c0633cf1-cf23-42e5-80c3-5b5b7d8cd983/results
 
 ### Floors outside the comfortable band (alerts)
-GET {{instanceUrl}}/queries/floor-alert/results
+GET {{instanceUrl}}/queries/2af6308b-731f-4cbb-bdca-edf6dfb77d42/results
 
 ### Building outside the comfortable band (alert)
-GET {{instanceUrl}}/queries/building-alert/results
+GET {{instanceUrl}}/queries/fa96e5c9-706c-4aeb-a7ec-b31d38207f26/results
 
 ### ==========================================================================
 ### Reactions
@@ -78,7 +78,7 @@ GET {{instanceUrl}}/queries/building-alert/results
 GET {{instanceUrl}}/reactions
 
 ### Get the dashboard reaction status
-GET {{instanceUrl}}/reactions/building-comfort-dashboard
+GET {{instanceUrl}}/reactions/16e3bc1a-48d2-40f9-8019-a4f8d5c16487
 
 ### Open the dashboard in a browser instead: {{dashboardUrl}}
 ### The seeded "Building Comfort" dashboard is available via the dashboard API:

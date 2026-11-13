@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -27,6 +28,16 @@ EXAMPLE = SERVER / "examples/trading"
 APP = EXAMPLE / "app"
 STATE = TUTORIAL / ".runtime"
 INSTANCE = "trading-server"
+EXERCISE_IDS = {
+    "tutorial-price-alerts": "10461b0d-336b-4084-8cc9-1fd20c647c1a",
+    "tutorial-price-alert-count": "a6b57b25-6e73-4731-b06f-ea2459f56fdc",
+}
+TRADING_QUERY_NAMES = {
+    "watchlist-query", "portfolio-query", "top-gainers-query", "top-losers-query",
+    "high-volume-query", "price-ticker-query", "sector-performance-query",
+    "portfolio-summary-query", "active-orders-query", "stale-orders-query",
+    "expiring-orders-query",
+}
 PLUGINS = (
     "drasi-computation-transformer-query",
     "drasi-computation-source-postgres", "drasi-computation-bootstrap-postgres",
@@ -122,6 +133,44 @@ def runtime_ready(body):
             and body["data"].get("running") is True)
 
 
+def component_id(name):
+    try:
+        return EXERCISE_IDS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown configured component name: {name}") from error
+
+
+def component_map(items, expected_names):
+    identities = {}
+    for item in items:
+        component_id = item.get("id")
+        name = item.get("name")
+        try:
+            if str(uuid.UUID(component_id)) != component_id:
+                raise ValueError
+        except (AttributeError, TypeError, ValueError) as error:
+            raise RuntimeError(f"Invalid component UUID for {name!r}: {component_id!r}") from error
+        if not isinstance(name, str) or not name or name in identities:
+            raise RuntimeError(f"Invalid or duplicate component name: {name!r}")
+        identities[name] = component_id
+    if set(identities) != set(expected_names):
+        raise RuntimeError(f"Component names do not match: {set(identities)}")
+    return identities
+
+
+def validate_source_config(config):
+    instances = config.get("instances")
+    if not isinstance(instances, list) or len(instances) != 1:
+        raise RuntimeError("Trading source configuration must declare exactly one instance")
+    instance = instances[0]
+    if instance.get("id") != INSTANCE or instance.get("allowExternalComponentIds") is not True:
+        raise RuntimeError("Trading instance identity or component ID policy is invalid")
+    return component_map(
+        instance.get("sources", []),
+        {"postgres-stocks", "postgres-broker", "price-feed"},
+    )
+
+
 def run(no_prices):
     binary, plugins, generator = verified_build()
     STATE.mkdir(parents=True, exist_ok=True)
@@ -200,6 +249,7 @@ def run(no_prices):
         start("trading-api", [sys.executable, EXAMPLE / "mock-generator/trading_api.py"])
         wait_for("real Trading API", lambda: request(urls["api"] + "/health")["status"] == "healthy", children)
         config = json.loads(command([generator, "inspect", EXAMPLE / "server/trading-sources-only.yaml"]))
+        source_ids = validate_source_config(config)
         config.update({"host": "127.0.0.1", "port": ports["server"], "enableUi": False,
                        "persistConfig": False, "autoInstallPlugins": False})
         config_path = work / "server.json"
@@ -218,10 +268,15 @@ def run(no_prices):
                 return response.status == 200
 
         wait_for("existing Trading dashboard", app_ready, children)
+        query_response = request(urls["server"] + f"/api/v1/instances/{INSTANCE}/queries")
+        if query_response.get("success") is not True:
+            raise RuntimeError(f"Could not inspect Trading query identities: {query_response}")
+        query_ids = component_map(query_response["data"], TRADING_QUERY_NAMES)
         if not no_prices:
             start("prices", [sys.executable, EXAMPLE / "mock-generator/simple_price_generator.py"])
         (work / "endpoints.json").write_text(json.dumps(
             {"instance": INSTANCE, "urls": urls, "container": container, "owner_pid": os.getpid(),
+             "components": {**source_ids, **query_ids},
              "random_prices": not no_prices}, indent=2) + "\n")
         print(f"\nDashboard: {urls['app']}\nRun directory: {work}\n"
               "Ctrl+C stops only this run and removes its disposable database. Logs are retained.", flush=True)
@@ -264,6 +319,7 @@ def verify(work):
     queries = request(api + "/queries")
     if queries.get("success") is not True or len(queries["data"]) != 11:
         raise RuntimeError("Expected all eleven Trading queries")
+    component_map(queries["data"], TRADING_QUERY_NAMES)
     if any(query["status"] != "Running" for query in queries["data"]):
         raise RuntimeError("Some Trading queries are not Running")
     observations = {}
@@ -271,7 +327,7 @@ def verify(work):
         response = request(api + f"/queries/{query['id']}/results")
         if response.get("success") is not True or not isinstance(response.get("data"), list):
             raise RuntimeError(f"Invalid result snapshot for {query['id']}")
-        observations[query["id"]] = response["data"]
+        observations[query["name"]] = response["data"]
     if len(observations["price-ticker-query"]) != 50 or len(observations["portfolio-query"]) != 8:
         raise RuntimeError("Expected full 50-price seed and eight demo positions before editing")
     if len(observations["portfolio-summary-query"]) != 1:

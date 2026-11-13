@@ -38,9 +38,11 @@ autoInstallPlugins: false
 # =============================================================================
 instances:
   - id: building-comfort-server
+    allowExternalComponentIds: true
     sources:
       - kind: postgres
-        id: building-facilities
+        id: eb634274-874f-4ca9-827f-ec4b57625581
+        name: building-facilities
         autoStart: true
 
     # Connection settings.
@@ -88,7 +90,8 @@ instances:
 # Each alert query consumes the corresponding level's result nodes.
     queries:
   # Query 1: shared room comfort and hierarchy for rollups, alerts and display.
-      - id: room-comfort
+      - id: fc6b056c-0407-41e6-a7d2-19e579239be9
+        name: room-comfort
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -131,7 +134,8 @@ instances:
                 property: id
 
   # Query 2: per-floor comfort, calculated from shared room results.
-      - id: floor-comfort-level-calc
+      - id: 4fc5870a-7f57-4cbf-80a4-229dc4586535
+        name: floor-comfort-level-calc
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -148,7 +152,8 @@ instances:
           - room-comfort
 
   # Query 3: overall building comfort (avg of floor averages, not room-weighted).
-      - id: building-comfort-level-calc
+      - id: a9955885-c056-4547-9460-cd5e3b48804c
+        name: building-comfort-level-calc
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -163,7 +168,8 @@ instances:
           - floor-comfort-level-calc
 
   # Query 4: rooms outside the comfortable band (40-50).
-      - id: room-alert
+      - id: c0633cf1-cf23-42e5-80c3-5b5b7d8cd983
+        name: room-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -179,7 +185,8 @@ instances:
           - room-comfort
 
   # Query 5: floors whose average comfort is outside 40-50.
-      - id: floor-alert
+      - id: 2af6308b-731f-4cbb-bdca-edf6dfb77d42
+        name: floor-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -195,7 +202,8 @@ instances:
           - floor-comfort-level-calc
 
   # Query 6: the building when its overall comfort is outside 40-50.
-      - id: building-alert
+      - id: fa96e5c9-706c-4aeb-a7ec-b31d38207f26
+        name: building-alert
         autoStart: true
         queryLanguage: Cypher
         result:
@@ -219,7 +227,8 @@ instances:
   # mostly from markdown (text) widgets that use the reaction's Handlebars
   # helpers to recreate the Building -> Floor -> Room comfort view.
       - kind: dashboard
-        id: building-comfort-dashboard
+        id: 16e3bc1a-48d2-40f9-8019-a4f8d5c16487
+        name: building-comfort-dashboard
         autoStart: true
         queries:
           - room-comfort
@@ -245,7 +254,7 @@ instances:
                 title: Building Comfort
                 grid: {x: 0, y: 0, w: 8, h: 10}
                 config:
-                  queryId: room-comfort
+                  queryId: fc6b056c-0407-41e6-a7d2-19e579239be9
                   template: |
                     # {{#if count}}{{rows.0.BuildingName}}{{else}}Waiting for data...{{/if}}
 
@@ -263,7 +272,7 @@ instances:
                 title: Building Comfort
                 grid: {x: 8, y: 0, w: 4, h: 2}
                 config:
-                  queryId: building-comfort-level-calc
+                  queryId: a9955885-c056-4547-9460-cd5e3b48804c
                   valueField: ComfortLevel
                   aggregation: last
                   label: Comfort Level
@@ -274,7 +283,7 @@ instances:
                 title: Building Comfort Gauge
                 grid: {x: 8, y: 2, w: 4, h: 4}
                 config:
-                  queryId: building-comfort-level-calc
+                  queryId: a9955885-c056-4547-9460-cd5e3b48804c
                   valueField: ComfortLevel
                   aggregation: last
                   min: 0
@@ -286,7 +295,7 @@ instances:
                 title: Comfort Alerts
                 grid: {x: 8, y: 6, w: 4, h: 4}
                 config:
-                  queryId: room-alert
+                  queryId: c0633cf1-cf23-42e5-80c3-5b5b7d8cd983
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -302,7 +311,7 @@ instances:
                 title: Floor Comfort
                 grid: {x: 0, y: 10, w: 6, h: 4}
                 config:
-                  queryId: floor-comfort-level-calc
+                  queryId: 4fc5870a-7f57-4cbf-80a4-229dc4586535
                   columns:
                     - FloorId
                     - ComfortLevel
@@ -313,7 +322,7 @@ instances:
                 title: Floor Alerts
                 grid: {x: 6, y: 10, w: 6, h: 4}
                 config:
-                  queryId: floor-alert
+                  queryId: 2af6308b-731f-4cbb-bdca-edf6dfb77d42
                   template: |
                     {{#if count}}
                     {{#each rows}}
@@ -325,7 +334,8 @@ instances:
 
   # Log reaction - prints alert activity to the server console.
       - kind: log
-        id: console-log
+        id: 45eab8b6-ae1e-4273-a761-8e35015d6ff0
+        name: console-log
         autoStart: true
         queries:
           - room-alert

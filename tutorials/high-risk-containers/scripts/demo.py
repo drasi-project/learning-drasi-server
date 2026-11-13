@@ -334,6 +334,22 @@ def api(path):
     return result["data"]
 
 
+COMPONENT_IDS = {
+    "devops": "28df43fc-8635-46b0-8e0c-251857bd0567",
+    "k8s": "cea0f028-8811-42a6-8b67-88e20a7b9a78",
+    "pod-containers": "e670943a-e9b5-45d4-9b88-c55ac28ce994",
+    "high-risk-containers": "445f4635-64b3-48c4-9218-18c85c58b6f9",
+    "high-risk-containers-dashboard": "9eb5ad98-218d-4e02-8c2b-1e7e1bfc12ce",
+}
+
+
+def component_id(name):
+    try:
+        return COMPONENT_IDS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown configured component name: {name}") from error
+
+
 def check():
     proof = api("runtime")
     if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True}:
@@ -341,10 +357,9 @@ def check():
     for kind, expected in (("sources", {"k8s", "devops"}), ("queries", QUERIES),
                            ("reactions", {"high-risk-containers-dashboard"})):
         items = api(kind)
-        actual = {item["id"] for item in items}
-        allowed = expected | ({"__component_graph__"} if kind == "sources" else
-                              {"discord-alerts"} if kind == "reactions" else set())
-        if not expected <= actual <= allowed or any(item["status"].lower() != "running" for item in items):
+        actual = {(item["id"], item["name"]) for item in items}
+        required = {(component_id(name), name) for name in expected}
+        if not required <= actual or any(item["status"].lower() != "running" for item in items):
             raise RuntimeError(f"{kind} not ready: {items}")
     inspection = api("computation")
     if inspection["graph"]["driverFailed"]:

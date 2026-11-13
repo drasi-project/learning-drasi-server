@@ -41,8 +41,13 @@ class TutorialTests(unittest.TestCase):
             self.assertNotIn("pluginRegistry", config)
             instance, = config["instances"]
             self.assertEqual(instance["id"], demo.INSTANCE)
-            queries = {item["id"]: item for item in instance["queries"]}
+            self.assertTrue(instance["allowExternalComponentIds"])
+            queries = {item["name"]: item for item in instance["queries"]}
             self.assertEqual(list(queries), expected[:step - 2])
+            self.assertEqual(
+                {query["id"] for query in queries.values()},
+                {demo.component_id(name) for name in expected[:step - 2]},
+            )
             for name, query in previous.items():
                 self.assertEqual(queries[name], query)
             for name, query in queries.items():
@@ -53,18 +58,31 @@ class TutorialTests(unittest.TestCase):
                                      fixture | {"query": " ".join(fixture["query"].split())})
             previous = queries
         complete = yaml.safe_load((demo.TUTORIAL / "server-config.yaml").read_text())["instances"][0]
-        self.assertEqual([q["id"] for q in complete["queries"]], expected + ["messages-with-location"])
+        self.assertEqual(
+            [q["name"] for q in complete["queries"]],
+            expected + ["messages-with-location"],
+        )
         for query in complete["queries"]:
-            if query["id"] in previous:
-                self.assertEqual(query, previous[query["id"]])
-        self.assertEqual(complete["queries"][-1]["inputs"], ["all-messages", "location-tracker"])
-        location_source = next(s for s in complete["sources"] if s["id"] == "location-tracker")
+            if query["name"] in previous:
+                self.assertEqual(query, previous[query["name"]])
+        self.assertEqual(complete["queries"][-1]["inputs"], [
+            {"id": demo.component_id("all-messages")},
+            {"id": demo.component_id("location-tracker")},
+        ])
+        location_source = next(
+            s for s in complete["sources"] if s["name"] == "location-tracker"
+        )
+        self.assertEqual(location_source["id"], demo.component_id("location-tracker"))
         path = location_source["bootstrapProvider"]["filePaths"][0]
         self.assertEqual((demo.state() / path).resolve(), demo.TUTORIAL / "locations.jsonl")
         self.assertEqual(previous["all-messages"]["result"]["label"], "Message")
-        self.assertEqual(previous["inactive-senders"]["inputs"], ["my-postgres"])
+        self.assertEqual(previous["inactive-senders"]["inputs"], [
+            {"id": demo.component_id("my-postgres")}
+        ])
         for name in ("message-counts", "hello-world-senders"):
-            self.assertEqual(previous[name]["inputs"], ["all-messages"])
+            self.assertEqual(previous[name]["inputs"], [
+                {"id": demo.component_id("all-messages")}
+            ])
 
     def test_database_initialization_never_drops_existing_data(self):
         sql = (demo.TUTORIAL / "database/init.sql").read_text().upper()
@@ -76,7 +94,10 @@ class TutorialTests(unittest.TestCase):
     def test_generated_reference_uses_absolute_scriptfile_path(self):
         content = (demo.TUTORIAL / "server-config.yaml").read_text()
         config = yaml.safe_load(demo.working_config(content))
-        source = next(s for s in config["instances"][0]["sources"] if s["id"] == "location-tracker")
+        source = next(
+            s for s in config["instances"][0]["sources"]
+            if s["name"] == "location-tracker"
+        )
         self.assertEqual(source["bootstrapProvider"]["filePaths"],
                          [str(demo.TUTORIAL / "locations.jsonl")])
 

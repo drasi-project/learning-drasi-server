@@ -20,8 +20,10 @@ export class DrasiClient {
   private baseUrl: string;
   private sseClient: DrasiSSEClient;
   private queries: Map<string, QueryDefinition> = new Map();
+  private componentIdsByName: Map<string, string> = new Map();
   private initialized = false;
-  private reactionId = 'sse-stream';
+  private readonly reactionId = 'd18b95e5-377e-4a95-8690-3c2789e5a8ac';
+  private readonly reactionName = 'sse-stream';
   private createdQueries: Set<string> = new Set();
   private customQueries: Set<string> = new Set();
   private readonly instanceId: string;
@@ -45,6 +47,7 @@ export class DrasiClient {
     // Load all queries from the queries.ts definitions
     for (const query of ALL_QUERIES) {
       this.queries.set(query.id, query);
+      this.componentIdsByName.set(query.id, query.componentId);
     }
   }
 
@@ -75,12 +78,21 @@ export class DrasiClient {
 
     const requiredSources = ['postgres-stocks', 'price-feed'];
     const existingSources = Array.isArray(sources)
-      ? sources.map((s: any) => (s.config ?? s).id)
+      ? sources.map((s: any) => {
+          const source = s.config ?? s;
+          return { id: source.id, name: source.name };
+        })
       : [];
       
-      for (const sourceId of requiredSources) {
-        if (!existingSources.includes(sourceId)) {
-          console.warn(`Required source ${sourceId} not found. Please ensure server is configured correctly.`);
+      for (const source of existingSources) {
+        if (typeof source.name !== 'string' || !this.isUuid(source.id)) {
+          throw new Error('Server returned a source without distinct UUID and name fields.');
+        }
+        this.componentIdsByName.set(source.name, source.id);
+      }
+      for (const sourceName of requiredSources) {
+        if (!this.componentIdsByName.has(sourceName)) {
+          throw new Error(`Required source '${sourceName}' was not returned by the configured instance.`);
         }
       }
 
@@ -97,20 +109,20 @@ export class DrasiClient {
       // Step 3: Fetch initial data from REST API (will seed before SSE live updates)
       console.log('Fetching initial query results...');
       const initialResults: Record<string, any[]> = {};
-      for (const queryId of this.queries.keys()) {
+      for (const queryDef of this.queries.values()) {
         try {
-          const results = await this.getQueryResults(queryId);
+          const results = await this.getQueryResults(queryDef.id);
           // Always store results (even empty) so loading state completes
-          initialResults[queryId] = results;
+          initialResults[queryDef.componentId] = results;
           if (results.length > 0) {
-            console.log(`Got ${results.length} initial results for ${queryId}`);
+            console.log(`Got ${results.length} initial results for ${queryDef.id}`);
           } else {
-            console.log(`No initial results for ${queryId} (empty)`);
+            console.log(`No initial results for ${queryDef.id} (empty)`);
           }
         } catch (error) {
           // On error, still store empty array so loading completes
-          initialResults[queryId] = [];
-          console.warn(`Failed to fetch initial results for ${queryId}:`, error);
+          initialResults[queryDef.componentId] = [];
+          console.warn(`Failed to fetch initial results for ${queryDef.id}:`, error);
         }
       }
 
@@ -120,7 +132,7 @@ export class DrasiClient {
 
       // Step 5: Connect to SSE stream for real-time updates
       console.log('Connecting to SSE stream at', sseEndpoint);
-      const queryIds = Array.from(this.queries.keys());
+      const queryIds = Array.from(this.queries.values(), query => query.componentId);
       await this.sseClient.connect(queryIds, sseEndpoint, initialResults);
 
       // Register cleanup handlers
@@ -147,12 +159,13 @@ export class DrasiClient {
       
       if (checkResponse.status === 404) {
         // Reaction doesn't exist, create it
-        console.log(`Creating SSE reaction: ${this.reactionId}`);
+        console.log(`Creating SSE reaction: ${this.reactionName}`);
         
         const reactionConfig = {
           kind: 'sse',
           id: this.reactionId,
-          queries: Array.from(this.queries.keys()), // This will include price-ticker-query
+          name: this.reactionName,
+          queries: Array.from(this.queries.values(), query => ({ id: query.componentId })),
           autoStart: true,
           // SSE reaction config fields (camelCase for nested SseReactionConfigDto)
           host: '0.0.0.0',
@@ -169,7 +182,7 @@ export class DrasiClient {
 
         if (!createResponse.ok) {
           const error = await createResponse.text();
-          throw new Error(`Failed to create reaction ${this.reactionId}: ${error}`);
+          throw new Error(`Failed to create reaction ${this.reactionName}: ${error}`);
         }
 
         // Start the reaction
@@ -181,7 +194,7 @@ export class DrasiClient {
         const payload = reaction.data ?? reaction;
         const config = payload?.config ?? payload;
         if ((payload?.status ?? config.status) !== 'running') {
-          console.log(`Starting reaction: ${this.reactionId}`);
+          console.log(`Starting reaction: ${this.reactionName}`);
           await fetch(`${this.instanceApiUrl}/reactions/${encodeURIComponent(this.reactionId)}/start`, { method: 'POST' });
         }
         // Derive endpoint from existing reaction properties
@@ -192,7 +205,7 @@ export class DrasiClient {
         return `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}${path}`;
       }
     } catch (error) {
-      console.error(`Failed to ensure reaction ${this.reactionId}:`, error);
+      console.error(`Failed to ensure reaction ${this.reactionName}:`, error);
       throw error;
     }
     // Fallback default
@@ -205,17 +218,18 @@ export class DrasiClient {
   private async ensureQuery(queryDef: QueryDefinition): Promise<void> {
     try {
       // Check if query exists
-      const checkResponse = await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryDef.id)}?view=full`);
+      const checkResponse = await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryDef.componentId)}?view=full`);
       
       if (checkResponse.status === 404) {
         // Query doesn't exist, create it
         console.log(`Creating query: ${queryDef.id}`);
         
         const queryConfig = {
-          id: queryDef.id,
+          id: queryDef.componentId,
+          name: queryDef.id,
           query: queryDef.query,
           queryLanguage: 'Cypher',
-          inputs: queryDef.inputs,
+          inputs: queryDef.inputs.map(name => ({ id: this.componentIdForName(name) })),
           joins: queryDef.joins,
           autoStart: true
         };
@@ -232,10 +246,10 @@ export class DrasiClient {
         }
 
         // Track created query for cleanup
-        this.createdQueries.add(queryDef.id);
+        this.createdQueries.add(queryDef.componentId);
 
         // Start the query
-        await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryDef.id)}/start`, { method: 'POST' });
+        await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryDef.componentId)}/start`, { method: 'POST' });
         
       } else if (checkResponse.ok) {
         // Query exists, make sure it's running
@@ -244,7 +258,7 @@ export class DrasiClient {
         const config = payload?.config ?? payload;
         if ((payload?.status ?? config.status) !== 'running') {
           console.log(`Starting query: ${queryDef.id}`);
-          await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryDef.id)}/start`, { method: 'POST' });
+          await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryDef.componentId)}/start`, { method: 'POST' });
         }
       }
     } catch (error) {
@@ -274,6 +288,7 @@ export class DrasiClient {
     const allFields = [...baseFields, ...(additionalFields || [])];
 
     const queryDef: QueryDefinition = {
+      componentId: crypto.randomUUID(),
       id,
       description: name,
       query: `
@@ -287,6 +302,8 @@ export class DrasiClient {
     };
 
     await this.ensureQuery(queryDef);
+    this.queries.set(id, queryDef);
+    this.componentIdsByName.set(id, queryDef.componentId);
     this.customQueries.add(id);
 
     // Update reaction to include new query
@@ -299,10 +316,7 @@ export class DrasiClient {
    * Update reaction with current list of queries
    */
   private async updateReactionQueries(): Promise<void> {
-    const allQueryIds = [
-      ...Array.from(this.queries.keys()),
-      ...Array.from(this.customQueries)
-    ];
+    const allQueryIds = Array.from(this.queries.values(), query => ({ id: query.componentId }));
 
     const updateResponse = await fetch(`${this.instanceApiUrl}/reactions/${encodeURIComponent(this.reactionId)}`, {
       method: 'PUT',
@@ -322,7 +336,8 @@ export class DrasiClient {
    */
   async getQueryConfig(queryId: string): Promise<Record<string, any> | null> {
     try {
-      const response = await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryId)}?view=full`);
+      const componentId = this.queryComponentId(queryId);
+      const response = await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(componentId)}?view=full`);
       if (!response.ok) {
         console.warn(`Failed to fetch query config for ${queryId}: ${response.status}`);
         return null;
@@ -342,7 +357,8 @@ export class DrasiClient {
    */
   async getQueryResults(queryId: string): Promise<any[]> {
     try {
-      const response = await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(queryId)}/results`);
+      const componentId = this.queryComponentId(queryId);
+      const response = await fetch(`${this.instanceApiUrl}/queries/${encodeURIComponent(componentId)}/results`);
       if (!response.ok) {
         console.warn(`No results available for query ${queryId}`);
         return [];
@@ -361,7 +377,28 @@ export class DrasiClient {
    * Subscribe to real-time query updates
    */
   subscribe(queryId: string, callback: (result: QueryResult) => void): () => void {
-    return this.sseClient.subscribe(queryId, callback);
+    return this.sseClient.subscribe(this.queryComponentId(queryId), callback);
+  }
+
+  private queryComponentId(queryName: string): string {
+    const query = this.queries.get(queryName);
+    if (!query) {
+      throw new Error(`Unknown query name '${queryName}'.`);
+    }
+    return query.componentId;
+  }
+
+  private componentIdForName(name: string): string {
+    const componentId = this.componentIdsByName.get(name);
+    if (!componentId) {
+      throw new Error(`Unknown component name '${name}'.`);
+    }
+    return componentId;
+  }
+
+  private isUuid(value: unknown): value is string {
+    return typeof value === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
   }
 
   /**

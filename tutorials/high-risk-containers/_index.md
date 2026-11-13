@@ -372,8 +372,8 @@ Use `requests.http` for the instance-scoped API requests, including:
 ```text
 GET /api/v1/instances/high-risk-containers-server/runtime
 GET /api/v1/instances/high-risk-containers-server/computation
-GET /api/v1/instances/high-risk-containers-server/queries/pod-containers/results
-GET /api/v1/instances/high-risk-containers-server/queries/high-risk-containers/results
+GET /api/v1/instances/high-risk-containers-server/queries/e670943a-e9b5-45d4-9b88-c55ac28ce994/results
+GET /api/v1/instances/high-risk-containers-server/queries/445f4635-64b3-48c4-9218-18c85c58b6f9/results
 ```
 
 Or run:

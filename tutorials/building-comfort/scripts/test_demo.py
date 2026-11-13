@@ -176,7 +176,15 @@ class DemoTests(unittest.TestCase):
 
     def test_readiness_includes_internal_source(self):
         def components(names):
-            return {"success": True, "data": [{"id": name, "status": "Running"} for name in names]}
+            return {"success": True, "data": [
+                {
+                    "id": (demo.component_id(name) if name in demo.COMPONENT_IDS
+                           else "00000000-0000-4000-8000-000000000001"),
+                    "name": name,
+                    "status": "Running",
+                }
+                for name in names
+            ]}
         responses = [
             {"success": True, "data": {"instanceId": demo.INSTANCE, "runtime": "computationGraph", "running": True}},
             components(["building-facilities", "__component_graph__"]),

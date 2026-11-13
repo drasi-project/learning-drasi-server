@@ -630,8 +630,8 @@ acceptance exercises.
 > You can also query Drasi Server's REST API while the demo runs — see `requests.http` for ready-made requests, for example:
 >
 > ```text
-> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/room-comfort/results
-> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/room-alert/results
+> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/fc6b056c-0407-41e6-a7d2-19e579239be9/results
+> GET http://localhost:8380/api/v1/instances/building-comfort-server/queries/c0633cf1-cf23-42e5-80c3-5b5b7d8cd983/results
 > ```
 
 ## Clean Up

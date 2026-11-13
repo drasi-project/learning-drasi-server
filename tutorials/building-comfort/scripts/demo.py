@@ -48,6 +48,24 @@ QUERIES = (
     "room-comfort", "building-comfort-level-calc",
     "floor-comfort-level-calc", "room-alert", "floor-alert", "building-alert",
 )
+COMPONENT_IDS = {
+    "building-facilities": "eb634274-874f-4ca9-827f-ec4b57625581",
+    "room-comfort": "fc6b056c-0407-41e6-a7d2-19e579239be9",
+    "floor-comfort-level-calc": "4fc5870a-7f57-4cbf-80a4-229dc4586535",
+    "building-comfort-level-calc": "a9955885-c056-4547-9460-cd5e3b48804c",
+    "room-alert": "c0633cf1-cf23-42e5-80c3-5b5b7d8cd983",
+    "floor-alert": "2af6308b-731f-4cbb-bdca-edf6dfb77d42",
+    "building-alert": "fa96e5c9-706c-4aeb-a7ec-b31d38207f26",
+    "building-comfort-dashboard": "16e3bc1a-48d2-40f9-8019-a4f8d5c16487",
+    "console-log": "45eab8b6-ae1e-4273-a761-8e35015d6ff0",
+}
+
+
+def component_id(name):
+    try:
+        return COMPONENT_IDS[name]
+    except KeyError as error:
+        raise ValueError(f"Unknown configured component name: {name}") from error
 
 
 def load_environment():
@@ -243,9 +261,9 @@ def check():
         if response.get("success") is not True:
             raise RuntimeError(f"{kind} inspection failed: {response}")
         components = response["data"]
-        identities = {component["id"] for component in components}
-        allowed = expected | ({"__component_graph__"} if kind == "sources" else set())
-        if not expected <= identities or not identities <= allowed:
+        identities = {(component["id"], component["name"]) for component in components}
+        required = {(component_id(name), name) for name in expected}
+        if not required <= identities:
             raise RuntimeError(f"Unexpected {kind}: {components}")
         if any(component["status"].lower() != "running" for component in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")

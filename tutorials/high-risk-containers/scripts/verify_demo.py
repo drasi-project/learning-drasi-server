@@ -53,11 +53,12 @@ def capture(name):
         try:
             actual = {}
             for query in ("pod-containers", "high-risk-containers"):
-                actual[query] = demo.api(f"queries/{query}/results")
+                actual[query] = demo.api(
+                    f"queries/{demo.component_id(query)}/results")
                 assert_rows(actual[query], expected[query], query)
             dashboard = demo.get_json(
                 f"http://127.0.0.1:{demo.ownership()['ports']['DASHBOARD_PORT']}"
-                "/api/queries/high-risk-containers/snapshot")
+                f"/api/queries/{demo.component_id('high-risk-containers')}/snapshot")
             keys = [row["k"] for row in dashboard["rows"]]
             if len(set(keys)) != len(keys):
                 raise AssertionError(f"Duplicate dashboard row identities: {keys}")
