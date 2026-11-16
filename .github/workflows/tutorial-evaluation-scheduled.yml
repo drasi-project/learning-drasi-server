@@ -21,6 +21,9 @@ on:
   pull_request:           # PR evaluation
     types: [opened, synchronize, reopened]
 
+env:
+  TUTORIAL_EVALUATION_MODEL: ${{ vars.TUTORIAL_EVALUATION_MODEL || 'gpt-6.1-sol' }}
+
 jobs:
   evaluate:
     # PR evaluation needs repo secrets (COPILOT_PAT_TOKEN). Fork PRs run with no
@@ -72,6 +75,7 @@ jobs:
           configFile: ${{ matrix.devcontainer }}
           push: never
           runCmd: |
+            echo "Evaluating with model: $TUTORIAL_EVALUATION_MODEL"
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -88,7 +92,7 @@ jobs:
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
               --allow-url 127.0.0.1 \
-              --model claude-opus-4.7 || true
+              --model "$TUTORIAL_EVALUATION_MODEL" || true
             REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
             if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
               exit 1
@@ -114,6 +118,7 @@ jobs:
           configFile: ${{ matrix.devcontainer }}
           push: never
           runCmd: |
+            echo "Evaluating with model: $TUTORIAL_EVALUATION_MODEL"
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -130,7 +135,7 @@ jobs:
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
               --allow-url 127.0.0.1 \
-              --model claude-opus-4.7 || true
+              --model "$TUTORIAL_EVALUATION_MODEL" || true
             REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
             if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
               exit 1
@@ -155,6 +160,7 @@ jobs:
           configFile: ${{ matrix.devcontainer }}
           push: never
           runCmd: |
+            echo "Attempts 1 and 2 failed; evaluating with the Copilot CLI default model."
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -170,8 +176,7 @@ jobs:
               --deny-tool 'shell(rm -rf /*)' \
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
-              --allow-url 127.0.0.1 \
-              --model claude-opus-4.7 || true
+              --allow-url 127.0.0.1 || true
             REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
             if [ -z "$REPORT" ] || ! grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
               exit 1
@@ -179,6 +184,8 @@ jobs:
 
       - name: Check evaluation status
         if: always()
+        env:
+          DEFAULT_MODEL_RECOVERY: ${{ steps.attempt3.outcome == 'success' }}
         run: |
           REPORT=$(find . -name "report.md" -path "*/evaluation-*/*" | sort -r | head -1)
 
@@ -205,6 +212,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           if grep -qiE "^##\s*STATUS:\s*SUCCESS" "$REPORT"; then
+            if [ "$DEFAULT_MODEL_RECOVERY" = "true" ]; then
+              echo "::warning::Tutorial evaluation recovered using the CLI default model after two failed attempts with $TUTORIAL_EVALUATION_MODEL"
+              {
+                echo ""
+                echo "### Model fallback warning"
+                echo "The first two attempts with $TUTORIAL_EVALUATION_MODEL failed; attempt 3 passed using the CLI default model."
+                echo "This recovery does not establish why the earlier attempts failed."
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
             echo "::notice::Tutorial evaluation PASSED"
             exit 0
           elif grep -qiE "^##\s*STATUS:\s*FAILURE" "$REPORT"; then
@@ -227,11 +243,12 @@ jobs:
             tutorial-docs/
             prompt.md
 
-  create-issue-on-failure:
+  report-evaluation-results:
     needs: evaluate
     runs-on: ubuntu-latest
-    if: failure() && github.event_name == 'schedule'
+    if: always() && github.event_name == 'schedule'
     permissions:
+      actions: read
       issues: write
     steps:
       - name: Create GitHub Issue
@@ -251,36 +268,54 @@ jobs:
 
             const evalJobs = jobs.data.jobs.filter(job => job.name.startsWith('evaluate'));
             const failedJobs = evalJobs.filter(job => job.conclusion === 'failure');
+            const recoveredJobs = evalJobs.filter(job =>
+              job.conclusion === 'success' &&
+              job.steps.some(step =>
+                step.name === 'Run evaluation (attempt 3)' && step.conclusion === 'success'
+              )
+            );
 
-            if (failedJobs.length === 0) {
-              console.log("No failed 'evaluate' jobs found. Skipping issue creation.");
+            if (failedJobs.length === 0 && recoveredJobs.length === 0) {
+              console.log("No failed or recovered evaluations found. Skipping issue creation.");
               return;
             }
 
-            let reportBody = `## Scheduled Tutorial Evaluation Failed\n\n**Run ID**: [${context.runId}](${runUrl})\n**Date**: ${new Date().toISOString().split('T')[0]}\n\n`;
+            const hasFailures = failedJobs.length > 0;
+            const result = hasFailures ? 'failed' : 'warning';
+            const heading = hasFailures ? 'Failed' : 'Warning';
+            const date = new Date().toISOString().split('T')[0];
+            const model = process.env.TUTORIAL_EVALUATION_MODEL;
+            let reportBody = `## Scheduled Tutorial Evaluation ${heading}\n\n**Run ID**: [${context.runId}](${runUrl})\n**Date**: ${date}\n**Configured model**: \`${model}\`\n\n`;
 
-            for (const job of failedJobs) {
+            for (const job of [...failedJobs, ...recoveredJobs]) {
                const nameMatch = job.name.match(/\(([^,)]+)/);
                const tutorialName = nameMatch ? nameMatch[1].trim() : "getting-started";
+               const recovered = job.conclusion === 'success';
 
-               reportBody += `### ❌ Tutorial: ${tutorialName}\n`;
+               reportBody += `### ${recovered ? '⚠️' : '❌'} Tutorial: ${tutorialName}\n`;
 
-               const attempt1 = job.steps.find(s => s.name.includes('Run evaluation (attempt 1)'));
-               const attempt2 = job.steps.find(s => s.name.includes('Run evaluation (attempt 2)'));
-               const attempt3 = job.steps.find(s => s.name.includes('Run evaluation (attempt 3)'));
+               const attempt1 = job.steps.find(s => s.name === 'Run evaluation (attempt 1)');
+               const attempt2 = job.steps.find(s => s.name === 'Run evaluation (attempt 2)');
+               const attempt3 = job.steps.find(s => s.name === 'Run evaluation (attempt 3)');
 
                let attemptsCount = 0;
                if (attempt1 && attempt1.conclusion !== 'skipped') attemptsCount = 1;
                if (attempt2 && attempt2.conclusion !== 'skipped') attemptsCount = 2;
                if (attempt3 && attempt3.conclusion !== 'skipped') attemptsCount = 3;
 
-               reportBody += `**Status**: Failed after ${attemptsCount} attempt(s).\n`;
+               if (recovered) {
+                 reportBody += `**Status**: Recovered on attempt 3 using the CLI default model after two failed attempts with \`${model}\`.\n`;
+                 reportBody += `This does not prove model deprecation; inspect the earlier attempt logs for the cause.\n`;
+               } else {
+                 reportBody += `**Status**: Failed after ${attemptsCount} attempt(s).\n`;
+               }
                reportBody += `**Artifacts**: [Download Results](${artifactsUrl})\n\n`;
 
                reportBody += `<details><summary>Attempt Details</summary>\n\n`;
-               if (attempt1 && attempt1.conclusion !== 'skipped') reportBody += `- **Attempt 1**: ${attempt1.outcome ? attempt1.outcome.toUpperCase() : 'UNKNOWN'}\n`;
-               if (attempt2 && attempt2.conclusion !== 'skipped') reportBody += `- **Attempt 2**: ${attempt2.outcome ? attempt2.outcome.toUpperCase() : 'UNKNOWN'}\n`;
-               if (attempt3 && attempt3.conclusion !== 'skipped') reportBody += `- **Attempt 3**: ${attempt3.outcome ? attempt3.outcome.toUpperCase() : 'UNKNOWN'}\n`;
+               if (attempt1 && attempt1.conclusion !== 'skipped') reportBody += `- **Attempt 1**: ${attempt1.conclusion.toUpperCase()}\n`;
+               if (attempt2 && attempt2.conclusion !== 'skipped') reportBody += `- **Attempt 2**: ${attempt2.conclusion.toUpperCase()}\n`;
+               if (attempt3 && attempt3.conclusion !== 'skipped') reportBody += `- **Attempt 3** (CLI default model): ${attempt3.conclusion.toUpperCase()}\n`;
+               reportBody += `\nThese are GitHub API step conclusions. Attempts 1 and 2 use continue-on-error, so their conclusions can be SUCCESS even when evaluation failed and triggered a retry.\n`;
                reportBody += `</details>\n\n---\n`;
             }
 
@@ -289,7 +324,7 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Scheduled tutorial evaluation failed - ${new Date().toISOString().split('T')[0]}`,
+              title: `Scheduled tutorial evaluation ${result} - ${date}`,
               body: reportBody,
-              labels: ['tutorial-failure', 'automated']
+              labels: hasFailures ? ['tutorial-failure', 'automated'] : ['automated']
             });
