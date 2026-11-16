@@ -64,7 +64,12 @@ Verify the database container is running:
 docker compose -f examples/getting-started/database/docker-compose.yml ps
 ```
 
-You should see the `getting-started-postgres` container with a status of `Up`:
+You should see the `getting-started-postgres` container with a status of `Up`. The published **host port** depends on your setup:
+
+- **Native setup:** defaults to host port `5432`, as shown below.
+- **Dev Container or GitHub Codespaces:** the provided environment sets `POSTGRES_HOST_PORT=5532`, so seeing `0.0.0.0:5532->5432/tcp` is expected.
+
+Both mappings use port `5432` **inside the PostgreSQL container**. For a native setup with the default host port, the output looks like:
 
 ```text
 NAME                       IMAGE                COMMAND                  SERVICE    CREATED          STATUS                    PORTS
@@ -75,7 +80,11 @@ If the container shows a different status or you see errors, check the container
 
 > **Port already in use?**
 >
-> The database publishes on host port `5432`. If that port is already taken (for example by a local PostgreSQL), `docker compose ... up -d` will fail to bind it. Set `POSTGRES_HOST_PORT` to a free port before starting — for example add `POSTGRES_HOST_PORT=5433` to `examples/getting-started/.env` (or export it in your shell), then run the `up` command again. Note that later tutorial steps assume the database is reachable on the default port `5432`, so if you change the host port you'll also need to set the matching Source `port` in your Drasi Server config accordingly.
+> If the published host port is already taken (for example by a local PostgreSQL), `docker compose ... up -d` will fail to bind it. Set `POSTGRES_HOST_PORT` to a free port in your shell before starting, then run the `up` command again.
+>
+> When Drasi Server runs natively and connects through `localhost`, its PostgreSQL Source `port` must match the published host port. If you change that port, update the Source in each tutorial config you use.
+>
+> In the provided Dev Container and Codespaces setup, `DB_HOST=getting-started-postgres` directs the Source to PostgreSQL over the shared Docker network. Keep the Source `port` at `5432`; the published host port `5532` is for access through the Docker host and does not require changing the Source config.
 
 ### Initialize the Database
 
