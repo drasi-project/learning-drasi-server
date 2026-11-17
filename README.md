@@ -33,38 +33,6 @@ From the repository root:
 After the Codespace starts, follow the getting-started guide in
 [tutorials/getting-started](tutorials/getting-started).
 
-## Automated Tutorial Evaluation
-
-The scheduled/PR evaluation workflow uses the configured GPT model for attempts
-1 and 2. If both fail, attempt 3 uses the Copilot CLI default model by omitting
-`--model`. Each attempt retains its 20-minute timeout and report-based checks.
-
-The preferred model defaults to `gpt-6.1-sol`. Change it without editing a
-workflow by setting the repository Actions variable `TUTORIAL_EVALUATION_MODEL`
-under **Settings > Secrets and variables > Actions > Variables**, or with:
-
-```bash
-gh variable set TUTORIAL_EVALUATION_MODEL --repo drasi-project/learning-drasi-server --body gpt-6.1-sol
-```
-
-The separate **Agentic Tutorial Evaluation** manual workflow runs once. Its
-optional `model` input overrides the repository variable; leaving it blank uses
-the variable or the built-in default.
-
-For scheduled runs, passing on attempt 1 or 2 creates no issue. Passing on attempt
-3 keeps the evaluation green and creates a warning issue with the `automated`
-label, not `tutorial-failure`. An unsuccessful evaluation still creates a failure
-issue. PR and manually triggered runs do not create issues.
-
-A warning records recovery with the default model, not proof of model
-deprecation. The default may change provider, cost, or behavior and is not
-necessarily the latest GPT model. Model access depends on the workflow account's
-plan and policies; see [supported models](https://docs.github.com/en/copilot/reference/ai-models/supported-models)
-and [CLI model selection](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference#choosing-a-model).
-
-Run the workflow regression checks locally with
-`node --test scripts/test-tutorial-evaluation.cjs` (Node.js 18 or newer).
-
 ## Documentation Site
 
 The tutorials also render as a [Docsy](https://www.docsy.dev/)/[Hugo](https://gohugo.io/)

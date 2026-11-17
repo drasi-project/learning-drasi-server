@@ -135,12 +135,7 @@ Verify the database container is running:
 docker compose -f examples/getting-started/database/docker-compose.yml ps
 ```
 
-You should see the `getting-started-postgres` container with a status of `Up`. The published **host port** depends on your setup:
-
-- **Native setup:** defaults to host port `5432`, as shown below.
-- **Dev Container or GitHub Codespaces:** the provided environment sets `POSTGRES_HOST_PORT=5532`, so seeing `0.0.0.0:5532->5432/tcp` is expected.
-
-Both mappings use port `5432` **inside the PostgreSQL container**. For a native setup with the default host port, the output looks like:
+You should see the `getting-started-postgres` container with a status of `Up`:
 
 ```text
 NAME                       IMAGE                COMMAND                  SERVICE    CREATED          STATUS                    PORTS
@@ -150,11 +145,7 @@ getting-started-postgres   postgres:14-alpine   "docker-entrypoint.s…"   postg
 If the container shows a different status or you see errors, check the container logs with `docker compose -f examples/getting-started/database/docker-compose.yml logs`. See the [Docker Compose documentation](https://docs.docker.com/compose/) for additional troubleshooting help.
 
 {{% alert title="Port already in use?" color="info" %}}
-If the published host port is already taken (for example by a local PostgreSQL), `docker compose ... up -d` will fail to bind it. Set `POSTGRES_HOST_PORT` to a free port in your shell before starting, then run the `up` command again.
-
-When Drasi Server runs natively and connects through `localhost`, its PostgreSQL Source `port` must match the published host port. If you change that port, update the Source in each tutorial config you use.
-
-In the provided Dev Container and Codespaces setup, `DB_HOST=getting-started-postgres` directs the Source to PostgreSQL over the shared Docker network. Keep the Source `port` at `5432`; the published host port `5532` is for access through the Docker host and does not require changing the Source config.
+The database publishes on host port `5432`. If that port is already taken (for example by a local PostgreSQL), `docker compose ... up -d` will fail to bind it. Set `POSTGRES_HOST_PORT` to a free port before starting — for example add `POSTGRES_HOST_PORT=5433` to `examples/getting-started/.env` (or export it in your shell), then run the `up` command again. Note that later tutorial steps assume the database is reachable on the default port `5432`, so if you change the host port you'll also need to set the matching Source `port` in your Drasi Server config accordingly.
 {{% /alert %}}
 
 ### Initialize the Database
@@ -302,18 +293,15 @@ You'll see detailed startup logs as Drasi Server downloads plugins and initializ
 2026-05-31T16:21:00.488072Z  INFO drasi_lib::lifecycle: [STARTUP-COMPLETE] DrasiLib.start() is now returning - all components and subscriptions should be active
 2026-05-31T16:21:00.488075Z  INFO drasi_lib::lib_core: drasi-lib started successfully
 2026-05-31T16:21:00.489511Z  INFO drasi_server::server: Configuration persistence enabled
-2026-05-31T16:21:00.502638Z  WARN drasi_server::server: Web UI is enabled but no UI assets found. The /ui route will return 404. ...
+2026-05-31T16:21:00.502638Z  INFO drasi_server::server: Drasi Server Admin UI found on filesystem, serving at /ui/
 2026-05-31T16:21:00.503097Z  INFO drasi_server::server: Starting web API on 0.0.0.0:8080
 2026-05-31T16:21:00.503108Z  INFO drasi_server::server: API v1 available at http://0.0.0.0:8080/api/v1/
 2026-05-31T16:21:00.503110Z  INFO drasi_server::server: Swagger UI available at http://0.0.0.0:8080/api/v1/docs/
+2026-05-31T16:21:00.503112Z  INFO drasi_server::server: Drasi Server Admin UI at http://0.0.0.0:8080/ui/
 2026-05-31T16:21:00.503548Z  INFO drasi_server::server: Drasi Server started successfully with API on port 8080
 ```
 
-This shows that Drasi Server has started successfully and lists the URLs for Drasi Server's REST API and Swagger UI.
-
-{{% alert title="About the Web UI warning" color="info" %}}
-The released Drasi Server binaries don't currently bundle the Admin UI, so startup logs a `Web UI is enabled but no UI assets found` warning. This is expected and harmless: this tutorial uses the REST API, Swagger UI, and SSE CLI, not the Admin UI.
-{{% /alert %}}
+This shows that Drasi Server has started successfully and lists the URLs for Drasi Server's REST API, Swagger UI, and Admin UI.
 
 You can confirm the server is healthy at any time by requesting its health endpoint: `curl http://localhost:8080/health`.
 

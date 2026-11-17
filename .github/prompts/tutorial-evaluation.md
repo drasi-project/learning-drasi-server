@@ -41,6 +41,9 @@ Running long-lived processes (IMPORTANT):
 Evaluation Criteria:
     - For CLI / REST output, the output may not match exactly character by character. Ignore whitespace and fields like timestamps or GUIDs that change between runs. But core data and status fields must match the expectation (for example a Source name and its status, query result rows, sender names, and aggregation counts).
     - Field ordering may differ, ID fields may be represented as numbers or strings, and additional metadata fields (such as `row_signature` on aggregation events) may be present — the tutorial itself notes this, so treat those as acceptable variations.
+    - Known environment variations (treat these as acceptable, not mismatches):
+        ○ PostgreSQL host port: the devcontainer sets `POSTGRES_HOST_PORT=5532`, so `docker compose ps` shows `0.0.0.0:5532->5432/tcp` instead of `5432->5432`. Drasi Server reaches the database through `DB_HOST=getting-started-postgres` on the shared Docker network at port `5432`, so the tutorial's Source configs work unchanged.
+        ○ Admin UI: released Drasi Server binaries do not bundle the Admin UI, so startup logs `WARN ... Web UI is enabled but no UI assets found` instead of the "Drasi Server Admin UI ... /ui/" lines. The tutorial does not use the Admin UI; continue as long as the API address is reported.
     - Tutorial instructions must be unambiguous for any agent or human.
     - The sequence of instructions must be unambiguous for any agent or human.
     - The tutorial instructions should not contain assumptions that are not expressed clearly.
