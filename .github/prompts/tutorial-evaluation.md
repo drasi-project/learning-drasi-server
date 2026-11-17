@@ -36,6 +36,8 @@ Running long-lived processes (IMPORTANT):
     - For the Drasi Server process (Terminal 1): start it in the background with its output redirected to a log file (for example `nohup ./bin/drasi-server --config getting-started.yaml > evaluation-<timestamp>/NN_drasi-server.log 2>&1 &`). Wait a few seconds, then read the log file to confirm it started and reported the API address before continuing. The Log Reaction output that the tutorial asks you to observe will appear in this log file.
     - For the SSE CLI process (Terminal 3): start it in the background the same way, redirecting to its own log file, then read that file to observe streamed events.
     - Give background processes a short, bounded wait (a few seconds) before reading their output so events have time to arrive. Do not wait indefinitely.
+    - Your shell has no TTY. When a tutorial command uses `docker exec -it ... -c "<SQL>"`, run it as `docker exec -i ... -c "<SQL>"` (drop only the `-t`); this is an equivalent, non-interactive form and not a deviation.
+    - When the tutorial says to press `Ctrl+C` to stop a background process (such as the SSE CLI), send it SIGINT with `kill -INT <pid>` instead, then wait briefly for it to exit.
     - Keep track of the background process IDs and ensure you read from the correct log file when verifying each step's expected output.
 
 Evaluation Criteria:
