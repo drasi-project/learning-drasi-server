@@ -239,15 +239,18 @@ You'll see detailed startup logs as Drasi Server downloads plugins and initializ
 2026-05-31T16:21:00.488072Z  INFO drasi_lib::lifecycle: [STARTUP-COMPLETE] DrasiLib.start() is now returning - all components and subscriptions should be active
 2026-05-31T16:21:00.488075Z  INFO drasi_lib::lib_core: drasi-lib started successfully
 2026-05-31T16:21:00.489511Z  INFO drasi_server::server: Configuration persistence enabled
-2026-05-31T16:21:00.502638Z  INFO drasi_server::server: Drasi Server Admin UI found on filesystem, serving at /ui/
+2026-05-31T16:21:00.502638Z  WARN drasi_server::server: Web UI is enabled but no UI assets found. The /ui route will return 404. ...
 2026-05-31T16:21:00.503097Z  INFO drasi_server::server: Starting web API on 0.0.0.0:8080
 2026-05-31T16:21:00.503108Z  INFO drasi_server::server: API v1 available at http://0.0.0.0:8080/api/v1/
 2026-05-31T16:21:00.503110Z  INFO drasi_server::server: Swagger UI available at http://0.0.0.0:8080/api/v1/docs/
-2026-05-31T16:21:00.503112Z  INFO drasi_server::server: Drasi Server Admin UI at http://0.0.0.0:8080/ui/
 2026-05-31T16:21:00.503548Z  INFO drasi_server::server: Drasi Server started successfully with API on port 8080
 ```
 
-This shows that Drasi Server has started successfully and lists the URLs for Drasi Server's REST API, Swagger UI, and Admin UI.
+This shows that Drasi Server has started successfully and lists the URLs for Drasi Server's REST API and Swagger UI.
+
+> **About the Web UI warning**
+>
+> The released Drasi Server binaries don't currently bundle the Admin UI, so startup logs a `Web UI is enabled but no UI assets found` warning. This is expected and harmless: this tutorial uses the REST API, Swagger UI, and SSE CLI, not the Admin UI.
 
 You can confirm the server is healthy at any time by requesting its health endpoint: `curl http://localhost:8080/health`.
 
