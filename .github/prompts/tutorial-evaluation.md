@@ -72,7 +72,7 @@ Constraints:
     - If you hit a mismatch between expected output / behavior and what you observe, terminate the evaluation immediately and mark it as failed.
     - You must NOT debug failures or fix anything. Upon hitting any failure, terminate the evaluation immediately and mark it as failed.
     - Do not perform any cleanup steps (stopping the server, `docker compose down`, etc.) that the tutorial lists at the end, even if mentioned in the docs.
-    - Whatever scripts you write or files you create must remain within the evaluation directory you create at the start of the task.
+    - Whatever scripts you write or files you create must remain within the evaluation directory you create at the start of the task. Exception: run tutorial commands exactly as written, even when they create files elsewhere (for example, copying a config to `getting-started.yaml` in the repository root). This is expected and is not a conflict.
 
 Final Checklist (complete these before ending):
     1. Ensure `report.md` exists in the evaluation directory.
