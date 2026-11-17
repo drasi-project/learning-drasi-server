@@ -9,7 +9,6 @@ enableUi: false
 autoInstallPlugins: false
 instances:
   - id: getting-started-server
-    allowExternalComponentIds: true
     persistIndex: false
     sources:
       - kind: postgres

@@ -37,7 +37,6 @@ plugins: []
 # =============================================================================
 instances:
   - id: high-risk-containers-server
-    allowExternalComponentIds: true
     sources:
   # PostgreSQL source: the list of high risk image tags.
       - kind: postgres

@@ -50,7 +50,7 @@ struct Args {
     )]
     instance: Option<String>,
 
-    /// Query ID to subscribe to
+    /// Query name or UUID to subscribe to
     #[arg(short, long, env = "DRASI_QUERY", required_unless_present = "sse_url")]
     query: Option<String>,
 
@@ -137,10 +137,14 @@ fn reaction_config(
     sse_port: u16,
     sse_host: std::net::IpAddr,
 ) -> serde_json::Value {
+    let query = match uuid::Uuid::parse_str(query_id) {
+        Ok(_) => serde_json::json!({ "id": query_id }),
+        Err(_) => serde_json::json!(query_id),
+    };
     serde_json::json!({
         "kind": "sse",
         "id": reaction_id,
-        "queries": [query_id],
+        "queries": [query],
         "autoStart": true,
         "host": sse_host.to_string(),
         "port": sse_port,
@@ -237,16 +241,27 @@ async fn stream_events(
     debug: bool,
     mut log_file: Option<std::fs::File>,
 ) -> Result<(), String> {
-    let resp = tokio::time::timeout(
-        Duration::from_secs(10),
-        client
-            .get(sse_url.clone())
-            .header(reqwest::header::ACCEPT, "text/event-stream")
-            .send(),
-    )
-    .await
-    .map_err(|_| "Timed out connecting to SSE endpoint".to_string())?
-    .map_err(|e| format!("Failed to connect to SSE endpoint: {e}"))?;
+    // A newly created reaction is acknowledged before its endpoint listens,
+    // so connection refusals are retried until the deadline.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let resp = loop {
+        let attempt = tokio::time::timeout_at(
+            deadline,
+            client
+                .get(sse_url.clone())
+                .header(reqwest::header::ACCEPT, "text/event-stream")
+                .send(),
+        )
+        .await
+        .map_err(|_| "Timed out connecting to SSE endpoint".to_string())?;
+        match attempt {
+            Ok(resp) => break resp,
+            Err(e) if e.is_connect() && tokio::time::Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(e) => return Err(format!("Failed to connect to SSE endpoint: {e}")),
+        }
+    };
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -444,6 +459,11 @@ mod tests {
                 "kind": "sse", "id": "r", "queries": ["q"], "autoStart": true,
                 "host": "127.0.0.1", "port": 8090, "ssePath": "/events"
             })
+        );
+        let by_id = "67ff1d64-e938-4a9b-b80e-074666bdef95";
+        assert_eq!(
+            reaction_config("r", by_id, args.sse_port, args.sse_host)["queries"],
+            serde_json::json!([{ "id": by_id }])
         );
         let remote =
             Args::try_parse_from(command.into_iter().chain(["--sse-host", "0.0.0.0"])).unwrap();

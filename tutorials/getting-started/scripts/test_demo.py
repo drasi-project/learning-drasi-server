@@ -41,7 +41,7 @@ class TutorialTests(unittest.TestCase):
             self.assertNotIn("pluginRegistry", config)
             instance, = config["instances"]
             self.assertEqual(instance["id"], demo.INSTANCE)
-            self.assertTrue(instance["allowExternalComponentIds"])
+            self.assertNotIn("allowExternalComponentIds", instance)
             queries = {item["name"]: item for item in instance["queries"]}
             self.assertEqual(list(queries), expected[:step - 2])
             self.assertEqual(

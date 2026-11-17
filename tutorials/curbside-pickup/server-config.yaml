@@ -45,7 +45,6 @@ autoInstallPlugins: false
 # =============================================================================
 instances:
   - id: curbside-pickup-server
-    allowExternalComponentIds: true
     sources:
   # Retail Operations - PostgreSQL source: the customer orders.
       - kind: postgres

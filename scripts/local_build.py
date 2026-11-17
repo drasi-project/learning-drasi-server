@@ -107,9 +107,15 @@ def build(state, plugins, server_repo=None):
             if package == "drasi-computation-transformer-query":
                 # Query middleware belongs to the plugin, not the Server process.
                 features += ",middleware-jq"
+            name = prefix + package.replace("-", "_") + extension
+            # Cdylib outputs have no hash in their names, so a Server or example
+            # build that depends on this crate can overwrite them without the
+            # plugin feature while Cargo still treats the plugin as current.
+            # Removing them forces Cargo to rebuild this crate's plugin.
+            for output in (target / "debug" / name, target / "debug" / "deps" / name):
+                output.unlink(missing_ok=True)
             _run(["cargo", "build", "--manifest-path", core / "Cargo.toml", *common,
                   "-p", package, "--lib", "--features", features], cwd=core)
-            name = prefix + package.replace("-", "_") + extension
             files[package] = staging / "plugins" / name
             shutil.copy2(target / "debug" / name, files[package])
         hashes = {name: sha256(path) for name, path in files.items()}

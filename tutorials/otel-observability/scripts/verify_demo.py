@@ -139,13 +139,13 @@ def main():
         messages = [json.loads(line) for line in events.read_text().splitlines()]
         for query in ("slo-alert", "missing-heartbeat"):
             operations = {
-                diff["op"] for message in messages if message.get("query_id") == query
+                diff["op"] for message in messages if message.get("query_id") == demo.component_id(query)
                 for diff in message.get("results", [])
             }
             if not {"add", "delete"} <= operations:
                 raise RuntimeError(f"Dashboard did not stream both add/delete for {query}: {operations}")
             signatures = {
-                diff["k"] for message in messages if message.get("query_id") == query
+                diff["k"] for message in messages if message.get("query_id") == demo.component_id(query)
                 for diff in message.get("results", []) if diff["op"] in ("add", "delete")
             }
             if len(signatures) != 1 or "0" in signatures:

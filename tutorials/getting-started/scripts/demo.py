@@ -228,21 +228,19 @@ def check():
     proof = api("runtime")
     if proof != {"instanceId": INSTANCE, "runtime": "computationGraph", "running": True}:
         raise RuntimeError(f"Unexpected runtime identity/readiness: {proof}")
-    expected_names = {
-        "sources": {"my-postgres", "location-tracker"},
-        "queries": {
-            "all-messages", "hello-world-senders", "message-counts",
-            "inactive-senders", "messages-with-location",
-        },
-        "reactions": {"log-reaction"},
+    # Step 3 is the smallest walkthrough configuration; later steps add more.
+    required_names = {
+        "sources": {"my-postgres"}, "queries": {"all-messages"}, "reactions": {"log-reaction"},
     }
     for kind in ("sources", "queries", "reactions"):
         components = api(kind)
-        expected = expected_names[kind]
         actual = {(component["id"], component["name"]) for component in components}
-        required = {(component_id(name), name) for name in expected}
+        required = {(component_id(name), name) for name in required_names[kind]}
         if not required <= actual:
             raise RuntimeError(f"Missing or mismatched {kind}: {components}")
+        mismatched = [(i, n) for i, n in actual if n in COMPONENT_IDS and COMPONENT_IDS[n] != i]
+        if mismatched:
+            raise RuntimeError(f"Unexpected {kind} identities: {mismatched}")
         if any(component["status"].lower() != "running" for component in components):
             raise RuntimeError(f"Not all {kind} are running: {components}")
     return proof
@@ -375,11 +373,12 @@ def main():
                 raise ValueError("Invalid query name")
             print(json.dumps(api(component_path("queries", args.query, "/results")), indent=2))
         elif args.action == "stream":
+            component_id(args.query)
             binary = cli_build(verify=True)
             free_port(os.environ["SSE_PORT"])
             os.execv(str(binary), [
                 str(binary), "--server", f"http://127.0.0.1:{os.environ['SERVER_PORT']}",
-                "--instance", INSTANCE, "--query", component_id(args.query),
+                "--instance", INSTANCE, "--query", args.query,
                 "--sse-port", os.environ["SSE_PORT"], "--sse-host", "127.0.0.1",
             ])
     except KeyboardInterrupt:

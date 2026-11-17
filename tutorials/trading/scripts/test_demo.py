@@ -14,6 +14,15 @@ import exercise
 
 
 class TutorialContractTests(unittest.TestCase):
+    def test_source_settings_parse_generator_exports(self):
+        output = "export DRASI_PG_A_HOST='127.0.0.1'\nexport DRASI_PG_A_PASSWORD='it'\\''s'\n" \
+            "export DRASI_HTTP_B_SETTINGS='{\"url\": \"http://x\"}'\n"
+        self.assertEqual(demo.source_settings(output), {
+            "DRASI_PG_A_HOST": "127.0.0.1", "DRASI_PG_A_PASSWORD": "it's",
+            "DRASI_HTTP_B_SETTINGS": '{"url": "http://x"}'})
+        with self.assertRaisesRegex(RuntimeError, "Unexpected"):
+            demo.source_settings("DRASI_PG_A_HOST=x")
+
     def test_runtime_requires_exact_instance_graph_and_running(self):
         body = {"success": True, "data": {
             "instanceId": "trading-server", "runtime": "computationGraph", "running": True,
@@ -107,16 +116,9 @@ class TutorialContractTests(unittest.TestCase):
             if arguments[:2] == ["podman", "port"]:
                 return "127.0.0.1:55123"
             if "inspect" in arguments:
-                return json.dumps({"instances": [{
-                    "id": demo.INSTANCE,
-                    "allowExternalComponentIds": True,
-                    "sources": [
-                        {"id": f"00000000-0000-4000-8000-{index:012d}", "name": name}
-                        for index, name in enumerate(
-                            ("postgres-stocks", "postgres-broker", "price-feed"), 1
-                        )
-                    ],
-                }]})
+                return json.dumps({"instances": [{"id": demo.INSTANCE, "sources": []}]})
+            if "settings" in arguments:
+                return f"export DRASI_TEST_{arguments[-1].replace('-', '_').upper()}='value'\n"
             return "{}"
 
         def spawn(*args, **kwargs):
@@ -127,16 +129,19 @@ class TutorialContractTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "state"
-            query_response = {"success": True, "data": [
-                {"id": f"10000000-0000-4000-8000-{index:012d}", "name": name}
-                for index, name in enumerate(sorted(demo.TRADING_QUERY_NAMES), 1)
-            ]}
+            def listing(url, *args, **kwargs):
+                names = demo.TRADING_SOURCE_NAMES if url.endswith("/sources") \
+                    else demo.TRADING_QUERY_NAMES
+                return {"success": True, "data": [
+                    {"id": f"10000000-0000-4000-8000-{index:012d}", "name": name}
+                    for index, name in enumerate(sorted(names), 1)
+                ]}
             with patch.object(demo, "STATE", state), \
                     patch.object(demo, "verified_build", return_value=(Path("/local/server"), Path("/local/plugins"), Path("/local/generator"))), \
                     patch.object(demo, "command", side_effect=execute), \
                     patch.object(demo, "available_port", side_effect=range(55100, 55105)), \
                     patch.object(demo, "wait_for", side_effect=[None, RuntimeError("API unavailable")] if fail_api else None), \
-                    patch.object(demo, "request", return_value=query_response), \
+                    patch.object(demo, "request", side_effect=listing), \
                     patch.object(demo.subprocess, "Popen", side_effect=spawn), \
                     patch.object(demo.time, "sleep", side_effect=KeyboardInterrupt), \
                     patch("builtins.print"):

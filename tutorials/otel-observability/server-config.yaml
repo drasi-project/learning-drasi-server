@@ -36,7 +36,6 @@ pluginRegistry: "${DRASI_PLUGINS_DIR}"
 # =============================================================================
 instances:
   - id: otel-observability-server
-    allowExternalComponentIds: true
     sources:
       - kind: postgres
         id: d0b24e57-1f5e-4855-98e8-fcf797dc34e5

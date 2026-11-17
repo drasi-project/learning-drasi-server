@@ -175,6 +175,36 @@ class LocalBuildTests(unittest.TestCase):
                 else "dynamic-plugin"
             self.assertEqual(args[args.index("--features") + 1], expected)
 
+    def test_build_replaces_plugin_overwritten_by_a_server_build(self):
+        server, _ = self.roots()
+        target = self.root / "target"
+        (target / "debug" / "deps").mkdir(parents=True)
+        names = ["lib" + package.replace("-", "_") + ".so" for package in self.plugins]
+        for name in names:
+            for directory in (target / "debug", target / "debug" / "deps"):
+                (directory / name).write_text("server build without plugin feature")
+
+        def run(argv, *, cwd, capture=False):
+            args = list(map(str, argv))
+            if args[0] == "cargo":
+                name = "drasi-server" if "--bin" in args else \
+                    "lib" + args[args.index("-p") + 1].replace("-", "_") + ".so"
+                # Cargo leaves outputs it considers current untouched.
+                if not (target / "debug" / name).exists():
+                    (target / "debug" / name).write_text(name)
+                return None
+            if args[0] == "rustc":
+                return "rustc test\n"
+            return "revision\n" if "rev-parse" in args else ""
+
+        with patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target)}), \
+                patch.object(local_build.sys, "platform", "linux"), \
+                patch.object(local_build, "_run", side_effect=run):
+            local_build.build(self.state, self.plugins, server)
+        _, directory = local_build.verified_build(self.state, self.plugins)
+        for name in names:
+            self.assertEqual((directory / name).read_text(), name)
+
     def test_server_tutorials_explicitly_include_the_native_query_plugin(self):
         helpers = sorted((local_build.REPOSITORY / "tutorials").glob("*/scripts/demo.py"))
         self.assertTrue(helpers)

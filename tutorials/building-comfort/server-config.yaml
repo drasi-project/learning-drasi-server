@@ -38,7 +38,6 @@ autoInstallPlugins: false
 # =============================================================================
 instances:
   - id: building-comfort-server
-    allowExternalComponentIds: true
     sources:
       - kind: postgres
         id: eb634274-874f-4ca9-827f-ec4b57625581

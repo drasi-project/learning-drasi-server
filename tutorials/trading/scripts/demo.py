@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import shutil
 import signal
 import socket
@@ -96,6 +97,22 @@ def verified_build():
     return binary, plugins, generator
 
 
+def source_settings(output):
+    """Parse the generator's `export NAME='value'` lines into environment variables."""
+    settings = {}
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        words = shlex.split(line)
+        if len(words) != 2 or words[0] != "export" or "=" not in words[1]:
+            raise RuntimeError(f"Unexpected source settings line: {line!r}")
+        name, value = words[1].split("=", 1)
+        settings[name] = value
+    if not settings:
+        raise RuntimeError("The generator returned no source settings")
+    return settings
+
+
 def request(url, body=None, method=None):
     req = Request(url, data=None if body is None else json.dumps(body).encode(),
                   headers={"Content-Type": "application/json"}, method=method)
@@ -158,17 +175,26 @@ def component_map(items, expected_names):
     return identities
 
 
+TRADING_SOURCE_NAMES = {"postgres-stocks", "postgres-broker", "price-feed"}
+
+
 def validate_source_config(config):
     instances = config.get("instances")
     if not isinstance(instances, list) or len(instances) != 1:
-        raise RuntimeError("Trading source configuration must declare exactly one instance")
+        raise RuntimeError("Trading server configuration must declare exactly one instance")
     instance = instances[0]
-    if instance.get("id") != INSTANCE or instance.get("allowExternalComponentIds") is not True:
-        raise RuntimeError("Trading instance identity or component ID policy is invalid")
-    return component_map(
-        instance.get("sources", []),
-        {"postgres-stocks", "postgres-broker", "price-feed"},
-    )
+    if instance.get("id") != INSTANCE:
+        raise RuntimeError("Trading instance identity is invalid")
+    # The app installs the complete native group; the Server starts empty.
+    if instance.get("sources") or instance.get("queries") or instance.get("reactions"):
+        raise RuntimeError("Trading server configuration must start without components")
+
+
+def installed_components(server_url, kind, expected_names):
+    response = request(server_url + f"/api/v1/instances/{INSTANCE}/{kind}")
+    if response.get("success") is not True:
+        raise RuntimeError(f"Could not inspect Trading {kind} identities: {response}")
+    return component_map(response["data"], expected_names)
 
 
 def run(no_prices):
@@ -235,10 +261,8 @@ def run(no_prices):
                "VITE_TRADING_SSE_HOST": "127.0.0.1", "VITE_TRADING_SSE_PORT": str(ports["sse"]),
                "VITE_TRADING_SSE_URL": urls["sse"] + "/events"}
         recipe = EXAMPLE / "server/trading-native-recipe.json"
-        for source, key in [("postgres-stocks", "DRASI_PG_POSTGRES_STOCKS_SETTINGS"),
-                            ("postgres-broker", "DRASI_PG_POSTGRES_BROKER_SETTINGS"),
-                            ("price-feed", "DRASI_HTTP_PRICE_FEED_SETTINGS")]:
-            env[key] = command([generator, "settings", recipe, source], env=env)
+        for source in TRADING_SOURCE_NAMES:
+            env.update(source_settings(command([generator, "settings", recipe, source], env=env)))
 
         def start(name, args, cwd=work):
             log = (work / f"{name}.log").open("w")
@@ -249,7 +273,7 @@ def run(no_prices):
         start("trading-api", [sys.executable, EXAMPLE / "mock-generator/trading_api.py"])
         wait_for("real Trading API", lambda: request(urls["api"] + "/health")["status"] == "healthy", children)
         config = json.loads(command([generator, "inspect", EXAMPLE / "server/trading-sources-only.yaml"]))
-        source_ids = validate_source_config(config)
+        validate_source_config(config)
         config.update({"host": "127.0.0.1", "port": ports["server"], "enableUi": False,
                        "persistConfig": False, "autoInstallPlugins": False})
         config_path = work / "server.json"
@@ -268,10 +292,8 @@ def run(no_prices):
                 return response.status == 200
 
         wait_for("existing Trading dashboard", app_ready, children)
-        query_response = request(urls["server"] + f"/api/v1/instances/{INSTANCE}/queries")
-        if query_response.get("success") is not True:
-            raise RuntimeError(f"Could not inspect Trading query identities: {query_response}")
-        query_ids = component_map(query_response["data"], TRADING_QUERY_NAMES)
+        source_ids = installed_components(urls["server"], "sources", TRADING_SOURCE_NAMES)
+        query_ids = installed_components(urls["server"], "queries", TRADING_QUERY_NAMES)
         if not no_prices:
             start("prices", [sys.executable, EXAMPLE / "mock-generator/simple_price_generator.py"])
         (work / "endpoints.json").write_text(json.dumps(

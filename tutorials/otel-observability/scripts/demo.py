@@ -479,13 +479,15 @@ def number(value):
 
 def check_ports(*keys):
     for key in keys:
-        with socket.socket() as probe:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                probe.bind(("0.0.0.0", int(os.environ[key])))
-                probe.listen(1)
-            except OSError as error:
-                raise RuntimeError(f"{key}={os.environ[key]} is unavailable: {error}") from error
+        # macOS allows a reusable wildcard bind beside a loopback listener.
+        for address in ("0.0.0.0", "127.0.0.1"):
+            with socket.socket() as probe:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    probe.bind((address, int(os.environ[key])))
+                    probe.listen(1)
+                except OSError as error:
+                    raise RuntimeError(f"{key}={os.environ[key]} is unavailable: {error}") from error
 
 
 def compatibility(arguments):
