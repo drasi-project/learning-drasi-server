@@ -36,11 +36,17 @@ Running long-lived processes (IMPORTANT):
     - For the Drasi Server process (Terminal 1): start it in the background with its output redirected to a log file (for example `nohup ./bin/drasi-server --config getting-started.yaml > evaluation-<timestamp>/NN_drasi-server.log 2>&1 &`). Wait a few seconds, then read the log file to confirm it started and reported the API address before continuing. The Log Reaction output that the tutorial asks you to observe will appear in this log file.
     - For the SSE CLI process (Terminal 3): start it in the background the same way, redirecting to its own log file, then read that file to observe streamed events.
     - Give background processes a short, bounded wait (a few seconds) before reading their output so events have time to arrive. Do not wait indefinitely.
+    - Your shell has no TTY. When a tutorial command uses `docker exec -it ... -c "<SQL>"`, run it as `docker exec -i ... -c "<SQL>"` (drop only the `-t`); this is an equivalent, non-interactive form and not a deviation.
+    - When the tutorial says to press `Ctrl+C` to stop a background process (such as the SSE CLI), send it SIGINT with `kill -INT <pid>` instead, then wait briefly for it to exit.
     - Keep track of the background process IDs and ensure you read from the correct log file when verifying each step's expected output.
 
 Evaluation Criteria:
     - For CLI / REST output, the output may not match exactly character by character. Ignore whitespace and fields like timestamps or GUIDs that change between runs. But core data and status fields must match the expectation (for example a Source name and its status, query result rows, sender names, and aggregation counts).
     - Field ordering may differ, ID fields may be represented as numbers or strings, and additional metadata fields (such as `row_signature` on aggregation events) may be present — the tutorial itself notes this, so treat those as acceptable variations.
+    - Known environment variations (treat these as acceptable, not mismatches):
+        ○ PostgreSQL host port: the devcontainer sets `POSTGRES_HOST_PORT=5532`, so `docker compose ps` shows `0.0.0.0:5532->5432/tcp` instead of `5432->5432`. Drasi Server reaches the database through `DB_HOST=getting-started-postgres` on the shared Docker network at port `5432`, so the tutorial's Source configs work unchanged.
+        ○ Admin UI: released Drasi Server binaries do not bundle the Admin UI, so startup logs `WARN ... Web UI is enabled but no UI assets found` instead of the "Drasi Server Admin UI ... /ui/" lines. The tutorial does not use the Admin UI; continue as long as the API address is reported.
+        ○ Time-based queries: pace yourself like a human reader. When expected results depend on elapsed time (for example, senders idle for more than 20 seconds), wait slightly longer than that duration (for example, 25 seconds after creating `inactive-senders`) before checking results. Existing rows are timestamped when a new query bootstraps them, so checking sooner shows an incomplete result.
     - Tutorial instructions must be unambiguous for any agent or human.
     - The sequence of instructions must be unambiguous for any agent or human.
     - The tutorial instructions should not contain assumptions that are not expressed clearly.
@@ -69,7 +75,7 @@ Constraints:
     - If you hit a mismatch between expected output / behavior and what you observe, terminate the evaluation immediately and mark it as failed.
     - You must NOT debug failures or fix anything. Upon hitting any failure, terminate the evaluation immediately and mark it as failed.
     - Do not perform any cleanup steps (stopping the server, `docker compose down`, etc.) that the tutorial lists at the end, even if mentioned in the docs.
-    - Whatever scripts you write or files you create must remain within the evaluation directory you create at the start of the task.
+    - Whatever scripts you write or files you create must remain within the evaluation directory you create at the start of the task. Exception: run tutorial commands exactly as written, even when they create files elsewhere (for example, copying a config to `getting-started.yaml` in the repository root). This is expected and is not a conflict.
 
 Final Checklist (complete these before ending):
     1. Ensure `report.md` exists in the evaluation directory.

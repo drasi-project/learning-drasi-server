@@ -82,13 +82,17 @@ mkdir -p "$INSTALL_DIR"
 # Download drasi-server
 SERVER_BINARY="drasi-server-$PLATFORM_SUFFIX"
 echo "Downloading: $SERVER_BINARY"
-curl -fsSL "$REPO_URL/$SERVER_BINARY" -o "$INSTALL_DIR/drasi-server"
+curl -fsSL --retry 3 --retry-delay 2 --retry-max-time 60 \
+    --connect-timeout 10 --max-time 60 \
+    "$REPO_URL/$SERVER_BINARY" -o "$INSTALL_DIR/drasi-server"
 chmod +x "$INSTALL_DIR/drasi-server"
 
 # Download drasi-sse-cli
 SSE_BINARY="drasi-sse-cli-$PLATFORM_SUFFIX"
 echo "Downloading: $SSE_BINARY"
-curl -fsSL "$REPO_URL/$SSE_BINARY" -o "$INSTALL_DIR/drasi-sse-cli"
+curl -fsSL --retry 3 --retry-delay 2 --retry-max-time 60 \
+    --connect-timeout 10 --max-time 60 \
+    "$REPO_URL/$SSE_BINARY" -o "$INSTALL_DIR/drasi-sse-cli"
 chmod +x "$INSTALL_DIR/drasi-sse-cli"
 
 # Verify

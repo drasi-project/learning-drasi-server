@@ -24,8 +24,10 @@ on:
           - getting-started
         default: 'getting-started'
       model:
-        description: 'AI model to use for evaluation'
-        default: 'claude-opus-4.7'
+        description: 'Optional model override (otherwise uses TUTORIAL_EVALUATION_MODEL or gpt-6.1-sol)'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   setup:
@@ -52,6 +54,8 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     environment: tutorial-evaluation
+    env:
+      TUTORIAL_EVALUATION_MODEL: ${{ inputs.model || vars.TUTORIAL_EVALUATION_MODEL || 'gpt-6.1-sol' }}
     steps:
       - name: Checkout this repo
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -82,6 +86,7 @@ jobs:
           configFile: ${{ needs.setup.outputs.devcontainer }}
           push: never
           runCmd: |
+            echo "Evaluating with model: $TUTORIAL_EVALUATION_MODEL"
             timeout 1200 copilot -p "$(cat prompt.md)" \
               --allow-all-tools \
               --allow-all-paths \
@@ -98,7 +103,7 @@ jobs:
               --deny-tool 'shell(dd *)' \
               --allow-url localhost \
               --allow-url 127.0.0.1 \
-              --model ${{ inputs.model }}
+              --model "$TUTORIAL_EVALUATION_MODEL"
 
       - name: Check evaluation status
         if: always()
