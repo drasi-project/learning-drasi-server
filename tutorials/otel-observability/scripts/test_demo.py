@@ -142,6 +142,36 @@ class DemoTests(unittest.TestCase):
             "--kubeconfig", str(demo.state() / "kubeconfig.yaml"), "--namespace", "otel-test",
         ])
 
+    def test_query_metrics_sum_phases_by_current_query_name(self):
+        text = "\n".join([
+            "# TYPE drasi_query_results_emitted counter",
+            'drasi_component_info{component_id="q1",component_kind="query",component_name="slo-alert"} 1',
+            'drasi_component_info{component_id="s1",component_kind="source",component_name="otel"} 1',
+            'drasi_component_info{component_id="q2",component_kind="query",component_name="renamed"} 0',
+            'drasi_query_events_processed{phase="bootstrap",query_id="q1"} 2',
+            'drasi_query_events_processed{phase="steady",query_id="q1"} 10',
+            'drasi_query_results_emitted{query_id="q1"} 3',
+            'drasi_query_results_emitted{query_id="q2"} 7',
+        ])
+        self.assertEqual(demo.query_metrics(text), {"slo-alert": (12, 3)})
+
+    def test_optional_webhook_reaction_ignores_latency_samples(self):
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("PyYAML is not installed")
+        lines = (demo.TUTORIAL / "server-config.yaml").read_text().splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith("  #     - kind: http"))
+        block = [line.replace("# ", "", 1) for line in lines[start:] if line.startswith("  #")]
+        reaction = yaml.safe_load("\n".join(block))[0]
+        self.assertEqual(reaction["queries"], ["slo-alert-notices", "missing-heartbeat"])
+        routes = reaction["outputTemplates"]["routes"]
+        self.assertEqual(set(routes["slo-alert-notices"]), {"added", "updated", "deleted"})
+        config = yaml.safe_load((demo.TUTORIAL / "server-config.yaml").read_text())
+        notices = next(query for query in config["instances"][0]["queries"]
+                       if query["name"] == "slo-alert-notices")
+        self.assertNotIn("latencyMs", notices["query"])
+
     def test_explicit_shared_query_edges(self):
         config = (demo.TUTORIAL / "server-config.yaml").read_text()
         self.assertEqual(config.count("label: ServiceHealth"), 2)  # result and policy join key

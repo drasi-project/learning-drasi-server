@@ -5,16 +5,19 @@
 pub struct Decoder {
     line: Vec<u8>,
     data: Vec<String>,
+    event: Option<String>,
     after_cr: bool,
     started: bool,
 }
 
 impl Decoder {
+    /// Calls `on_event` with the event name (`None` for the default `message`
+    /// type) and the joined data lines of every complete event.
     pub fn push(
         &mut self,
         bytes: &[u8],
         debug: bool,
-        mut on_event: impl FnMut(&str) -> Result<(), String>,
+        mut on_event: impl FnMut(Option<&str>, &str) -> Result<(), String>,
     ) -> Result<(), String> {
         for &byte in bytes {
             if self.after_cr && byte == b'\n' {
@@ -32,17 +35,23 @@ impl Decoder {
                     line.strip_prefix('\u{feff}').unwrap_or(&line)
                 };
                 if line.is_empty() {
+                    let event = self.event.take();
                     if !self.data.is_empty() {
                         let data = std::mem::take(&mut self.data).join("\n");
-                        on_event(&data)?;
+                        on_event(event.as_deref(), &data)?;
                     }
                 } else {
                     let (field, value) = line.split_once(':').unwrap_or((line, ""));
                     let value = value.strip_prefix(' ').unwrap_or(value);
                     if field == "data" {
                         self.data.push(value.to_owned());
-                    } else if debug {
-                        eprintln!("[sse] {line}");
+                    } else {
+                        if field == "event" {
+                            self.event = Some(value.to_owned()).filter(|name| !name.is_empty());
+                        }
+                        if debug {
+                            eprintln!("[sse] {line}");
+                        }
                     }
                 }
             } else {
@@ -86,14 +95,23 @@ mod tests {
                 let mut events = Vec::new();
                 for chunk in [&wire.as_bytes()[..split], &wire.as_bytes()[split..]] {
                     decoder
-                        .push(chunk, false, |data| {
-                            events.push(data.to_owned());
+                        .push(chunk, false, |event, data| {
+                            events.push((event.map(str::to_owned), data.to_owned()));
                             Ok(())
                         })
                         .unwrap();
                 }
                 decoder.finish().unwrap();
-                assert_eq!(events, ["{\n\"message\": \"café ☕\"}", "{\"next\":true}"]);
+                assert_eq!(
+                    events,
+                    [
+                        (
+                            Some("snapshot".to_owned()),
+                            "{\n\"message\": \"café ☕\"}".to_owned()
+                        ),
+                        (None, "{\"next\":true}".to_owned())
+                    ]
+                );
             }
         }
     }
@@ -102,14 +120,14 @@ mod tests {
     fn waits_for_blank_line_and_keeps_data_whitespace() {
         let mut decoder = Decoder::default();
         decoder
-            .push(b"data:  one \ndata\ndata: three\n", false, |_| {
+            .push(b"data:  one \ndata\ndata: three\n", false, |_, _| {
                 panic!("event is not complete")
             })
             .unwrap();
         assert!(decoder.finish().is_err());
         let mut events = Vec::new();
         decoder
-            .push(b"\n", false, |data| {
+            .push(b"\n", false, |_, data| {
                 events.push(data.to_owned());
                 Ok(())
             })
@@ -119,19 +137,35 @@ mod tests {
     }
 
     #[test]
+    fn event_names_apply_only_to_their_own_event() {
+        let mut names = Vec::new();
+        Decoder::default()
+            .push(
+                b": heartbeat\n\nevent: snapshot\ndata: []\n\nevent: unused\n\ndata: {}\n\n",
+                false,
+                |event, _| {
+                    names.push(event.map(str::to_owned));
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(names, [Some("snapshot".to_owned()), None]);
+    }
+
+    #[test]
     fn rejects_invalid_utf8_and_propagates_consumer_errors() {
         assert!(Decoder::default()
-            .push(b"data: \xff\n\n", false, |_| Ok(()))
+            .push(b"data: \xff\n\n", false, |_, _| Ok(()))
             .unwrap_err()
             .contains("UTF-8"));
         assert_eq!(
             Decoder::default()
-                .push(b"data: {}\n\n", false, |_| Err("write failed".into()))
+                .push(b"data: {}\n\n", false, |_, _| Err("write failed".into()))
                 .unwrap_err(),
             "write failed"
         );
         let mut decoder = Decoder::default();
-        decoder.push(b"data: {", false, |_| Ok(())).unwrap();
+        decoder.push(b"data: {", false, |_, _| Ok(())).unwrap();
         assert!(decoder.finish().is_err());
     }
 }

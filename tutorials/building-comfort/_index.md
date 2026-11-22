@@ -62,22 +62,21 @@ below let you follow this path and watch alerts appear and disappear.
 | **[Step 2: Run the Demo](#run)** | One command starts PostgreSQL and Drasi Server | 3 min |
 | **[Step 3: Open the Dashboard](#dashboard)** | Watch comfort levels and alerts live | 2 min |
 | **[Step 4: Drive Change](#drive)** | Break, reset, and simulate rooms — and watch Drasi react instantly | 5 min |
-| **[How It Works](#how)** | Connect the graph to its query inputs, output labels, joins and dashboard configuration | 5 min |
+| **[How It Works](#how)** | Connect the graph to its query inputs, output labels, joins, dashboard configuration and durable state | 5 min |
 
 {{% alert title="Before you begin" color="info" %}}
 - **Terminals:** you'll use two. **Terminal 1** runs the demo (it stays in the foreground). Use **Terminal 2** for the helper scripts that change data.
 - **Working directory:** run every command from the tutorial directory (`tutorials/building-comfort/`). The dev container opens there automatically; if you're running locally, `cd tutorials/building-comfort` first.
 - **Platform:** use macOS, Linux, or WSL with Python 3.11 or newer. All commands below use the same Python helper; there are no separate shell-specific implementations.
 - **Ports:** the Drasi Server API is on `8380`, the dashboard is on `3000`, and PostgreSQL is published on `5732`.
-- **Runtime:** this tutorial builds the ComputationGraph version of Drasi Server from matching local Server and Core checkouts, not a published Server release.
+- **Build:** this tutorial builds Drasi Server and its plugins from your local Server and Core checkouts, not from a published release.
 {{% /alert %}}
 
 ## Step 1 of 4: Set Up Your Environment {#setup}
 
 ### Use the existing source checkouts
 
-Keep these repositories beside one another, on their matching
-`agentofreality-parallel-computation-graph` branches:
+Keep these repositories beside one another, on matching branches:
 
 ```text
 workspace/
@@ -88,8 +87,7 @@ workspace/
 
 The build helper does not clone repositories, switch branches, download released
 Drasi binaries, or change dependencies. Server must reference `../drasi-core/lib`
-in its Cargo manifest. The ordinary PostgreSQL and reaction interfaces remain
-supported: they run inside ComputationGraph without requiring native graph YAML.
+in its Cargo manifest.
 
 For a local build, install Python 3.11+, Rust through rustup, a C/C++ compiler,
 CMake, Clang/libclang, pkg-config, jq with its development library, OpenSSL
@@ -116,30 +114,24 @@ From `learning-drasi-server/`:
 cd tutorials/building-comfort
 ```
 
-If the Core checkout has no workspace `Cargo.lock` yet, generate it before the
-locked build. Keep an existing lockfile unchanged:
-
-```bash
-RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../../../drasi-core/Cargo.toml
-```
-
-Then build the matching artifacts:
+Build the matching artifacts:
 
 ```bash
 RUSTUP_TOOLCHAIN=1.95.0 python3 scripts/demo.py build
 ```
 
-This builds Server and exactly five plugins from the sibling Core checkout:
-PostgreSQL source, PostgreSQL bootstrap, dashboard reaction, log reaction, and
-`drasi-computation-transformer-query`. Server explicitly registers the loaded
-native query factory; the ordinary query configuration still uses the same
-ComputationGraph. The query library includes the standard middleware and system JQ.
-It uses `drasi-server/target` by default, then copies a matching set into the
-tutorial's private `.runtime/builds/` directory. `.runtime/build.json` records
-repository revisions, working-tree status, compiler version, and artifact hashes.
-Build and verification use the repository's shared `scripts/local_build.py`;
-this tutorial keeps its own artifact bundle and database lifecycle.
-Rebuild after changing Server or Core.
+The build passes `--locked`, so Cargo uses the committed lockfiles. It builds
+Server and five plugins from the sibling Core checkout: the PostgreSQL source,
+the PostgreSQL bootstrap provider, the dashboard reaction, the log reaction,
+and `drasi-computation-transformer-query`, which runs the continuous queries.
+Server loads the query plugin before it creates any query. The query plugin
+includes the standard middleware and JQ support.
+The build uses `drasi-server/target` unless you set `CARGO_TARGET_DIR`, then
+copies a matching set into the tutorial's private `.runtime/builds/` directory.
+`.runtime/build.json` records repository revisions, working-tree status,
+compiler version, and artifact hashes. Build and verification use the
+repository's shared `scripts/local_build.py`; this tutorial keeps its own
+artifact bundle and database lifecycle. Rebuild after changing Server or Core.
 
 The dashboard's web assets are embedded in its plugin. This tutorial does not
 require the separate Server management UI or a Node.js build.
@@ -150,17 +142,16 @@ Open this repository in VS Code, choose **Reopen in Container**, and select
 **Drasi Server - Building Comfort Tutorial**. Keep all three checkouts present
 first: this configuration mounts their parent directory and installs the build
 prerequisites. Its post-create script checks that Core's workspace `Cargo.lock`
-exists before running the same locked build, with a container-specific Cargo
-target directory. If that check fails, generate the lockfile using the command
-above in the container terminal, then rerun:
+exists, then runs the same locked build with a container-specific Cargo target
+directory. If setup stops, fix the reported problem and rerun it from the
+container terminal:
 
 ```bash
 bash ../../.devcontainer/building-comfort/post-create.sh
 ```
 
 This source-based setup is **not a one-click Codespaces or release-ZIP setup**.
-Those environments need the matching Core and Server checkouts too. The former
-`0.2.0-preview` downloads are deliberately no longer offered for this tutorial.
+Those environments need the matching Core and Server checkouts too.
 
 ### Optional settings
 
@@ -169,9 +160,9 @@ literal `NAME=value` entries; exported variables take precedence. Change
 `POSTGRES_PORT` and `POSTGRES_HOST_PORT` together. Services bind to loopback by
 default; do not expose the demo credentials or dashboard publicly.
 
-The new database uses the `building-comfort-cg` Compose project. It does not
-reuse or delete the old tutorial's database. Server writes its local runtime
-files under `.runtime/`, not the former `data/` directory.
+The database belongs to the `building-comfort-cg` Compose project. Server
+writes its runtime files, including its durable query indexes, under
+`.runtime/`.
 
 ## Step 2 of 4: Run the Demo {#run}
 
@@ -195,7 +186,7 @@ global plugin cache.
 Wait for the helper's readiness message, not merely the API-started log line:
 
 ```text
-Building Comfort READY: ComputationGraph; source, six queries and two reactions running.
+Building Comfort READY: source, six queries and two reactions running.
 ```
 
 Leave this running. Everything else happens from **Terminal 2** (or your browser).
@@ -203,7 +194,9 @@ Leave this running. Everything else happens from **Terminal 2** (or your browser
 {{% alert title="Stopping and resetting" color="info" %}}
 Press **Ctrl+C** in Terminal 1 to stop Server. To stop PostgreSQL while preserving
 its data, run `python3 scripts/demo.py cleanup`. Add `--volumes` only when you
-intend to delete this demo's database. No command kills other Server processes.
+intend to delete this demo's database; it also deletes the saved query state in
+`.runtime/data/`, which records positions in that database. No command kills
+other Server processes.
 {{% /alert %}}
 
 ## Step 3 of 4: Open the Dashboard {#dashboard}
@@ -250,7 +243,15 @@ python3 scripts/demo.py break-room room_01_01_01
 **Room 01** on **Floor 01** changes from comfort `46` to `4`, and its status
 becomes blue (too cold). Floor 01 becomes `32`, and building comfort becomes
 approximately `41.3333`. Room and floor alerts appear, but **no building alert**
-appears: the building average is still within 40-50. Terminal 1 logs the alerts.
+appears: the building average is still within 40-50. Terminal 1 logs the alerts:
+
+```text
+[45eab8b6-ae1e-4273-a761-8e35015d6ff0]   ALERT Room 01 (room_01_01_01): comfort 4.0
+[45eab8b6-ae1e-4273-a761-8e35015d6ff0]   ALERT Floor 01 (floor_01_01): comfort 32.0
+```
+
+Each line starts with the ID of the `console-log` reaction. The reaction also
+prints a `Query '<query ID>' (1 items):` line before each change.
 
 Follow the one database update through the graph:
 
@@ -306,8 +307,9 @@ python3 scripts/demo.py break-room room_01_01_02
 
 Floor 01 becomes `18`, and building comfort becomes approximately `36.6667`.
 All three kinds of alert now have results. The building alert is visible in
-Terminal 1's log; the room and floor alerts also appear in the dashboard lists.
-Reset all rooms to clear them.
+Terminal 1's log (`ALERT Building 01 (building_01): comfort 36.666666666666664`);
+the room and floor alerts also appear in the dashboard lists. Reset all rooms to
+clear them; Terminal 1 prints a `CLEARED` line for each alert that ends.
 
 ### Check why floor sizes matter
 
@@ -354,37 +356,53 @@ Press **Ctrl+C** to stop the simulator, then run `python3 scripts/demo.py reset-
 Reset-all sends a single multi-row SQL update; every changed room must reach the
 queries and dashboard.
 
-### Stop and restart without losing your source data
+### Stop Server, change a room, and restart
 
-Set a room to an uncomfortable value, stop Server with Ctrl+C, and run
-`python3 scripts/demo.py start-demo` again. PostgreSQL retains your readings.
-The source first supplies a snapshot of the current database rows and then
-supplies live changes. The room query uses that initial data to establish its
-result. Each downstream query likewise starts with its upstream query's current
-output and then follows changes. This initial-state loading is called
-**bootstrap**; a consumer does not have to wait for every room to change before
-showing the current picture.
+When Server started for the first time, each query loaded its initial data:
+the source read the current `Building`, `Floor`, and `Room` rows (Terminal 1
+shows `Bootstrapped 9 rows from table 'Room'`), and each downstream query
+started from its upstream query's current results. This initial load is called
+**bootstrap**. Because the configuration sets `persistIndex: true`, every query
+also stores its indexes, its results, and its position in the PostgreSQL change
+stream on disk, under `.runtime/data/`.
 
-The dashboard returns to the same state. Layout edits and query/API changes are
-not persisted by this tutorial configuration. If readings change while Server
-is stopped, restart restores the current picture; this is not an alert-history
-service that promises to replay every alert transition during the outage.
+Try it. Break two rooms so that every kind of alert is active:
 
-This is a normal restart and fresh bootstrap, **not** a claim of durable query
-indexes, crash-safe browser delivery, or exactly-once external effects.
+```bash
+python3 scripts/demo.py break-room room_01_01_01
+python3 scripts/demo.py break-room room_01_01_02
+```
+
+Stop Server with **Ctrl+C** in Terminal 1. While it is stopped, fix one of the
+rooms; the change waits in PostgreSQL's replication slot:
+
+```bash
+python3 scripts/demo.py reset-room room_01_01_02
+```
+
+Start Server again with `python3 scripts/demo.py start-demo`. This time Terminal 1
+shows no `Bootstrapped` lines. The queries restored their saved state and resumed
+from their position in the replication slot
+(`Replication started from read LSN ...`), so they processed only the one room
+you changed. The dashboard shows Room 02 comfortable again, Floor 01 back at
+`32`, and no building alert.
+
+The dashboard reads each query's current results when it connects, so it is
+correct after the restart. The log reaction is different: it prints only the
+changes it receives while it runs, and it did not print the alerts that changed
+while Server was stopped. Neither reaction is an alert history. Layout edits and
+query/API changes are not saved by this configuration (`persistConfig: false`).
+
+Reset all rooms when you are done: `python3 scripts/demo.py reset-room`.
 
 ## How It Works {#how}
 
 Everything you just ran is described by the single `server-config.yaml`. The
-named instance `building-comfort-server` owns one ComputationGraph containing
-the source, six queries and two reactions. Its ports are the components'
-connection points, and its pipes carry changes between them. Server creates
-these connections from the query `inputs` and reaction `queries` declarations.
-
-The convenient `sources`, `queries` and `reactions` sections do not create a
-second runtime. Each query runs as a `ContinuousQueryTransformer` inside that
-graph. There is no need for custom arithmetic transformers or lower-level
-factory configuration to express this demo.
+named instance `building-comfort-server` runs one graph containing the source,
+six queries and two reactions. Each component has input and output ports, and
+connections carry changes between them. Server creates these connections from
+the query `inputs` and reaction `queries` declarations; you do not configure
+the graph's wiring separately.
 
 ### The Source
 
@@ -454,12 +472,12 @@ There are six queries:
 | `floor-alert` | `floor-comfort-level-calc` | `FloorAlert`: only floors whose score is outside 40–50 |
 | `building-alert` | `building-comfort-level-calc` | `BuildingAlert`: only buildings whose score is outside 40–50 |
 
-The query **ID** selects a component to connect to; the result **label** tells a
-downstream `MATCH` which kind of node to read. For example,
+The query **name** in `inputs` selects a component to connect to; the result
+**label** tells a downstream `MATCH` which kind of node to read. For example,
 `inputs: [room-comfort]` connects to the room query, while
 `MATCH (r:RoomComfort)` reads the nodes it produces. `result.label` declares that
-label; it does not select a different message format. All six use
-`drasi.graph-change` v1.
+label; it does not select a different message format. Every source and query
+publishes the same kind of graph changes.
 
 Every returned alias is a property on the result node. `RoomId`, for example,
 is a business identifier carried as a property; Drasi also supplies the result
@@ -583,8 +601,21 @@ average from the room rows.
 
 The room and floor alert lists display their alert-query results. The log
 reaction independently subscribes to all three alert queries, including
-`building-alert`; no extra query is created for the log. Formatting a score as a
-colored room status is presentation work, not another comfort calculation.
+`building-alert`; no extra query is created for the log. Its `routes` are keyed
+by query ID, and each route has an `added`, `updated` and `deleted` template.
+A template reads the new row as `after` and the previous row as `before`:
+
+```yaml
+routes:
+  c0633cf1-cf23-42e5-80c3-5b5b7d8cd983:   # room-alert
+    added:
+      template: "ALERT {{after.RoomName}} ({{after.RoomId}}): comfort {{after.ComfortLevel}}"
+    deleted:
+      template: "CLEARED {{before.RoomName}} ({{before.RoomId}}) is comfortable again"
+```
+
+Formatting a score as a colored room status is presentation work, not another
+comfort calculation.
 The full widget options are documented in
 [Configure the Dashboard Reaction](https://drasi.io/drasi-server/how-to-guides/configuration/configure-reactions/configure-dashboard-reaction/).
 
@@ -618,25 +649,84 @@ And the reaction renders it live:
 
 ### Inspect the running graph
 
-You do not need an `executionMode` field or an enablement flag. The single output
-on each query resolves automatically; an input with several outputs requires an
-explicit port or a declared primary.
-
-Check the running components at any time:
+Print the graph that Server built from `server-config.yaml`:
 
 ```bash
-python3 scripts/demo.py check
+python3 scripts/demo.py graph
 ```
 
-The check requires the selected instance to report `runtime: "computationGraph"`
-and `running: true`, with the source, all six queries and both reactions running,
-and the predefined dashboard available. It is a readiness check, not proof that
-every input has finished processing.
+```text
+Graph building-comfort-server (Running)
 
-To compare every query and dashboard snapshot with the current PostgreSQL rows
-without modifying data, run `python3 scripts/verify_demo.py`. The
-[migration notes](migration.md) also describe the repeatable, data-changing
-acceptance exercises.
+Components:
+  building-facilities          Source     Running
+  room-comfort                 Query      Running
+  floor-comfort-level-calc     Query      Running
+  room-alert                   Query      Running
+  building-comfort-level-calc  Query      Running
+  floor-alert                  Query      Running
+  building-alert               Query      Running
+  building-comfort-dashboard   Reaction   Running
+  console-log                  Reaction   Running
+  (13 internal helper components hidden)
+
+Connections:
+  building-facilities -> room-comfort
+  room-comfort -> floor-comfort-level-calc  (data + bootstrap)
+  room-comfort -> room-alert  (data + bootstrap)
+  room-comfort -> building-comfort-dashboard
+  floor-comfort-level-calc -> building-comfort-level-calc  (data + bootstrap)
+  floor-comfort-level-calc -> floor-alert  (data + bootstrap)
+  floor-comfort-level-calc -> building-comfort-dashboard
+  room-alert -> building-comfort-dashboard
+  room-alert -> console-log
+  building-comfort-level-calc -> building-alert  (data + bootstrap)
+  building-comfort-level-calc -> building-comfort-dashboard
+  floor-alert -> building-comfort-dashboard
+  floor-alert -> console-log
+  building-alert -> building-comfort-dashboard
+  building-alert -> console-log
+```
+
+This is the fan-out from the diagram at the top. Each query-to-query connection
+has two parts: a **bootstrap** connection, which gave the downstream query the
+upstream query's current results when it started, and a **data** connection,
+which carries every later change. The helper reads Server's graph inspection
+API, `GET /api/v1/instances/building-comfort-server/computation`, which also
+reports why a component failed or what it is waiting for. It hides the helper
+components that Server adds inside each query.
+
+`python3 scripts/demo.py check` is the readiness check the helper uses at
+startup: the instance must be running, with the source, all six queries and
+both reactions running, and the predefined dashboard available. It does not
+prove that every input has finished processing.
+
+### Check your run
+
+These commands run from `tutorials/building-comfort/`:
+
+```bash
+# Helper regression tests; no containers or Server needed.
+python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
+# Compare all six query results and dashboard snapshots with PostgreSQL,
+# without changing data.
+python3 scripts/verify_demo.py
+
+# Change readings through every scenario in Step 4, then restore them.
+# Stop the simulator first; requires the nine seeded rooms.
+python3 scripts/verify_demo.py --exercise --output .runtime/comfort-exercise.json
+```
+
+The comparisons calculate the expected room, floor and building values from the
+PostgreSQL rows independently of Drasi. They reject missing or extra rows,
+duplicate dashboard row identities, wrong fields and wrong values; averages may
+differ by at most `1e-7`. The exercise covers one cold room, a single-room
+reset, the hot room whose floor average is exactly `50`, two cold rooms, the
+multi-row reset, the unequal-floor insert and its deletion, three simulator
+updates, and checks that updating a room keeps its dashboard row identity.
+These checks do not show browser rendering; keep the dashboard open while you
+make changes to see that.
 
 {{% alert title="Inspect the queries directly (optional)" color="info" %}}
 You can also query Drasi Server's REST API while the demo runs — see `requests.http` for ready-made requests, for example:
@@ -655,19 +745,17 @@ When you're finished, stop Drasi Server with **Ctrl+C** in Terminal 1, then remo
 # Stop containers, keep data
 python3 scripts/demo.py cleanup
 
-# Only when you intend to delete this demo's database:
+# Only when you intend to delete this demo's database and saved query state:
 python3 scripts/demo.py cleanup --volumes
 ```
+
+The saved query state belongs to the database it was built from. Delete both
+together, as `--volumes` does, so the next start bootstraps from the new
+database instead of resuming from positions in the old one.
 
 Cleanup checks this tutorial's ownership labels and never kills processes by
 name. The old tutorial's containers, volumes and files are not touched. Local
 builds and the build record remain available for another run.
-
-## Migration Notes {#migration}
-
-See [Migrating Building Comfort to ComputationGraph](migration.md) for the exact
-runtime, plugin, configuration, helper and documentation changes, what stayed
-the same, and the acceptance checks used for this tutorial.
 
 ## What You Learned {#summary}
 
@@ -676,6 +764,7 @@ the same, and the acceptance checks used for this tutorial.
 - **Fan-out** lets rollups, alert filters and presentation reuse those maintained outputs without repeating the calculation.
 - **Alerts are maintained results**: matching entities appear, change and disappear as their scores cross the comfortable band.
 - **Reactions** present or act on those results. The dashboard supplies a live UI without application code, while the log independently consumes the alert outputs.
-- **Bootstrap and live changes** establish the current picture and keep it current. Restarting from PostgreSQL is different from guaranteeing delivery of every historical alert.
+- **Bootstrap and live changes** establish the current picture and keep it current. With durable indexes (`persistIndex: true`), a restart resumes from the saved position instead of bootstrapping again; it still does not replay every alert transition to the reactions.
+- **Graph inspection** (`python3 scripts/demo.py graph`) shows every component, its state, and the connections that carry bootstrap data and changes.
 
 From here, try editing the comfort formula or the dashboard widgets in `server-config.yaml`, adding a new alert query, or pointing the dashboard at your own data.

@@ -26,6 +26,5 @@ if ! grep -q '^vscode:' /etc/subgid; then
     sudo usermod --add-subgids 100000-165535 vscode
 fi
 podman info >/dev/null
-bash ../../.devcontainer/getting-started/install-evaluation-tools.sh
 echo "Build prerequisites ready. Follow README.md to build matching local Server/Core and SSE CLI."
 echo "Setup does not start Cargo automatically; coordinate builds when sharing a target directory."

@@ -197,7 +197,12 @@ def cleanup(remove_volumes=False):
         raise RuntimeError("Stop the foreground Server with Ctrl+C before database cleanup")
     check_database_ownership()
     compose("down", *(["--volumes"] if remove_volumes else []))
-    print("Database removed." if remove_volumes else "Database stopped; its volume is preserved.")
+    if remove_volumes:
+        # Saved query state records positions in the deleted database's change
+        # stream; a new database must start from a fresh bootstrap.
+        shutil.rmtree(runtime_dir() / "data", ignore_errors=True)
+    print("Database and saved query state removed." if remove_volumes
+          else "Database stopped; its volume and saved query state are preserved.")
 
 
 def room_id(value):
@@ -274,6 +279,14 @@ def check():
     return proof
 
 
+def graph():
+    import graph_view
+    response = get_json(api_url() + "/computation")
+    if response.get("success") is not True:
+        raise RuntimeError(f"Graph inspection failed: {response}")
+    return graph_view.render(response["data"], INSTANCE)
+
+
 def start():
     binary, plugins = verified_build()
     state = runtime_dir()
@@ -313,7 +326,7 @@ def start():
                     raise RuntimeError(f"Demo readiness timed out: {error}") from error
                 time.sleep(0.5)
         (state / "runtime.json").write_text(json.dumps(proof, indent=2) + "\n")
-        print(f"\nBuilding Comfort READY: ComputationGraph; source, six queries and two reactions running."
+        print(f"\nBuilding Comfort READY: source, six queries and two reactions running."
               f"\nDashboard: http://localhost:{os.environ.get('DASHBOARD_PORT', '3000')}"
               "\nPress Ctrl+C to stop Server. PostgreSQL data is preserved.", flush=True)
         code = process.wait()
@@ -337,7 +350,7 @@ def start():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for name in ("build", "verify-build", "database", "start", "start-demo", "check"):
+    for name in ("build", "verify-build", "database", "start", "start-demo", "check", "graph"):
         commands.add_parser(name)
     clean = commands.add_parser("cleanup")
     clean.add_argument("--volumes", action="store_true", help="Explicitly delete this demo's database volume")
@@ -369,6 +382,8 @@ def main():
             start()
         elif args.action == "check":
             print(json.dumps(check(), indent=2))
+        elif args.action == "graph":
+            print(graph())
         elif args.action == "cleanup":
             cleanup(args.volumes)
         elif args.action == "break-room":

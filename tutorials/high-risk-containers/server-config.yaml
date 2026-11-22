@@ -27,8 +27,9 @@ port: ${SERVER_PORT:-8380}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
 
-# scripts/demo.py builds Server and these six plugins from the sibling local
-# checkouts. Startup uses only that private, hash-verified plugin bundle.
+# scripts/demo.py builds Server and the seven plugins this tutorial uses from
+# the sibling local checkouts. Server loads plugins only from that private,
+# hash-verified folder.
 autoInstallPlugins: false
 plugins: []
 
@@ -38,13 +39,13 @@ plugins: []
 instances:
   - id: high-risk-containers-server
     sources:
-  # PostgreSQL source: the list of high risk image tags.
+      # PostgreSQL source: the list of high risk image tags.
       - kind: postgres
         id: 28df43fc-8635-46b0-8e0c-251857bd0567
         name: devops
         autoStart: true
 
-    # Connection settings.
+        # Connection settings.
         host: "${POSTGRES_HOST:-localhost}"
         port: ${POSTGRES_PORT:-5732}
         database: "${POSTGRES_DATABASE:-high_risk_containers}"
@@ -52,29 +53,29 @@ instances:
         password: "${POSTGRES_PASSWORD:-drasi_password}"
         sslMode: prefer
 
-    # Table to monitor. Quoted/PascalCase so the node label matches (i:RiskyImage).
+        # Table to monitor. Quoted/PascalCase so the node label matches (i:RiskyImage).
         tables:
           - RiskyImage
 
-    # Logical replication slot + publication (created by database/init.sql).
+        # Logical replication slot + publication (created by database/init.sql).
         slotName: drasi_high_risk_containers_slot
         publicationName: drasi_high_risk_containers_pub
 
-    # Primary key, so Drasi can track row identity across changes.
+        # Primary key, so Drasi can track row identity across changes.
         tableKeys:
           - table: RiskyImage
             keyColumns:
               - Id
 
-    # Bootstrap provider loads existing rows on startup.
+        # Bootstrap provider loads existing rows on startup.
         bootstrapProvider:
           kind: postgres
 
-  # Kubernetes source: the live Pods running in the cluster. Drasi Server runs
-  # outside the cluster and connects with the kubeconfig written by
-  # scripts/demo.py. The source flattens each Pod's
-  # spec into top-level properties, including a `containers` list of
-  # { name, image, ... } objects that the query unwinds below.
+      # Kubernetes source: the live Pods running in the cluster. Drasi Server runs
+      # outside the cluster and connects with the kubeconfig written by
+      # scripts/demo.py. The source flattens each Pod's
+      # spec into top-level properties, including a `containers` list of
+      # { name, image, ... } objects that the query unwinds below.
       - kind: kubernetes
         id: cea0f028-8811-42a6-8b67-88e20a7b9a78
         name: k8s
@@ -85,11 +86,11 @@ instances:
         namespaces:
           - default
         authMode: kubeconfig
-    # The runner replaces this literal and the namespace in its private copy.
+        # The runner replaces this literal and the namespace in its private copy.
         kubeconfigPath: bin/kubeconfig.yaml
 
-    # Bootstrap provider loads the Pods that already exist on startup. It reuses
-    # the source connection settings above, so no extra configuration is needed.
+        # Bootstrap provider loads the Pods that already exist on startup. It reuses
+        # the source connection settings above, so no extra configuration is needed.
         bootstrapProvider:
           kind: kubernetes
 
@@ -97,8 +98,9 @@ instances:
 # Continuous Queries
 # =============================================================================
     queries:
-  # Normalize Pod container arrays once. Other queries can consume this
-  # graph-change v1 output without repeating the Kubernetes subscription/unwind.
+      # Normalize Pod container arrays once and publish them as ContainerImage
+      # nodes. Other queries can read them without another Kubernetes
+      # subscription or unwind.
       - id: e670943a-e9b5-45d4-9b88-c55ac28ce994
         name: pod-containers
         autoStart: true
@@ -129,7 +131,7 @@ instances:
             c.name AS container,
             c.image AS image
 
-  # The risky-image join consumes derived ContainerImage nodes, not raw Pods.
+      # The risky-image join consumes derived ContainerImage nodes, not raw Pods.
       - id: 445f4635-64b3-48c4-9218-18c85c58b6f9
         name: high-risk-containers
         autoStart: true
@@ -162,9 +164,9 @@ instances:
 # Reactions
 # =============================================================================
     reactions:
-  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
-  # The "High Risk Containers" dashboard is seeded on first startup: a count
-  # KPI, the live table of risky containers, and a Markdown detail panel.
+      # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+      # The "High Risk Containers" dashboard is seeded on first startup: a count
+      # KPI, the live table of risky containers, and a Markdown detail panel.
       - kind: dashboard
         id: 9eb5ad98-218d-4e02-8c2b-1e7e1bfc12ce
         name: high-risk-containers-dashboard
@@ -182,7 +184,7 @@ instances:
               rowHeight: 60
               margin: 10
             widgets:
-          # How many running containers are currently flagged.
+              # How many running containers are currently flagged.
               - id: risky-count
                 type: kpi
                 title: High Risk Containers
@@ -193,7 +195,7 @@ instances:
                   aggregation: count
                   label: Running & Risky
 
-          # The live list of running containers with a high risk image.
+              # The live list of running containers with a high risk image.
               - id: risky-table
                 type: table
                 title: Running High Risk Containers
@@ -208,7 +210,7 @@ instances:
                     - reason
                     - mitigation
 
-          # A human-friendly detail panel (and an all-clear message when empty).
+              # A human-friendly detail panel (and an all-clear message when empty).
               - id: risky-detail
                 type: text
                 title: Detail
@@ -231,7 +233,9 @@ instances:
   # (added) or is resolved (deleted). To enable it:
   #   1. The local build already includes reaction/http.
   #   2. Uncomment the reaction block below, retaining its indentation.
-  #   3. Set DISCORD_WEBHOOK_URL to your Discord webhook URL and restart the server.
+  #   3. Set DISCORD_WEBHOOK_URL to your Discord webhook URL, or to the local
+  #      receiver (http://127.0.0.1:8390/, see ../../scripts/webhook_receiver.py),
+  #      and restart the server.
   # See the "Optional: Discord Alerts" step in the README for the full walkthrough.
   #
       # - kind: http
@@ -241,6 +245,10 @@ instances:
       #     - high-risk-containers
       #   baseUrl: "${DISCORD_WEBHOOK_URL}"
       #   timeoutMs: 30000
+      #   # strict (the default): when a message still fails after retries, stop
+      #   # with an Error status and keep it until the reaction is started again.
+      #   # auto_skip_gap: log the failure, drop the message and keep running.
+      #   recoveryPolicy: strict
       #   outputTemplates:
       #     routes:
       #       high-risk-containers:

@@ -1,6 +1,6 @@
 # Copyright 2026 The Drasi Authors.
 # Licensed under the Apache License, Version 2.0.
-# Completed walkthrough reference. Begin the tutorial with step 3 instead.
+# Completed walkthrough reference (end of Step 8). Begin the tutorial with step 3 instead.
 apiVersion: drasi.io/v1
 host: 127.0.0.1
 port: ${SERVER_PORT:-8180}
@@ -10,7 +10,8 @@ enableUi: false
 autoInstallPlugins: false
 instances:
   - id: getting-started-server
-    persistIndex: false
+    # Durable RocksDB indexes under ./data; queries resume after a restart.
+    persistIndex: true
     sources:
       - kind: postgres
         id: 7d38f9ea-27f0-4a2d-830c-da910ed68b6b
@@ -83,6 +84,9 @@ instances:
           - {id: 67ff1d64-e938-4a9b-b80e-074666bdef95}
           - {id: 9b42f663-9f3d-4655-9843-47120021c01d}
         result: {label: LocatedMessage}
+        # The HTTP Source cannot replay missed changes, so this query keeps its
+        # indexes in memory and rebuilds them on every start.
+        storageBackend: {kind: memory}
         query: |
           MATCH (m:Message)-[:FROM_USER]->(u:UserLocation)
           RETURN m.MessageId AS Id, m.Message AS Message,

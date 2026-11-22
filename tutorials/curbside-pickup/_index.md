@@ -26,7 +26,7 @@ A small **operations console** stands in for the two teams. You click its button
 | **[Step 2: Run the Demo](#run)** | Start both databases, Drasi Server, and the operations console |
 | **[Step 3: Open the Dashboard](#dashboard)** | Watch all six panels update live |
 | **[Step 4: Drive Change](#drive)** | Change orders and vehicles in the browser |
-| **[How It Works](#how)** | Understand CDC, the shared join, query chaining, and timers |
+| **[How It Works](#how)** | Understand CDC, the shared join, query chaining, timers, and durable state |
 
 {{% alert title="Before you begin" color="info" %}}
 - Run commands from `tutorials/curbside-pickup/`.
@@ -77,7 +77,7 @@ python scripts/demo.py build
 {{< /tab >}}
 {{< /tabpane >}}
 
-The shared source-build helper builds Server and `source/postgres`, `bootstrap/postgres`, `source/mysql`, `bootstrap/mysql`, `reaction/dashboard`, and `drasi-computation-transformer-query`. Server registers the native query factory from that bundle; its standard middleware and system JQ are compiled into the query library. The helper records provenance and artifact hashes in `.runtime/build.json` and copies the complete build into a private, content-addressed bundle. Startup verifies that bundle; it does not search `PATH`, reuse an old `bin/`, or load the global plugin cache. Rebuild after changing Server or Core.
+The shared source-build helper builds Server and six plugins: the PostgreSQL and MySQL sources, their bootstrap providers, the dashboard reaction, and `drasi-computation-transformer-query`, which runs the continuous queries. Server loads the query plugin before it creates any query. The helper records provenance and artifact hashes in `.runtime/build.json` and copies the complete build into a private, content-addressed bundle. Startup verifies that bundle; it does not search `PATH`, reuse an old `bin/`, or load the global plugin cache. Rebuild after changing Server or Core.
 
 Build dependencies may need to be fetched the first time. For an already provisioned offline workspace, set `CARGO_NET_OFFLINE=true`. Serialize builds when sharing a Cargo target directory with another tutorial or agent.
 
@@ -105,7 +105,7 @@ The helper:
 Wait for:
 
 ```text
-Curbside Pickup READY: ComputationGraph; two sources, seven queries, six panels.
+Curbside Pickup READY: two sources, seven queries, six panels.
 ```
 
 Leave this terminal running. An API listener alone is not proof that the graph or databases are ready.
@@ -115,14 +115,16 @@ Press **Ctrl+C** to stop Server and the console together. The databases and thei
 
 An already-open dashboard reconnects automatically after Server restarts. It replaces every panel with a fresh snapshot, including clearing rows that disappeared while disconnected, then resumes live changes. You do not need to reload the page.
 
-Use `bash scripts/cleanup.sh` (or `powershell -File scripts/cleanup.ps1`) after stopping the demo to remove only its owned containers/network while keeping volumes. Add `--volumes` only when you explicitly want to delete this run's database data. Cleanup never kills other Server processes and refuses resources with a different ownership label.
+Use `bash scripts/cleanup.sh` (or `powershell -File scripts/cleanup.ps1`) after stopping the demo to remove only its owned containers/network while keeping volumes. Add `--volumes` only when you explicitly want to delete this run's database data; it also deletes the saved query state in `.runtime/data/`, which records positions in those databases. Cleanup never kills other Server processes and refuses resources with a different ownership label.
 {{% /alert %}}
 
 ### What startup restores
 
-Each source bootstraps current table rows and then streams live CDC. Query chaining propagates those rows through the shared join and the two decisions. A newly opened dashboard obtains current query snapshots and receives subsequent changes.
+On the first start, each source loads the current table rows (bootstrap) and then streams live changes. Query chaining propagates those rows through the shared join and the two decisions. A newly opened dashboard obtains current query snapshots and receives subsequent changes.
 
-This demo has **no durable graph state or event-replay guarantee**. Database volumes persist, but in-memory results and temporal timers are reconstructed on Server restart. The displayed vehicle-change timestamp after bootstrap is an observation timestamp, not a durable record of the driver's original arrival time. Do not treat this configuration as exactly-once delivery, historical replay, or timer continuity across downtime.
+The configuration sets `persistIndex: true`, so every query also stores its indexes, results and pending timers on disk under `.runtime/data/`. On a restart the queries resume from their saved positions in the PostgreSQL replication slot and the MySQL binary log instead of loading every row again. A driver who was already waiting keeps the original `waitingSinceTimestamp`, and a 10-second wait that ended while Server was stopped is reported as soon as Server is back. You will try this at the end of [Step 4](#drive).
+
+The dashboard and the database volumes are not an event history: the dashboard shows current results, and the reaction does not replay the changes that happened while it was stopped.
 
 ## Step 3 of 4: Open the Dashboard {#dashboard}
 
@@ -193,13 +195,28 @@ powershell -ExecutionPolicy Bypass -File scripts/reset.ps1
 
 Preparing and Parking list all three rows again. The other four panels clear. Reset makes ordinary SQL changes, so you see the dashboard react without restarting it.
 
+### Restart while a driver waits
+
+Starting from the reset state, move vehicle **C9876** to **Curbside** and, within a few seconds, stop the demo with **Ctrl+C** in its terminal. Wait at least 10 more seconds, then start it again:
+
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
+bash scripts/start-demo.sh
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
+powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1
+{{< /tab >}}
+{{< /tabpane >}}
+
+As soon as the demo is READY, **Delayed Orders** shows order 3 for Ava Mitchell. Its waiting time starts when you moved the vehicle, not when Server restarted: the `delay` query saved the pending 10-second check with its indexes, and fired it on restart because its deadline had passed. Terminal output during this start shows the queries resuming (`resuming from sequence ...`) rather than loading the tables again.
+
 ## How It Works {#how}
 
 ### Two sources in one computation graph
 
 `retail-ops` reads PostgreSQL logical replication; `physical-ops` reads MySQL's binary log. PostgreSQL enables logical replication and publishes `orders`. MySQL enables ROW-based binlogs, full row images/metadata, and GTID mode, and grants the demo user replication privileges. Their bootstrap providers load existing rows.
 
-Each `orders` row becomes an `orders` node; each `vehicles` row becomes a `vehicles` node. These ordinary source plugins participate in the **same ComputationGraph** as queries. Sources, queries, and transformers use the graph-change v1 data contract; a query can consume another query's output just as it consumes source nodes.
+Each `orders` row becomes an `orders` node; each `vehicles` row becomes a `vehicles` node. Both sources are components in the **same graph** as the queries and the dashboard reaction. Every source and query publishes the same kind of graph changes, so a query can consume another query's output just as it consumes source nodes.
 
 ### Share the cross-database join
 
@@ -240,7 +257,7 @@ inputs:
   - component: pickup-state
 ```
 
-The downstream `MATCH (p:Pickup)` selects the label. Do not add the ordinary Source-plugin `nodes` subscription setting to a query-to-query input; it is not accepted for native graph producers.
+The downstream `MATCH (p:Pickup)` selects the label. Do not add `nodes` to an input that names another query: `nodes` selects labels from a source, and Server rejects it on a query input (the query fails with `native input label selection belongs in the graph, not Source-plugin subscription settings`).
 
 Delivery matches `Pickup` nodes whose `orderStatus = 'ready'` and `vehicleLocation = 'Curbside'`. Delay uses:
 
@@ -256,7 +273,48 @@ RETURN p.orderId AS orderId,
 
 Both conditions are inside `trueFor`, so a ready order or a departing vehicle cancels the pending wait. The shared join carries the original vehicle observation timestamp as a property rather than asking for the downstream query node's change time.
 
-The four list queries still read their respective source tables directly. In total there are **seven queries**, but only **six visible panels**: one reusable join plus the original six panel results. The extra graph stage removes two independent copies of the join; it does not add a new user workflow.
+The four list queries read their respective source tables directly. In total there are **seven queries**, but only **six visible panels**: one reusable join plus the six panel results. The shared join means the cross-database match is calculated once instead of once for each decision.
+
+Print the graph to see this:
+
+```bash
+python3 scripts/demo.py graph
+```
+
+```text
+Graph curbside-pickup-server (Running)
+
+Components:
+  physical-ops        Source     Running
+  retail-ops          Source     Running
+  orders-preparing    Query      Running
+  orders-ready        Query      Running
+  pickup-state        Query      Running
+  vehicles-curbside   Query      Running
+  vehicles-parking    Query      Running
+  delay               Query      Running
+  delivery            Query      Running
+  curbside-dashboard  Reaction   Running
+  (20 internal helper components hidden)
+
+Connections:
+  physical-ops -> pickup-state
+  physical-ops -> vehicles-curbside
+  physical-ops -> vehicles-parking
+  retail-ops -> orders-preparing
+  retail-ops -> orders-ready
+  retail-ops -> pickup-state
+  orders-preparing -> curbside-dashboard
+  orders-ready -> curbside-dashboard
+  pickup-state -> delay  (data + bootstrap)
+  pickup-state -> delivery  (data + bootstrap)
+  vehicles-curbside -> curbside-dashboard
+  vehicles-parking -> curbside-dashboard
+  delay -> curbside-dashboard
+  delivery -> curbside-dashboard
+```
+
+`pickup-state` has two inputs, one from each database, and feeds both decisions. Each of those connections has a **bootstrap** part, which gave `delay` and `delivery` the current join results when they started, and a **data** part for later changes. `pickup-state` has no connection to the dashboard because no panel shows it. The helper reads Server's graph inspection API, `GET /api/v1/instances/curbside-pickup-server/computation`, which also reports why a component failed or what it is waiting for.
 
 ### Dashboard and operations console
 

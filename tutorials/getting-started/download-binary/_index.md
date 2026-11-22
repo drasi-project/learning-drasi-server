@@ -30,14 +30,12 @@ python3 scripts/demo.py verify-build
 ```
 
 The build commands create private, verified artifacts and provenance under
-`.runtime/build`. Source path dependencies do not rebuild dynamically loaded
-plugins automatically, so the build explicitly compiles all seven required
-plugins. Start and stream helpers reject mismatched artifacts rather than
-silently downloading them. `scripts/download.sh` now delegates to the local
-Server/plugin build; it no longer downloads releases.
+`.runtime/build`. Building Server does not rebuild the plugins it loads at run
+time, so the build compiles all seven required plugins explicitly. The `start`,
+`stream`, and `watch` helpers reject missing or changed artifacts instead of
+downloading others. `scripts/download.sh` runs the same local build.
 
-On Windows use WSL2 or the Dev Container with the bash walkthrough. The old
-PowerShell downloader exits with setup guidance rather than installing a
-different runtime.
+On Windows use WSL2 or the Dev Container with the bash walkthrough.
+`scripts/download.ps1` only prints that guidance.
 
 [Continue with the tutorial](../#database).

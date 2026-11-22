@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -83,6 +84,11 @@ def local_build():
     # Shared build policy has no released-binary or registry fallback.
     import local_build as helper
     return helper
+
+
+def graph():
+    import graph_view
+    return graph_view.render(api("computation"), INSTANCE)
 
 
 def cli_build(verify=False):
@@ -315,13 +321,18 @@ def cleanup(remove_volumes=False):
         run(["podman", "rm", container()])
     if remove_volumes and has_volume:
         run(["podman", "volume", "rm", volume()])
-    print("Owned database removed." if remove_volumes else "Owned database stopped; volume preserved.")
+    if remove_volumes:
+        # Saved query state records positions in the deleted database's change
+        # stream; a new database must start from a fresh bootstrap.
+        shutil.rmtree(state() / "data", ignore_errors=True)
+    print("Owned database and saved query state removed." if remove_volumes
+          else "Owned database stopped; volume and saved query state preserved.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for name in ("build", "build-cli", "verify-build", "database", "check"):
+    for name in ("build", "build-cli", "verify-build", "database", "check", "graph"):
         commands.add_parser(name)
     serve = commands.add_parser("start")
     serve.add_argument("--config", type=Path)
@@ -338,6 +349,8 @@ def main():
     results.add_argument("query", nargs="?", default="all-messages")
     stream = commands.add_parser("stream")
     stream.add_argument("query")
+    watch = commands.add_parser("watch")
+    watch.add_argument("query")
     args = parser.parse_args()
     try:
         environment()
@@ -348,13 +361,16 @@ def main():
         elif args.action == "build-cli":
             cli_build()
         elif args.action == "verify-build":
-            print(local_build().verified_build(build_state(), PLUGINS))
+            server, plugins = local_build().verified_build(build_state(), PLUGINS)
+            print(f"Verified Server: {server}\nVerified plugins: {plugins}")
         elif args.action == "database":
             database()
         elif args.action == "start":
             start(args.config)
         elif args.action == "check":
             print(json.dumps(check(), indent=2))
+        elif args.action == "graph":
+            print(graph())
         elif args.action == "cleanup":
             cleanup(args.volumes)
         elif args.action == "sql":
@@ -380,6 +396,13 @@ def main():
                 str(binary), "--server", f"http://127.0.0.1:{os.environ['SERVER_PORT']}",
                 "--instance", INSTANCE, "--query", args.query,
                 "--sse-port", os.environ["SSE_PORT"], "--sse-host", "127.0.0.1",
+            ])
+        elif args.action == "watch":
+            component_id(args.query)
+            binary = cli_build(verify=True)
+            os.execv(str(binary), [
+                str(binary), "--server", f"http://127.0.0.1:{os.environ['SERVER_PORT']}",
+                "--instance", INSTANCE, "--query", args.query, "--attach",
             ])
     except KeyboardInterrupt:
         return 130

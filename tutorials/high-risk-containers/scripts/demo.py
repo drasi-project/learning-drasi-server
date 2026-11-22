@@ -313,12 +313,42 @@ def upgrade(pod, image, container="app"):
         time.sleep(1)
 
 
+def original_pod(pod):
+    text = kubectl("create", "-f", TUTORIAL / "k8s/my-app.yaml", "--dry-run=client", "-o", "json",
+                   capture=True)
+    decoder, position = json.JSONDecoder(), 0
+    while text[position:].strip():
+        position += len(text[position:]) - len(text[position:].lstrip())
+        item, position = decoder.raw_decode(text, position)
+        for document in item.get("items", [item]):
+            if document["metadata"]["name"] == pod:
+                return document
+    raise RuntimeError(f"{pod} is not defined in k8s/my-app.yaml")
+
+
+def restore(pod):
+    # Recreate rather than change the image in place again: every in-place
+    # change restarts the container, and Kubernetes waits longer before each
+    # further restart of the same container (up to five minutes).
+    original = original_pod(pod)
+    image = original["spec"]["containers"][0]["image"]
+    current = json.loads(kubectl("get", "pod", pod, "-o", "json", capture=True))
+    statuses = current.get("status", {}).get("containerStatuses", [])
+    if ([item["image"] for item in current["spec"]["containers"]] == [image]
+            and statuses and all(item.get("ready") and "running" in item.get("state", {})
+                                 for item in statuses)):
+        return
+    kubectl("delete", "pod", pod, "--wait=true", "--timeout=120s")
+    kubectl("create", "-f", "-", stdin=json.dumps(original))
+    kubectl("wait", "--for=condition=Ready", "pod/" + pod, "--timeout=180s")
+
+
 def reset(identifier):
     verify_namespace()
     print(sql('DELETE FROM "RiskyImage" WHERE "Id" = :\'id\'::int;', variables=(("id", identifier),)))
-    upgrade("my-app-1", "ghcr.io/drasi-project/my-app:0.1")
-    upgrade("my-app-2", "ghcr.io/drasi-project/my-app:0.2")
-    print("Reset only the added risk row and the two tutorial Pod images.")
+    restore("my-app-1")
+    restore("my-app-2")
+    print("Reset only the added risk row and the two tutorial Pods.")
 
 
 def get_json(url):
@@ -418,7 +448,7 @@ def start():
                     raise RuntimeError(f"Readiness timed out: {error}") from error
                 time.sleep(0.5)
         (state() / "runtime.json").write_text(json.dumps(proof, indent=2) + "\n")
-        print(f"\nHigh Risk Containers READY: ComputationGraph; both sources, both queries and reactions running."
+        print(f"\nHigh Risk Containers READY: both sources, both queries and all reactions are running."
               f"\nDashboard: http://localhost:{record['ports']['DASHBOARD_PORT']}"
               "\nCtrl+C stops Server only; PostgreSQL and Kubernetes are preserved.", flush=True)
         if process.wait():
@@ -460,7 +490,8 @@ def cleanup(volumes=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
-    for name in ("build", "verify-build", "database", "cluster", "start", "start-demo", "check", "inspect", "kubectl"):
+    for name in ("build", "verify-build", "database", "cluster", "start", "start-demo", "check", "inspect",
+                 "graph", "kubectl"):
         command = actions.add_parser(name)
         if name == "kubectl":
             command.add_argument("arguments", nargs=argparse.REMAINDER)
@@ -508,6 +539,9 @@ def main():
             kubectl(*args.arguments)
         elif args.action in ("check", "inspect"):
             print(json.dumps(check() if args.action == "check" else api("computation"), indent=2))
+        elif args.action == "graph":
+            import graph_view
+            print(graph_view.render(api("computation"), INSTANCE))
     except KeyboardInterrupt:
         return 130
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.CalledProcessError,

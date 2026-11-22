@@ -28,23 +28,29 @@ host: "${SERVER_HOST:-127.0.0.1}"
 port: ${SERVER_PORT:-8380}
 logLevel: "${LOG_LEVEL:-info}"
 persistConfig: false
+enableUi: false
 
-# scripts/demo.py builds and supplies exactly four matching local plugins.
+# scripts/demo.py builds and supplies exactly five matching local plugins.
 # Never mix these development artifacts with downloaded release plugins.
 autoInstallPlugins: false
+
+instances:
+  - id: building-comfort-server
+    # Store every query's indexes and results on disk (RocksDB, under
+    # .runtime/data). After a restart, queries resume from their saved
+    # position in the replication slot instead of reading every row again.
+    persistIndex: true
 
 # =============================================================================
 # Sources
 # =============================================================================
-instances:
-  - id: building-comfort-server
     sources:
       - kind: postgres
         id: eb634274-874f-4ca9-827f-ec4b57625581
         name: building-facilities
         autoStart: true
 
-    # Connection settings.
+        # Connection settings.
         host: "${POSTGRES_HOST:-localhost}"
         port: ${POSTGRES_PORT:-5732}
         database: "${POSTGRES_DATABASE:-building_comfort}"
@@ -52,18 +58,18 @@ instances:
         password: "${POSTGRES_PASSWORD:-drasi_password}"
         sslMode: prefer
 
-    # Tables to monitor. The names are case-sensitive and PascalCase so the
-    # node labels match the Cypher queries ((r:Room), (f:Floor), (b:Building)).
+        # Tables to monitor. The names are case-sensitive and PascalCase so the
+        # node labels match the Cypher queries ((r:Room), (f:Floor), (b:Building)).
         tables:
           - Building
           - Floor
           - Room
 
-    # Replication settings.
+        # Replication settings.
         slotName: drasi_building_comfort_slot
         publicationName: drasi_building_comfort_pub
 
-    # Primary key configuration for change tracking.
+        # Primary key configuration for change tracking.
         tableKeys:
           - table: Building
             keyColumns:
@@ -75,7 +81,7 @@ instances:
             keyColumns:
               - id
 
-    # Bootstrap provider loads existing rows on startup.
+        # Bootstrap provider loads existing rows on startup.
         bootstrapProvider:
           kind: postgres
 
@@ -88,7 +94,7 @@ instances:
 # Its ordinary result nodes feed floor averages, then building averages.
 # Each alert query consumes the corresponding level's result nodes.
     queries:
-  # Query 1: shared room comfort and hierarchy for rollups, alerts and display.
+      # Query 1: shared room comfort and hierarchy for rollups, alerts and display.
       - id: fc6b056c-0407-41e6-a7d2-19e579239be9
         name: room-comfort
         autoStart: true
@@ -132,7 +138,7 @@ instances:
               - label: Building
                 property: id
 
-  # Query 2: per-floor comfort, calculated from shared room results.
+      # Query 2: per-floor comfort, calculated from shared room results.
       - id: 4fc5870a-7f57-4cbf-80a4-229dc4586535
         name: floor-comfort-level-calc
         autoStart: true
@@ -150,7 +156,7 @@ instances:
         inputs:
           - room-comfort
 
-  # Query 3: overall building comfort (avg of floor averages, not room-weighted).
+      # Query 3: overall building comfort (avg of floor averages, not room-weighted).
       - id: a9955885-c056-4547-9460-cd5e3b48804c
         name: building-comfort-level-calc
         autoStart: true
@@ -166,7 +172,7 @@ instances:
         inputs:
           - floor-comfort-level-calc
 
-  # Query 4: rooms outside the comfortable band (40-50).
+      # Query 4: rooms outside the comfortable band (40-50).
       - id: c0633cf1-cf23-42e5-80c3-5b5b7d8cd983
         name: room-alert
         autoStart: true
@@ -183,7 +189,7 @@ instances:
         inputs:
           - room-comfort
 
-  # Query 5: floors whose average comfort is outside 40-50.
+      # Query 5: floors whose average comfort is outside 40-50.
       - id: 2af6308b-731f-4cbb-bdca-edf6dfb77d42
         name: floor-alert
         autoStart: true
@@ -200,7 +206,7 @@ instances:
         inputs:
           - floor-comfort-level-calc
 
-  # Query 6: the building when its overall comfort is outside 40-50.
+      # Query 6: the building when its overall comfort is outside 40-50.
       - id: fa96e5c9-706c-4aeb-a7ec-b31d38207f26
         name: building-alert
         autoStart: true
@@ -221,10 +227,10 @@ instances:
 # Reactions
 # =============================================================================
     reactions:
-  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
-  # The "Building Comfort" dashboard is seeded on first startup. It is built
-  # mostly from markdown (text) widgets that use the reaction's Handlebars
-  # helpers to recreate the Building -> Floor -> Room comfort view.
+      # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+      # The "Building Comfort" dashboard is seeded on first startup. It is built
+      # mostly from markdown (text) widgets that use the reaction's Handlebars
+      # helpers to recreate the Building -> Floor -> Room comfort view.
       - kind: dashboard
         id: 16e3bc1a-48d2-40f9-8019-a4f8d5c16487
         name: building-comfort-dashboard
@@ -247,7 +253,7 @@ instances:
               rowHeight: 60
               margin: 10
             widgets:
-          # Centerpiece: the live building view, grouped by floor.
+              # Centerpiece: the live building view, grouped by floor.
               - id: building-view
                 type: text
                 title: Building Comfort
@@ -265,7 +271,7 @@ instances:
 
                     {{/groupBy}}
 
-          # Read the building rollup directly, including unequal floor sizes.
+              # Read the building rollup directly, including unequal floor sizes.
               - id: building-kpi
                 type: kpi
                 title: Building Comfort
@@ -276,7 +282,7 @@ instances:
                   aggregation: last
                   label: Comfort Level
 
-          # Overall building comfort on a gauge (good band is 40-50).
+              # Overall building comfort on a gauge (good band is 40-50).
               - id: building-gauge
                 type: gauge
                 title: Building Comfort Gauge
@@ -288,7 +294,7 @@ instances:
                   min: 0
                   max: 100
 
-          # Active comfort alerts (only firing rooms appear here).
+              # Active comfort alerts (only firing rooms appear here).
               - id: comfort-alerts
                 type: text
                 title: Comfort Alerts
@@ -304,7 +310,7 @@ instances:
                     ✅ All rooms are comfortable.
                     {{/if}}
 
-          # Per-floor comfort levels.
+              # Per-floor comfort levels.
               - id: floor-comfort-table
                 type: table
                 title: Floor Comfort
@@ -315,7 +321,7 @@ instances:
                     - FloorId
                     - ComfortLevel
 
-          # Floors whose average comfort is outside the band.
+              # Floors whose average comfort is outside the band.
               - id: floor-alerts
                 type: text
                 title: Floor Alerts
@@ -331,7 +337,8 @@ instances:
                     ✅ All floors are comfortable.
                     {{/if}}
 
-  # Log reaction - prints alert activity to the server console.
+      # Log reaction - prints alert activity to the server console. Routes are
+      # keyed by query ID: room-alert, floor-alert and building-alert.
       - kind: log
         id: 45eab8b6-ae1e-4273-a761-8e35015d6ff0
         name: console-log
@@ -340,10 +347,25 @@ instances:
           - room-alert
           - floor-alert
           - building-alert
-        defaultTemplate:
-          added:
-            template: "[{{query_name}}] + {{after}}"
-          updated:
-            template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-          deleted:
-            template: "[{{query_name}}] - {{before}}"
+        routes:
+          c0633cf1-cf23-42e5-80c3-5b5b7d8cd983:
+            added:
+              template: "ALERT {{after.RoomName}} ({{after.RoomId}}): comfort {{after.ComfortLevel}}"
+            updated:
+              template: "ALERT {{after.RoomName}} ({{after.RoomId}}): comfort {{before.ComfortLevel}} -> {{after.ComfortLevel}}"
+            deleted:
+              template: "CLEARED {{before.RoomName}} ({{before.RoomId}}) is comfortable again"
+          2af6308b-731f-4cbb-bdca-edf6dfb77d42:
+            added:
+              template: "ALERT {{after.FloorName}} ({{after.FloorId}}): comfort {{after.ComfortLevel}}"
+            updated:
+              template: "ALERT {{after.FloorName}} ({{after.FloorId}}): comfort {{before.ComfortLevel}} -> {{after.ComfortLevel}}"
+            deleted:
+              template: "CLEARED {{before.FloorName}} ({{before.FloorId}}) is comfortable again"
+          fa96e5c9-706c-4aeb-a7ec-b31d38207f26:
+            added:
+              template: "ALERT {{after.BuildingName}} ({{after.BuildingId}}): comfort {{after.ComfortLevel}}"
+            updated:
+              template: "ALERT {{after.BuildingName}} ({{after.BuildingId}}): comfort {{before.ComfortLevel}} -> {{after.ComfortLevel}}"
+            deleted:
+              template: "CLEARED {{before.BuildingName}} ({{before.BuildingId}}) is comfortable again"

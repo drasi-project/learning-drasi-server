@@ -164,6 +164,43 @@ class DemoTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Pod rejected"):
                 demo.upgrade("my-app-2", "safe-image")
 
+    def pod(self, image, ready=True):
+        return json.dumps({"spec": {"containers": [{"name": "app", "image": image}]},
+                           "status": {"containerStatuses": [
+                               {"name": "app", "image": image, "ready": ready,
+                                "state": {"running": {}} if ready else {"waiting": {}}}]}})
+
+    def restore_calls(self, current):
+        manifest = (json.dumps({"metadata": {"name": "my-app-1"}, "spec": {"containers": [
+                        {"name": "app", "image": "my-app:0.1"}]}}) + "\n"
+                    + json.dumps({"metadata": {"name": "my-app-2"}, "spec": {"containers": [
+                        {"name": "app", "image": "my-app:0.2"}]}}) + "\n")
+
+        def kubectl(*arguments, capture=False, stdin=None):
+            if arguments[0] == "create" and "--dry-run=client" in arguments:
+                return manifest
+            if arguments[:2] == ("get", "pod"):
+                return current
+            return ""
+        with patch.object(demo, "kubectl", side_effect=kubectl) as mock:
+            demo.restore("my-app-2")
+        return [call.args for call in mock.call_args_list]
+
+    def test_reset_recreates_a_changed_pod_from_its_manifest(self):
+        calls = self.restore_calls(self.pod("my-app:0.3"))
+        self.assertIn(("delete", "pod", "my-app-2", "--wait=true", "--timeout=120s"), calls)
+        created = [args for args in calls if args[:3] == ("create", "-f", "-")]
+        self.assertEqual(len(created), 1)
+        self.assertNotIn(("set", "image"), [args[:2] for args in calls])
+
+    def test_reset_recreates_a_pod_stuck_in_restart_backoff(self):
+        calls = self.restore_calls(self.pod("my-app:0.2", ready=False))
+        self.assertIn("delete", [args[0] for args in calls])
+
+    def test_reset_leaves_a_ready_original_pod_alone(self):
+        calls = self.restore_calls(self.pod("my-app:0.2"))
+        self.assertNotIn("delete", [args[0] for args in calls])
+
     def test_cleanup_refuses_running_server(self):
         (self.directory / "server.lock").touch()
         with patch.object(demo, "run") as run:

@@ -23,17 +23,17 @@
 </head>
 <body>
   <h1>Getting Started</h1>
-  <p>Start an SSE CLI subscription first. This viewer observes its existing endpoint; it creates no reaction.
-    Tables are current REST results, refreshed when a subscribed query changes. The event log shows only
-    messages received while connected, not a durable replay or an atomic snapshot-plus-stream.</p>
+  <p>Each table attaches to its query through the Server API. It starts from the query's
+    current rows (a snapshot) and then applies every change that follows. After a disconnect,
+    the browser reconnects and the next snapshot replaces the table. The event log shows the
+    changes received while connected; it is not a durable history.</p>
   <form id="connect">
     <label>Server API <input id="api" value="http://127.0.0.1:8180" required></label>
-    <label>SSE URL <input id="sse" value="http://127.0.0.1:8181/events" required></label>
     <button>Connect / refresh</button>
   </form>
   <p id="status">Not connected</p>
   <div id="queries"></div>
-  <h2>Received events (latest 30)</h2>
+  <h2>Received changes (latest 30)</h2>
   <pre id="events"></pre>
   <script>
     const instance = 'getting-started-server';
@@ -46,13 +46,17 @@
     };
     const panels = new Map();
     const events = [];
-    let stream;
     let generation = 0;
     let api;
 
     function fail(error) {
       document.getElementById('status').className = 'error';
       document.getElementById('status').textContent = String(error);
+    }
+
+    function report(message) {
+      document.getElementById('status').className = '';
+      document.getElementById('status').textContent = message;
     }
 
     async function get(path) {
@@ -62,40 +66,93 @@
       return body.data;
     }
 
-    async function refresh(query, current) {
-      const panel = panels.get(query);
-      if (!panel) throw new Error(`Unexpected query ${query}; reconnect to discover newly added queries`);
-      panel.pending = true;
-      if (panel.busy) return;
-      panel.busy = true;
-      try {
-        while (panel.pending && current === generation) {
-          panel.pending = false;
-          const rows = await get(`queries/${encodeURIComponent(query)}/results`);
-          if (current !== generation) return;
-          if (!Array.isArray(rows)) throw new Error('Expected query result rows');
-          const table = document.createElement('table');
-          const header = table.insertRow();
-          for (const column of columns[query]) {
-            const cell = document.createElement('th');
-            cell.textContent = column;
-            header.append(cell);
-          }
-          for (const row of rows) {
-            const tr = table.insertRow();
-            for (const column of columns[query]) tr.insertCell().textContent = row[column] ?? '';
-          }
-          panel.content.replaceChildren(table);
-          if (!rows.length) panel.content.append(document.createTextNode('No results'));
-        }
-      } finally {
-        panel.busy = false;
+    // Snapshot rows carry no row identity, so changes find their row by its values.
+    function key(row) {
+      return JSON.stringify(Object.keys(row).sort().map(name => [name, row[name]]));
+    }
+
+    function replace(rows, before, after) {
+      const index = rows.findIndex(row => key(row) === key(before));
+      if (index < 0) return false;
+      if (after) rows[index] = after; else rows.splice(index, 1);
+      return true;
+    }
+
+    function apply(rows, change) {
+      switch (change.type) {
+        case 'ADD': rows.push(change.data); return true;
+        case 'UPDATE': return replace(rows, change.before, change.after);
+        case 'DELETE': return replace(rows, change.data, null);
+        case 'aggregation':
+          if (change.before) return replace(rows, change.before, change.after);
+          rows.push(change.after);
+          return true;
+        case 'noop': return true;
+        default: return false;
       }
+    }
+
+    function render(panel) {
+      const table = document.createElement('table');
+      const header = table.insertRow();
+      for (const column of panel.columns) {
+        const cell = document.createElement('th');
+        cell.textContent = column;
+        header.append(cell);
+      }
+      for (const row of panel.rows) {
+        const tr = table.insertRow();
+        for (const column of panel.columns) tr.insertCell().textContent = row[column] ?? '';
+      }
+      panel.content.replaceChildren(table);
+      if (!panel.rows.length) panel.content.append(document.createTextNode('No results'));
+    }
+
+    function attach(panel, current) {
+      if (panel.stream) panel.stream.close();
+      const stream = new EventSource(`${api}/api/v1/instances/${instance}/queries/${panel.id}/attach`);
+      panel.stream = stream;
+      stream.addEventListener('snapshot', (message) => {
+        if (current !== generation) return;
+        try {
+          const rows = JSON.parse(message.data);
+          if (!Array.isArray(rows)) throw new Error(`${panel.name}: expected a snapshot row array`);
+          panel.rows = rows;
+          render(panel);
+          report(`Attached to ${panels.size} queries; tables update as their results change.`);
+        } catch (error) {
+          fail(error);
+        }
+      });
+      stream.onmessage = (message) => {
+        if (current !== generation) return;
+        try {
+          const result = JSON.parse(message.data);
+          if (!Array.isArray(result.results)) throw new Error(`${panel.name}: expected a query result change`);
+          // Preserve the raw text: row_signature can exceed JavaScript's safe integer range.
+          events.unshift(`${panel.name}: ${message.data}`);
+          events.length = Math.min(events.length, 30);
+          document.getElementById('events').textContent = events.join('\n\n');
+          if (!result.results.every(change => apply(panel.rows, change))) {
+            report(`${panel.name}: a change did not match the table; reattaching for a fresh snapshot.`);
+            attach(panel, current);
+            return;
+          }
+          render(panel);
+        } catch (error) {
+          fail(error);
+        }
+      };
+      stream.onerror = () => {
+        if (current === generation) {
+          fail(`${panel.name}: disconnected. The browser reconnects, and the next snapshot replaces the table.`);
+        }
+      };
     }
 
     document.getElementById('connect').addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (stream) stream.close();
+      for (const panel of panels.values()) panel.stream?.close();
       const current = ++generation;
       panels.clear();
       document.getElementById('queries').replaceChildren();
@@ -103,38 +160,18 @@
       try {
         const queries = await get('queries');
         if (current !== generation) return;
-        for (const query of queries.filter(query => Object.hasOwn(columns, query.id))) {
+        for (const query of queries.filter(query => Object.hasOwn(columns, query.name))) {
           const section = document.createElement('section');
           const heading = document.createElement('h2');
-          heading.textContent = query.id;
+          heading.textContent = query.name;
           const content = document.createElement('div');
           section.append(heading, content);
           document.getElementById('queries').append(section);
-          panels.set(query.id, {content, busy: false, pending: false});
+          const panel = {id: query.id, name: query.name, columns: columns[query.name], content, rows: []};
+          panels.set(query.name, panel);
+          attach(panel, current);
         }
-        stream = new EventSource(document.getElementById('sse').value);
-        stream.onopen = () => {
-          document.getElementById('status').className = '';
-          document.getElementById('status').textContent = 'Connected; refreshing current results';
-          for (const query of panels.keys()) refresh(query, current).catch(fail);
-        };
-        stream.onerror = () => fail('SSE disconnected. Events may be missing; reconnect refreshes current results.');
-        stream.onmessage = (message) => {
-          try {
-            const frame = JSON.parse(message.data);
-            if (frame.type === 'heartbeat') return;
-            if (typeof frame.queryId !== 'string' || !Array.isArray(frame.results)) {
-              throw new Error('Expected ordinary SSE reaction queryId/results payload, not a native graph sink');
-            }
-            // Preserve the raw text: row_signature can exceed JavaScript's safe integer range.
-            events.unshift(message.data);
-            events.length = Math.min(events.length, 30);
-            document.getElementById('events').textContent = events.join('\n\n');
-            refresh(frame.queryId, current).catch(fail);
-          } catch (error) {
-            fail(error);
-          }
-        };
+        report(panels.size ? 'Attaching...' : 'No tutorial queries are running yet.');
       } catch (error) {
         fail(error);
       }

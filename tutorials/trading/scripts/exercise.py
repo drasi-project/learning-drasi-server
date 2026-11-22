@@ -64,7 +64,7 @@ def exercise(work):
     alert, count_query = definitions(components)
     api = urls["server"] + f"/api/v1/instances/{INSTANCE}"
     if not runtime_ready(request(api + "/runtime")):
-        raise RuntimeError("The expected local ComputationGraph is not running")
+        raise RuntimeError("The expected local trading-server is not running")
     seed = next(item for item in request(urls["api"] + "/api/initial-prices")["items"]
                 if item["properties"]["symbol"] == "AAPL")
     created = []

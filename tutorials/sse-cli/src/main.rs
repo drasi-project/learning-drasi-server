@@ -15,7 +15,8 @@
 //! Drasi SSE CLI - stream query change events from a Drasi Server.
 //!
 //! Creates an SSE Reaction on the server, consumes the event stream, and
-//! cleans up the reaction on exit, or observes an existing SSE endpoint.
+//! cleans up the reaction on exit; attaches to a query through the Server
+//! API; or observes an existing SSE endpoint.
 
 mod sse;
 
@@ -27,8 +28,10 @@ use std::time::Duration;
 
 /// Stream SSE events from a Drasi Server query.
 ///
-/// Creates a temporary SSE Reaction subscribed to the specified query,
-/// streams events to stdout, and deletes the reaction on Ctrl-C.
+/// By default, creates a temporary SSE Reaction subscribed to the specified
+/// query, streams events to stdout, and deletes the reaction on Ctrl-C.
+/// With --attach, reads the query's current rows and then its live changes
+/// through the Server API, without creating a reaction.
 #[derive(Parser, Debug)]
 #[command(name = "drasi-sse-cli", version, about, long_about = None)]
 struct Args {
@@ -53,6 +56,11 @@ struct Args {
     /// Query name or UUID to subscribe to
     #[arg(short, long, env = "DRASI_QUERY", required_unless_present = "sse_url")]
     query: Option<String>,
+
+    /// Attach to the query through the Server API: print its current rows,
+    /// then its live changes, without creating a reaction
+    #[arg(long, conflicts_with_all = ["sse_url", "sse_port", "sse_host"])]
+    attach: bool,
 
     /// Observe an existing SSE endpoint without creating or deleting a reaction
     #[arg(long, conflicts_with_all = ["server", "instance", "query", "sse_port", "sse_host"])]
@@ -86,10 +94,10 @@ fn http_url(value: &str) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
-fn reaction_api_url(
+fn instance_api_url(
     server: &str,
     instance: &str,
-    reaction: Option<&str>,
+    segments: &[&str],
 ) -> Result<reqwest::Url, String> {
     if instance.is_empty() || matches!(instance, "." | "..") {
         return Err("A valid instance ID is required".into());
@@ -103,12 +111,30 @@ fn reaction_api_url(
             .path_segments_mut()
             .map_err(|_| "Server URL cannot be used as a base".to_string())?;
         path.pop_if_empty()
-            .extend(["api", "v1", "instances", instance, "reactions"]);
-        if let Some(reaction) = reaction {
-            path.push(reaction);
-        }
+            .extend(["api", "v1", "instances", instance])
+            .extend(segments);
     }
     Ok(url)
+}
+
+fn reaction_api_url(
+    server: &str,
+    instance: &str,
+    reaction: Option<&str>,
+) -> Result<reqwest::Url, String> {
+    match reaction {
+        Some(reaction) => instance_api_url(server, instance, &["reactions", reaction]),
+        None => instance_api_url(server, instance, &["reactions"]),
+    }
+}
+
+/// The Server API stream that starts with a `snapshot` event of the query's
+/// current rows and continues with its result changes.
+fn query_attach_url(server: &str, instance: &str, query: &str) -> Result<reqwest::Url, String> {
+    if query.is_empty() || matches!(query, "." | "..") {
+        return Err("A valid query name or UUID is required".into());
+    }
+    instance_api_url(server, instance, &["queries", query, "attach"])
 }
 
 fn reaction_stream_url(server: &str, port: u16) -> Result<reqwest::Url, String> {
@@ -264,8 +290,7 @@ async fn stream_events(
     };
 
     if !resp.status().is_success() {
-        let status = resp.status();
-        return Err(format!("SSE endpoint returned {status}"));
+        return Err(response_error(resp, "SSE endpoint refused the connection").await);
     }
     let content_type = resp
         .headers()
@@ -290,8 +315,22 @@ async fn stream_events(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Stream error: {e}"))?;
-        decoder.push(&chunk, debug, |data| {
-            handle_event(data, debug, &mut output, &mut log_file).map(|_| ())
+        decoder.push(&chunk, debug, |event, data| {
+            let snapshot = event == Some("snapshot");
+            if snapshot {
+                let rows = serde_json::from_str::<serde_json::Value>(data)
+                    .ok()
+                    .and_then(|value| value.as_array().map(Vec::len));
+                match rows {
+                    Some(rows) => eprintln!("Snapshot of the query's {rows} current row(s):"),
+                    None => eprintln!("Snapshot:"),
+                }
+            }
+            handle_event(data, debug, &mut output, &mut log_file)?;
+            if snapshot {
+                eprintln!("Live changes follow (Ctrl-C to stop).");
+            }
+            Ok(())
         })?;
     }
     decoder.finish()?;
@@ -325,6 +364,11 @@ async fn run(args: Args) -> Result<(), String> {
         .query
         .filter(|value| !value.is_empty())
         .ok_or("A query ID is required")?;
+    if args.attach {
+        let url = query_attach_url(&server, &instance, &query)?;
+        eprintln!("Attaching to query '{query}'; no reaction is created.");
+        return until_interrupt(stream_events(&client, url, args.debug, log_file)).await;
+    }
     let reaction_id = format!("sse-cli-{}", uuid::Uuid::new_v4());
     reaction_api_url(&server, &instance, None)?;
     let sse_url = reaction_stream_url(&server, args.sse_port)?;
@@ -411,6 +455,37 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(args.instance.as_deref(), Some("selected"));
+    }
+
+    #[test]
+    fn attach_mode_reads_the_query_through_the_server_api_only() {
+        assert_eq!(
+            query_attach_url("http://localhost:8080/", "a/b", "message-counts")
+                .unwrap()
+                .as_str(),
+            "http://localhost:8080/api/v1/instances/a%2Fb/queries/message-counts/attach"
+        );
+        for query in ["", ".", ".."] {
+            assert!(query_attach_url("http://localhost:8080", "i", query).is_err());
+        }
+        let attach = [
+            "drasi-sse-cli",
+            "-s",
+            "http://localhost:8080",
+            "-i",
+            "selected",
+            "-q",
+            "q",
+            "--attach",
+        ];
+        assert!(Args::try_parse_from(attach).unwrap().attach);
+        for extra in [
+            ["--sse-port", "8091"],
+            ["--sse-host", "0.0.0.0"],
+            ["--sse-url", "http://localhost:9010/events"],
+        ] {
+            assert!(Args::try_parse_from(attach.into_iter().chain(extra)).is_err());
+        }
     }
 
     #[test]

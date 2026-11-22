@@ -12,10 +12,11 @@ when it recovers. You change the originating systems, not Drasi's result data.
 
 **Sources → shared health queries → alert queries → dashboard and log reactions**
 
-The Server and every plugin are built from the existing sibling `drasi-server/`
-and `drasi-core/` checkouts. The only runtime is ComputationGraph. It connects the
-existing source and reaction interfaces as well as query-to-query graph data;
-there is no execution-mode flag or separate compatibility runtime.
+The Server and every plugin are built from the sibling `drasi-server/` and
+`drasi-core/` checkouts. Server runs the sources, queries and reactions as
+connected components of one computation graph, which you can list with
+`python3 scripts/demo.py graph`. Server also reports its own metrics, so you
+can watch Drasi do the work as well as the services it observes.
 
 | Step | What you do |
 | --- | --- |
@@ -23,8 +24,8 @@ there is no execution-mode flag or separate compatibility runtime.
 | [Run](#step-2-of-4-run-the-demo) | Start an owned cluster, Collector, store services, and PostgreSQL |
 | [Observe](#step-3-of-4-open-the-dashboard) | Open the built-in dashboard and inspect the live graph |
 | [Drive change](#step-4-of-4-drive-change) | Roll checkout, edit its SLO policy, and interrupt its heartbeat |
-| [How it works](#how-it-works) | Follow shared health and heartbeat results through the query graph |
-| [Optional Discord alerts](#optional-discord-alerts) | Deliver the same alert changes to a webhook |
+| [How it works](#how-it-works) | Follow shared health and heartbeat results through the query graph, and read Drasi's own metrics |
+| [Optional webhook alerts](#optional-webhook-alerts) | Send alert starts and ends to Discord or a local receiver |
 
 > **Before you begin**
 >
@@ -41,8 +42,7 @@ there is no execution-mode flag or separate compatibility runtime.
 ## Step 1 of 4: Set Up Your Environment
 ### Local checkouts
 
-Use this layout, with the current matching ComputationGraph branches already
-checked out:
+Use this layout, with matching checkouts of all three repositories:
 
 ```text
 workspace/
@@ -53,11 +53,10 @@ workspace/
 
 Server's `drasi-lib` dependency must point at the sibling `drasi-core/lib`.
 The helper never clones a repository, changes branches, downloads a released
-Server, or installs registry plugins. It rebuilds the Server and the PostgreSQL,
-Kubernetes, OTel, dashboard, log, optional HTTP and native query plugin libraries
-together. `drasi-computation-transformer-query` is a required part of the bundle:
-Server registers its query factory before creating queries. Its standard
-middleware and system JQ support are compiled into the query library.
+Server, or installs registry plugins. It builds Server and the PostgreSQL,
+Kubernetes, OTel, dashboard, log, HTTP and query plugins together. The query
+plugin, `drasi-computation-transformer-query`, runs every continuous query and
+provides the `promote` middleware used below.
 
 Install the Server/Core build prerequisites documented in those repositories
 (Rust **1.95**, C/C++ tools, CMake, Clang/libclang, libjq, OpenSSL, pkg-config,
@@ -85,26 +84,27 @@ python3 scripts/demo.py build
 python3 scripts/demo.py verify-build
 ```
 
-Builds copy the complete matched artifact set into a private, hash-checked bundle
-under `.runtime/`. Startup verifies those hashes and rejects extra/missing plugin
-files. Unsigned **local development artifacts only** bypass signature checks;
-automatic registry fallback is disabled. Rebuild after changing Server or Core.
-Do not reuse a Darwin bundle inside Linux (or vice versa).
+The build copies Server and the plugins into a private folder under
+`.runtime/` and records their hashes. Every start checks those hashes and
+refuses missing, extra or changed plugin files. Plugin signature checks are
+skipped only for this local build, and plugins are never downloaded from a
+registry. Rebuild after changing Server or Core. A build made on macOS does not
+run in the Linux dev container, or the other way round.
 
 ### Local dev container
 
 Choose **Drasi Server - OTel Observability Tutorial** in VS Code. It mounts the
 **parent directory**, so the same sibling checkouts must already exist. Setup
 installs build prerequisites and checksum-verifies k3d, then builds matching
-Linux Server/plugin artifacts. Its isolated Docker-in-Docker engine is selected
-explicitly; it does not need Docker Desktop. Native local execution defaults to
-Podman. Container build outputs, selected plugin bundles, kubeconfig, and ownership
+Linux Server/plugin artifacts. It uses its own Docker-in-Docker engine, so it
+does not need Docker Desktop; running directly on your host uses Podman.
+Container build outputs, selected plugin bundles, kubeconfig, and ownership
 records live in the container-local `/home/vscode/.cache/drasi-otel-observability/`
-directory, separate from native host `.runtime/` files. The container also selects
+directory, separate from the host's `.runtime/` files. The container also selects
 its own Docker API socket rather than inheriting a host Podman socket from `.env`.
 
-A standalone Codespace containing only `learning-drasi-server` is insufficient.
-There is deliberately no released-binary fallback for a missing sibling checkout.
+A standalone Codespace containing only `learning-drasi-server` is insufficient,
+and there is no released-binary fallback for a missing sibling checkout.
 
 ## Step 2 of 4: Run the Demo
 In **Terminal 1**:
@@ -122,18 +122,26 @@ The helper:
 3. Starts a uniquely named, ownership-labeled PostgreSQL container and volume.
    It seeds the checkout / `latency_p99_ms` / **750 ms** policy only in a new
    database. Existing policy values and replication state are not reset.
-4. Starts the local Server with `server-config.yaml`, verifies the exact
-   `otel-observability-server` instance reports `runtime: "computationGraph"`
-   and `running: true`, then checks component and dashboard readiness.
+4. Starts the local Server with `server-config.yaml`, checks that the
+   `otel-observability-server` instance is running and that every source, query
+   and reaction reports `Running`, then checks that the dashboard is served.
 
-The helper renders the owned kubeconfig path and namespace into
-`.runtime/server-config.generated.yaml`: the Kubernetes plugin exposes those
-fields as plain strings, not environment-aware `ConfigValue` fields. Other
-supported environment references are resolved by Server and its plugin DTOs.
+The Kubernetes source does not expand `${...}` variables in `kubeconfigPath`
+and `namespaces`, so the helper writes this run's private kubeconfig path and
+namespace into `.runtime/server-config.generated.yaml`, which Server loads.
+Server expands the other `${...}` references itself.
 
-Wait for **OTel READY**. This confirms the runtime and dashboard, not that all
-telemetry has arrived. OTLP has no bootstrap dump; allow the next Collector
-exports to populate the health and dependency views.
+Wait for:
+
+```text
+OTel READY. Dashboard: http://localhost:3000
+Wait for the next Collector export; readiness is not scenario verification.
+```
+
+The message confirms that Server and the dashboard are running, not that
+telemetry has arrived. The OTel source has no initial snapshot to load; the
+health and dependency views fill in from the next Collector exports, a few
+seconds later.
 
 The Collector receives app OTLP/HTTP at `otel-collector:4318` and forwards
 OTLP/gRPC to Drasi. Its generated endpoint is printed during setup. If data
@@ -177,6 +185,58 @@ For example:
 curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/runtime
 curl -fsS http://localhost:8380/api/v1/instances/otel-observability-server/queries/97471d43-3175-45e4-a663-0cbf726b2739/results
 ```
+
+To see how the sources, queries and reactions are connected, run in
+Terminal 2:
+
+```bash
+python3 scripts/demo.py graph
+```
+
+```text
+Graph otel-observability-server (Running)
+
+Components:
+  k8s                           Source     Running
+  otel                          Source     Running
+  slo                           Source     Running
+  checkout-heartbeat            Query      Running
+  current-health                Query      Running
+  service-dependencies          Query      Running
+  checkout-health               Query      Running
+  missing-heartbeat             Query      Running
+  slo-alert                     Query      Running
+  slo-alert-notices             Query      Running
+  console-log                   Reaction   Running
+  otel-observability-dashboard  Reaction   Running
+  (19 internal helper components hidden)
+
+Connections:
+  k8s -> current-health
+  otel -> checkout-heartbeat
+  otel -> current-health
+  otel -> service-dependencies
+  slo -> slo-alert
+  checkout-heartbeat -> missing-heartbeat  (data + bootstrap)
+  checkout-heartbeat -> otel-observability-dashboard
+  current-health -> checkout-health  (data + bootstrap)
+  current-health -> slo-alert  (data + bootstrap)
+  current-health -> otel-observability-dashboard
+  service-dependencies -> console-log
+  service-dependencies -> otel-observability-dashboard
+  checkout-health -> otel-observability-dashboard
+  missing-heartbeat -> console-log
+  missing-heartbeat -> otel-observability-dashboard
+  slo-alert -> slo-alert-notices  (data + bootstrap)
+  slo-alert -> console-log
+  slo-alert -> otel-observability-dashboard
+```
+
+Queries that read another query's results, such as `slo-alert` reading
+`current-health`, get both live changes (`data`) and, when they start, a
+snapshot of the current results (`bootstrap`). [How it works](#how-it-works) explains
+each query. Server also creates helper components inside each query; the
+command hides them.
 
 ## Step 4 of 4: Drive Change
 Use **Terminal 2**. The following commands act on Kubernetes, PostgreSQL, and the
@@ -303,12 +363,13 @@ lock without first verifying that its recorded process has stopped.
 
 ### Repeat the exercises automatically
 
-With Server still running, `python3 scripts/verify_demo.py` repeats the rollout,
-two policy-change cycles, explicit/absent heartbeat recovery, and dependency
-expiry against this owned run. It also checks the dashboard's live WebSocket
-Added/Removed messages and stable alert identities. This optional verifier needs
-**Node 22+** (built-in WebSocket, no npm packages), changes the store, and writes
-evidence under `.runtime/verification/`. It does not exercise Discord.
+With Server still running, `python3 scripts/verify_demo.py` repeats the rollout
+(including the `slo-alert-notices` start and end), two policy-change cycles,
+explicit/absent heartbeat recovery, and dependency expiry against this owned
+run. It also checks the dashboard's live WebSocket Added/Removed messages and
+stable alert identities. This optional verifier needs **Node 22+** (built-in
+WebSocket, no npm packages), changes the store, and writes evidence under
+`.runtime/verification/`. It does not exercise the optional webhook reaction.
 For fast helper checks without infrastructure, run
 `python3 -m unittest discover -s scripts -p test_demo.py`.
 
@@ -338,7 +399,7 @@ distinguish disabled pulses from absent exports.
 `current-health` joins Deployment names to OTel Service names with the synthetic
 `RUNS` relation. It returns both the live service version and Kubernetes rollout
 version, service name, metric name, and latency. `result.label: ServiceHealth`
-exposes those rows as standard graph-change nodes:
+publishes those rows as `ServiceHealth` nodes that other queries can match:
 
 ```yaml
 result:
@@ -381,44 +442,180 @@ explicit zero immediately, or schedules a `drasi.trueNowOrLater` check for ten
 seconds after the last receive time. The same live heartbeat result drives the
 dashboard and the timer.
 
-Query outputs carry standard graph changes, without a remap reaction or
-query-specific envelope in downstream Cypher. This graph representation can
-also connect native source/transformer/query producers and native sinks. The
-ordinary dashboard, log, and HTTP reactions used **here** still subscribe to
-query IDs and use their query-aware Added/Updated/Removed template contracts.
+A downstream query matches another query's published nodes directly; no extra
+reaction or conversion step sits between them. The dashboard, log and HTTP
+reactions subscribe to queries and receive each result change as added,
+updated or deleted. The dashboard shows these as rows that appear, change or
+disappear, and the log reaction prints one line for each:
 
-### Data-plane telemetry versus runtime observability
+```text
+DEPENDENCY checkout -> payments
+SLO ALERT checkout v42: p99 920.0 ms > 750.0 ms
+SLO ALERT checkout v42: p99 1006.9674459955422 ms > 750.0 ms
+SLO RECOVERED checkout v42
+```
 
-The Collector in this scenario delivers **application telemetry as source data**.
-It is not collecting all Drasi component telemetry. The instance `/runtime`
-endpoint proves the selected instance is running ComputationGraph, not that
-every export arrived, that alerts are correct, or that data is durably committed.
-Query-progress metrics likewise do not prove exactly-once processing, durable
-replay, or all-component OTel coverage.
+### Notify only when an alert starts or ends
+While an SLO alert lasts, every new p99 sample changes `slo-alert`'s
+`latencyMs`, so the query reports an update every few seconds, as the second
+`SLO ALERT` line above shows. That suits the dashboard, but not a chat
+channel. `slo-alert-notices` reads `slo-alert`'s `SloAlert` nodes and returns
+only the fields that stay the same while an alert lasts:
 
-This tutorial deliberately keeps in-memory query state. PostgreSQL survives a
-Server restart and bootstraps its policy; Kubernetes supplies current objects;
-OTel views refill from subsequent exports. It does not promise replay of telemetry
-sent while Server was unavailable.
+```cypher
+MATCH (a:SloAlert)
+RETURN a.service AS service,
+       a.deployVersion AS deployVersion,
+       a.thresholdMs AS thresholdMs
+```
 
-## Optional: Discord Alerts
-The dashboard is for watching. The same **Added/Removed** transitions can trigger
-an HTTP reaction. Use a Discord channel where you are allowed to create a webhook,
-or your own webhook endpoint. Do not send private data to an unapproved endpoint.
+A new latency sample changes no returned value, so `slo-alert-notices` reports
+nothing; it changes only when an alert starts or ends, or when its version or
+threshold changes. The optional [webhook reaction](#optional-webhook-alerts) subscribes to this
+query instead of `slo-alert`.
 
-1. In Discord, create a webhook and copy its URL. Treat the token as a secret.
-2. Uncomment the `discord-alerts` reaction at the bottom of `server-config.yaml`.
-   Preserve its indentation inside `instances[0].reactions`. The local build
-   already includes `drasi-reaction-http`; no plugin download is needed.
-3. Stop only Server, provide `DISCORD_WEBHOOK_URL` in your shell environment, and
-   run `python3 scripts/demo.py start`. Leave the cluster and database intact.
+### Application telemetry and Drasi's own metrics
+The Collector in this scenario delivers the store's **application telemetry**
+to Drasi as source data. Separately, the `telemetry` section of
+`server-config.yaml` makes Server report **its own** metrics in Prometheus
+text format at `http://localhost:8380/metrics`:
 
-The reaction subscribes to `slo-alert` and `missing-heartbeat`. Its `added`
-templates read `after.*`; its `deleted` templates read `before.*`, posting a
-Discord `{"content": "..."}` body. Updated latency rows intentionally have no
-webhook template, avoiding a message for each new sample.
+```yaml
+telemetry:
+  profile: basic
+  inspection:
+    enabled: true
+  metrics:
+    backend: prometheus
+    prometheus:
+      path: /metrics
+```
 
-Roll v42 then v41 to observe **SLO alert** and **SLO recovered**, or toggle
-heartbeat off/on for **Heartbeat missing** and **Heartbeat restored**. A valid
-webhook and permission to post are required to exercise this optional step;
-local dashboard success does not verify external delivery.
+Any Prometheus-compatible scraper can read that endpoint. The series are
+labeled with component IDs, and `drasi_component_info` maps each ID to its
+name. `python3 scripts/demo.py metrics` does that mapping and totals two
+counters for each query: the events it processed and the changes it made to
+its results:
+
+```text
+Query                 Events processed  Result changes
+checkout-health                     12               5
+checkout-heartbeat                 609              22
+current-health                     613              12
+missing-heartbeat                   22               0
+service-dependencies               609               2
+slo-alert                           13               0
+slo-alert-notices                    0               0
+```
+
+Every OTel export reaches the three queries that read the `otel` source, but
+most samples change nothing: `current-health` processed 613 events and changed
+its results 12 times. Run the command again after `roll v42` once the alert
+appears:
+
+```text
+slo-alert                           19               2
+slo-alert-notices                    2               1
+```
+
+`slo-alert` changed its results twice, when the alert started and when a new
+latency sample arrived; `slo-alert-notices` changed once, when the alert
+started. `slo-alert` keeps counting as samples arrive during the alert, and
+`slo-alert-notices` does not. Your numbers differ from these.
+
+`GET /api/v1/telemetry` (enabled by `inspection`) shows which telemetry
+settings are active. Server can also export traces and metrics over OTLP; see
+`drasi-server/docs/telemetry-configuration.md`.
+
+### Restarts
+
+Query state is kept in memory. After a Server restart, the PostgreSQL
+bootstrap reloads the policy, Kubernetes lists the current Deployments, and
+the OTel views fill in again from the next exports. Telemetry sent while
+Server was stopped is not replayed, and reactions do not report changes that
+happened in the meantime.
+
+## Optional: Webhook Alerts
+The dashboard is for watching. The same alert starts and ends can trigger an
+**HTTP reaction**. Send them to a Discord channel where you are allowed to
+create a webhook, or to a small local receiver that prints them and needs no
+account. Do not send private data to an unapproved endpoint.
+
+1. Choose where messages go:
+   - **Discord:** create a webhook for the channel and copy its URL. Treat the
+     token as a secret.
+   - **Local receiver:** open a third terminal in `tutorials/otel-observability/`
+     and run `python3 ../../scripts/webhook_receiver.py`. It prints
+     `Listening on http://127.0.0.1:8390/ (Ctrl+C to stop)`; use
+     `http://127.0.0.1:8390/` as the webhook URL.
+2. Uncomment the `discord-alerts` reaction at the bottom of `server-config.yaml`
+   (remove the first `# ` on each line), keeping it inside
+   `instances[0].reactions`. The local build already includes
+   `drasi-reaction-http`; no plugin download is needed.
+3. Stop only Server, set `DISCORD_WEBHOOK_URL` to the webhook or receiver URL in
+   your shell, and run `python3 scripts/demo.py start`. Leave the cluster and
+   database intact.
+
+The reaction subscribes to [`slo-alert-notices`](#notify-only-when-an-alert-starts-or-ends) and
+`missing-heartbeat`. Its `added` and `updated` templates read `after.*`, its
+`deleted` templates read `before.*`, and each posts a Discord
+`{"content": "..."}` body.
+
+Then, in Terminal 2, waiting for each change to appear on the dashboard before
+the next command:
+
+```bash
+python3 scripts/demo.py roll v42
+python3 scripts/demo.py set-slo 800
+python3 scripts/demo.py set-slo 750
+python3 scripts/demo.py roll v41
+python3 scripts/demo.py heartbeat off
+python3 scripts/demo.py heartbeat on
+```
+
+The local receiver prints one message when the alert starts, one for each
+threshold change while it lasts, one when it ends, and one each when the
+heartbeat goes missing and returns, however many latency samples arrive in
+between:
+
+```text
+[01:01:15] POST /
+⚠️ **SLO alert**
+• **Service:** `checkout`
+• **Version:** `v42`
+• **p99 above:** 750.0 ms
+
+[01:02:05] POST /
+⚠️ **SLO alert changed**
+• **Service:** `checkout`
+• **Version:** `v42`
+• **p99 above:** 800.0 ms
+
+[01:02:20] POST /
+⚠️ **SLO alert changed**
+• **Service:** `checkout`
+• **Version:** `v42`
+• **p99 above:** 750.0 ms
+
+[01:02:45] POST /
+✅ **SLO recovered**
+• **Service:** `checkout`
+• **Version:** `v42`
+
+[01:03:23] POST /
+💔 **Heartbeat missing**
+• **Service:** `checkout`
+
+[01:03:35] POST /
+✅ **Heartbeat restored**
+• **Service:** `checkout`
+```
+
+The HTTP reaction needs a template for every kind of change it can receive. For
+a change without one, it sends its own default JSON body to
+`<webhook URL>/changes/<query ID>`, which is not a Discord webhook address.
+Subscribed to `slo-alert` directly, it would send one such request for each
+latency update during an alert. If a delivery fails, the reaction retries and
+then stops with an `Error` status until you start it again; the
+[High Risk Containers](../high-risk-containers/) webhook step walks through
+that recovery.

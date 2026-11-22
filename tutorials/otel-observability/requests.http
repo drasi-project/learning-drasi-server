@@ -37,6 +37,15 @@ GET {{instanceUrl}}/runtime
 ### List API versions
 GET {{baseUrl}}/api/versions
 
+### Components, connections and lifecycle (python3 scripts/demo.py graph)
+GET {{instanceUrl}}/computation
+
+### Server's own metrics, Prometheus text (python3 scripts/demo.py metrics)
+GET {{baseUrl}}/metrics
+
+### Active telemetry settings
+GET {{baseUrl}}/api/v1/telemetry
+
 ### ==========================================================================
 ### Sources
 ### ==========================================================================
@@ -66,6 +75,9 @@ GET {{instanceUrl}}/queries/97471d43-3175-45e4-a663-0cbf726b2739/results
 ### Active SLO alerts
 GET {{instanceUrl}}/queries/7b55919e-aefa-4510-8f9e-4fe4b05fbf33/results
 
+### SLO alert notices (stable fields only; used by the optional webhook reaction)
+GET {{instanceUrl}}/queries/3f0c1a52-7d0e-4c55-9a51-2b8f1f3e6a10/results
+
 ### Service dependency edges
 GET {{instanceUrl}}/queries/d37d4c90-e044-4e98-a66b-6b7a6c2b7f21/results
 
@@ -81,6 +93,12 @@ GET {{instanceUrl}}/reactions
 
 ### Get the dashboard reaction status
 GET {{instanceUrl}}/reactions/94ac6021-1d21-4211-ae7a-bbac3158a8b7
+
+### Optional webhook reaction status (after enabling discord-alerts)
+GET {{instanceUrl}}/reactions/discord-alerts
+
+### Start the webhook reaction again after a failed delivery
+POST {{instanceUrl}}/reactions/discord-alerts/start
 
 ### Seeded dashboards
 GET {{dashboardUrl}}/api/dashboards

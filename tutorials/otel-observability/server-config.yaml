@@ -17,7 +17,7 @@
 # =============================================================================
 # Correlates Kubernetes Deployments, OTel-projected service health, and a
 # PostgreSQL SLO policy. Mock store services export OTLP through an in-cluster
-# Collector; six queries share health and heartbeat calculations.
+# Collector; seven queries share health and heartbeat calculations.
 # =============================================================================
 
 apiVersion: drasi.io/v1
@@ -30,6 +30,18 @@ persistConfig: false
 autoInstallPlugins: false
 verifyPlugins: false
 pluginRegistry: "${DRASI_PLUGINS_DIR}"
+
+# Server's own metrics, in Prometheus text format at /metrics on the API port
+# (python3 scripts/demo.py metrics summarizes them). Inspection adds the
+# read-only GET /api/v1/telemetry, which shows what is active.
+telemetry:
+  profile: basic
+  inspection:
+    enabled: true
+  metrics:
+    backend: prometheus
+    prometheus:
+      path: /metrics
 
 # =============================================================================
 # Sources
@@ -73,8 +85,8 @@ instances:
         bootstrapProvider:
           kind: kubernetes
 
-  # No bootstrap: late subscribers wait for the next OTLP export. The mock
-  # services keep sending, so the graph fills in within a few seconds.
+      # No bootstrap: late subscribers wait for the next OTLP export. The mock
+      # services keep sending, so the graph fills in within a few seconds.
       - kind: otel
         id: 7de527cf-aed8-478b-93a3-c4008991ade1
         name: otel
@@ -95,8 +107,8 @@ instances:
 # Continuous Queries
 # =============================================================================
     queries:
-  # Always-on view of the current deployment + live p99. Used by the dashboard
-  # even when no SLO alert is firing.
+      # Always-on view of the current deployment + live p99. Used by the dashboard
+      # even when no SLO alert is firing.
       - id: 97471d43-3175-45e4-a663-0cbf726b2739
         name: current-health
         autoStart: true
@@ -140,8 +152,8 @@ instances:
                   target_name: version
               on_error: skip
 
-  # KPI / gauge must not aggregate frontend and payments (80 / 120 / 400)
-  # or the dashboard jumps as those rows arrive.
+      # Checkout only: the KPI and gauge would otherwise combine the frontend
+      # and payments rows with checkout's.
       - id: 0569fc47-5ba8-470d-87d1-eb007dadeb5e
         name: checkout-health
         autoStart: true
@@ -158,8 +170,8 @@ instances:
         inputs:
           - current-health
 
-  # Validated OSMC story query: fire only after the metric stays above the
-  # policy threshold for five seconds.
+      # Fire only after a service's p99 stays above its policy threshold for
+      # five seconds while the reported version matches the rollout.
       - id: 7b55919e-aefa-4510-8f9e-4fe4b05fbf33
         name: slo-alert
         autoStart: true
@@ -190,6 +202,23 @@ instances:
                 property: service
               - label: service_slo_policy
                 property: service_name
+
+      # Notification view of slo-alert for the optional webhook reaction. It keeps
+      # only fields that stay the same while an alert lasts, so a new latency
+      # sample does not change this result; only the start or end of an alert, or
+      # a change of version or threshold, does.
+      - id: 3f0c1a52-7d0e-4c55-9a51-2b8f1f3e6a10
+        name: slo-alert-notices
+        autoStart: true
+        queryLanguage: Cypher
+        query: |
+          MATCH (a:SloAlert)
+          RETURN
+            a.service AS service,
+            a.deployVersion AS deployVersion,
+            a.thresholdMs AS thresholdMs
+        inputs:
+          - slo-alert
       - id: d37d4c90-e044-4e98-a66b-6b7a6c2b7f21
         name: service-dependencies
         autoStart: true
@@ -206,7 +235,7 @@ instances:
             relations:
               - DEPENDS_ON
 
-  # Live pulse. value > 0 is on; 0 is an explicit /heartbeat/off.
+      # Live pulse. value > 0 is on; 0 is an explicit /heartbeat/off.
       - id: a7024e87-9e2a-4d9e-b65f-99df9c471a26
         name: checkout-heartbeat
         autoStart: true
@@ -229,8 +258,8 @@ instances:
             relations:
               - REPORTS
 
-  # Missing when checkout sends pulse 0, or when the last pulse is older
-  # than 10 seconds (process gone, no export at all).
+      # Missing when checkout sends pulse 0, or when the last pulse is older
+      # than 10 seconds (process gone, no export at all).
       - id: fd251a01-8e67-453b-ac4a-50d6ffb1b6b3
         name: missing-heartbeat
         autoStart: true
@@ -380,41 +409,70 @@ instances:
           - slo-alert
           - service-dependencies
           - missing-heartbeat
-        defaultTemplate:
-          added:
-            template: "[{{query_name}}] + {{after}}"
-          updated:
-            template: "[{{query_name}}] ~ {{before}} -> {{after}}"
-          deleted:
-            template: "[{{query_name}}] - {{before}}"
+        # Routes are keyed by query ID: slo-alert, service-dependencies and
+        # missing-heartbeat.
+        routes:
+          7b55919e-aefa-4510-8f9e-4fe4b05fbf33:
+            added:
+              template: "SLO ALERT {{after.service}} {{after.deployVersion}}: p99 {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
+            updated:
+              template: "SLO ALERT {{after.service}} {{after.deployVersion}}: p99 {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
+            deleted:
+              template: "SLO RECOVERED {{before.service}} {{before.deployVersion}}"
+          d37d4c90-e044-4e98-a66b-6b7a6c2b7f21:
+            added:
+              template: "DEPENDENCY {{after.fromService}} -> {{after.toService}}"
+            updated:
+              template: "DEPENDENCY {{after.fromService}} -> {{after.toService}}"
+            deleted:
+              template: "DEPENDENCY EXPIRED {{before.fromService}} -> {{before.toService}}"
+          fd251a01-8e67-453b-ac4a-50d6ffb1b6b3:
+            added:
+              template: "HEARTBEAT MISSING {{after.service}}"
+            updated:
+              template: "HEARTBEAT MISSING {{after.service}}"
+            deleted:
+              template: "HEARTBEAT RESTORED {{before.service}}"
 
   # ===========================================================================
   # Optional: Discord alerts (HTTP reaction)
   # ===========================================================================
-  # Posts when slo-alert or missing-heartbeat is Added or Removed. To enable:
+  # Posts when an SLO alert or a missing heartbeat starts or ends. It subscribes
+  # to slo-alert-notices rather than slo-alert, so new latency samples during an
+  # alert do not produce requests. To enable:
   #   1. The local build includes reaction/http; no registry download is needed.
   #   2. Uncomment this reaction block (remove the leading "# " on each line).
-  #   3. Set DISCORD_WEBHOOK_URL and restart the server.
+  #   3. Set DISCORD_WEBHOOK_URL to your Discord webhook URL, or to the local
+  #      receiver (http://127.0.0.1:8390/, see ../../scripts/webhook_receiver.py),
+  #      and restart the server.
   # See "Optional: Discord Alerts" in the tutorial for the walkthrough.
   #
   #     - kind: http
   #       id: discord-alerts
   #       autoStart: true
   #       queries:
-  #         - slo-alert
+  #         - slo-alert-notices
   #         - missing-heartbeat
   #       baseUrl: "${DISCORD_WEBHOOK_URL}"
   #       timeoutMs: 30000
   #       outputTemplates:
   #         routes:
-  #           slo-alert:
+  #           slo-alert-notices:
   #             added:
   #               method: POST
   #               headers:
   #                 Content-Type: application/json
   #               template: |
   #                 {
-  #                   "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99:** {{after.latencyMs}} ms > {{after.thresholdMs}} ms"
+  #                   "content": "⚠️ **SLO alert**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99 above:** {{after.thresholdMs}} ms"
+  #                 }
+  #             updated:
+  #               method: POST
+  #               headers:
+  #                 Content-Type: application/json
+  #               template: |
+  #                 {
+  #                   "content": "⚠️ **SLO alert changed**\n• **Service:** `{{after.service}}`\n• **Version:** `{{after.deployVersion}}`\n• **p99 above:** {{after.thresholdMs}} ms"
   #                 }
   #             deleted:
   #               method: POST

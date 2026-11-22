@@ -19,7 +19,8 @@ A PostgreSQL table holds risky image tags, a Kubernetes source watches real
 Pods, and a reusable query publishes their container inventory. A second query
 joins that inventory to the risky-image list. The **dashboard reaction** renders
 the findings live, with no application code or bespoke web UI. An optional
-**HTTP reaction** sends the same findings and resolutions to Discord.
+**HTTP reaction** sends the same findings and resolutions to Discord or another
+webhook endpoint.
 
 The scenario stays small: two Pods, two initial risky-image records, one
 dashboard, then an image flagged in PostgreSQL and a Pod upgraded in Kubernetes.
@@ -34,7 +35,7 @@ another unwind pipeline.
 | **[3. Open the dashboard](#dashboard)** | See the initial high risk container |
 | **[4. Drive change](#drive)** | Flag an image, upgrade a Pod, then reset |
 | **[How it works](#how)** | Understand reusable results, the synthetic join and graph inspection |
-| **[Optional Discord alerts](#discord)** | Deliver real added/deleted query changes as webhooks |
+| **[Optional webhook alerts](#discord)** | Send findings to Discord or a local receiver, then recover from a failed delivery |
 
 {{% alert title="Before you begin" color="info" %}}
 - Use two terminals, both in `tutorials/high-risk-containers/`. Terminal 1 runs Server in the foreground; Terminal 2 changes data.
@@ -100,19 +101,21 @@ python3 scripts/demo.py build
 python3 scripts/demo.py verify-build
 ```
 
-The shared builder compiles Server and **separately rebuilds** these seven dynamic
-plugins from local Core: `drasi-source-postgres`, `drasi-bootstrap-postgres`,
+The shared builder compiles Server and these seven plugins from your local
+Core checkout: `drasi-source-postgres`, `drasi-bootstrap-postgres`,
 `drasi-source-kubernetes`, `drasi-bootstrap-kubernetes`,
 `drasi-reaction-dashboard`, `drasi-reaction-http` and
-`drasi-computation-transformer-query`. Server registers the loaded native query
-factory, including its standard middleware and system JQ support. The builder records revisions and
-artifact hashes and stages a private bundle. Server startup checks those hashes
-and does not use `PATH`, `bin/plugins` or a global plugin cache. Signature
-verification is bypassed only for this explicit local development bundle.
+`drasi-computation-transformer-query`. The last one runs the Cypher queries and
+provides the `unwind` middleware used below. The builder records the checkout
+revisions and the hash of every file it builds, and copies the plugins into a
+private folder under `.runtime/`. Before each start the runner checks those
+hashes, and Server loads plugins only from that folder, not from `PATH`,
+`bin/plugins` or a global plugin cache. Plugin signature checks are skipped
+only for this local build.
 
-Re-run `build` after changing either checkout. Stop this tutorial's Server
-before rebuilding. The old `download.sh` / `download.ps1` entry points now call
-this local build rather than downloading released artifacts.
+Re-run `build` after changing either checkout, with this tutorial's Server
+stopped. `scripts/download.sh` and `scripts/download.ps1` run the same local
+build; they do not download released binaries.
 
 ## Step 2 of 4: Run the Demo {#run}
 
@@ -141,15 +144,22 @@ reused only after ownership checks, not because their names happen to match.
 Wait for:
 
 ```text
-High Risk Containers READY: ComputationGraph; both sources, both queries and reactions running.
+High Risk Containers READY: both sources, both queries and all reactions are running.
 ```
 
-This is stronger than an open API port: the runner verifies the exact instance
-ID, `runtime: "computationGraph"`, `running: true`, source/query/reaction statuses,
-graph failure/wait observations and dashboard availability. Inspect the graph
-and Server logs if it fails. A missing Kubernetes tool, denied list/watch
-permission, unavailable API or Pod image-pull failure is an error, not a
-simulated successful run.
+The runner prints this only after checking more than an open port: the
+`runtime` endpoint reports this instance with `running: true`, every source,
+query and reaction reports `Running`, no component of the computation graph has
+failed or is waiting for another component, and the dashboard is being served.
+If the message does not appear, read the Server log in Terminal 1; while Server
+is still starting, `python3 scripts/demo.py graph` in Terminal 2 shows which
+component has failed or is waiting. A missing Kubernetes tool, denied
+list/watch permission, unavailable Kubernetes API or Pod image-pull failure
+stops the run with an error.
+
+Every start logs `WARN ... Table 'ContainerImage' does not exist, skipping`
+from the PostgreSQL bootstrap. It is harmless: `ContainerImage` nodes come from
+the `pod-containers` query, not from a PostgreSQL table.
 
 The first image download can outlast the bounded 180-second Pod readiness wait.
 Inspect it with `python3 scripts/demo.py kubectl get pods` and
@@ -168,18 +178,26 @@ loads existing risks; Kubernetes bootstrap lists existing Pods. The
 before maintaining live results.
 
 **Normal restart:** Ctrl+C stops only Server. Run `start-demo` again, or use
-`python3 scripts/demo.py start` when the infrastructure is already running.
-Neither command resets risk rows or reapplies the original Pod image tags.
-Server re-reads the YAML and rebuilds query results from current source data.
-`persistConfig: false` means REST configuration edits are not saved; put lasting
-changes in `server-config.yaml`, then restart.
+`python3 scripts/demo.py start` when the cluster and database are already
+running. Neither command resets risk rows or reapplies the original Pod image
+tags. Query results are kept in memory, so at startup Server rebuilds them from
+the current PostgreSQL rows and Pods. `persistConfig: false` means configuration
+changes made through the REST API are not saved; put lasting changes in
+`server-config.yaml`, then restart.
 
-**Delivery limits:** these are ordinary Source and Reaction adapters in the
-ComputationGraph runtime, not native transactional PostgreSQL replay components.
-There is no persistent query checkpoint or durable HTTP outbox configured here.
-The tutorial does not promise exactly-once alerts, uninterrupted delivery across
-outages, or gap-free snapshot/CDC coordination. Re-bootstrap may deliver an
-existing finding again; do not use Discord messages as an audit log.
+**What reactions see across a restart:** reactions receive only changes that
+happen while Server is running. A finding that appears or is resolved while
+Server is stopped shows up correctly in the rebuilt results and on the
+dashboard, but the optional webhook reaction sends no message for it, and it
+does not re-send findings that already exist when Server starts. Use the
+dashboard or the query results API for the current state; do not treat webhook
+messages as an audit log.
+
+This tutorial keeps query indexes in memory rather than using the durable
+indexes from Getting Started (Step 8). A query fed by the Kubernetes source
+cannot resume from a saved index: with `persistIndex: true` the first start
+works, but the next start stops with `source subscription requires
+reset/rebootstrap before this query can resume`.
 
 **Reset and cleanup are explicit:** `reset` changes only the tutorial's added
 risk record and its two Pod images. `cleanup` deletes the owned cluster and
@@ -260,9 +278,15 @@ reported as a successful upgrade.
 python3 scripts/demo.py reset
 ```
 
-This deletes risk row `101` and restores `my-app-1` to `:0.1` and `my-app-2`
-to `:0.2`, without dropping the risk table or replication slot. The dashboard
-returns to the single initial finding.
+This deletes risk row `101` and recreates any tutorial Pod whose image was
+changed, from `k8s/my-app.yaml` (`my-app-1` on `:0.1`, `my-app-2` on `:0.2`).
+It does not drop the risk table or replication slot. The dashboard returns to
+the single initial finding.
+
+Recreating the Pod, rather than changing its image back in place, keeps the
+reset fast when you repeat the exercise: each in-place image change restarts
+the container, and Kubernetes waits longer before each further restart of the
+same container (up to five minutes).
 
 For direct Kubernetes inspection without touching your global context:
 
@@ -274,20 +298,21 @@ python3 scripts/demo.py kubectl get pods -o wide
 
 ### Two real sources
 
-`devops` uses the ordinary PostgreSQL source and bootstrap plugins. The quoted,
+`devops` uses the PostgreSQL source and bootstrap plugins. The quoted,
 PascalCase `"RiskyImage"` table and `"Image"`, `"Reason"` and `"Mitigation"`
 columns match the labels and properties in the query. `REPLICA IDENTITY FULL`
 supplies old values for deletes/updates; the primary key preserves identity.
 
-`k8s` uses the ordinary Kubernetes source and bootstrap plugins. It lists and
-watches Pods only in the owned namespace. Authentication uses the private
-kubeconfig written by the runner. The current Kubernetes plugin flattens
-selected properties: `name`, `namespace`, `phase` and `containers` are top-level
-fields; `containers` represents `spec.containers`. This is not an unchanged
-copy of the entire Kubernetes JSON document.
+`k8s` uses the Kubernetes source and bootstrap plugins. It lists and watches
+Pods only in the owned namespace. Authentication uses the private kubeconfig
+written by the runner. The source flattens each Pod into top-level properties
+such as `name`, `namespace`, `labels`, `phase` and `containers` (the Pod's
+`spec.containers` list); it does not pass on the whole Kubernetes JSON
+document.
 
-Both sources participate in the same computation graph as the queries and
-reactions. Keeping these adapters does not select an older execution engine.
+Server runs both sources, both queries and the reactions as connected
+components of one computation graph. [Dashboard and graph
+inspection](#inspect) shows how to see it.
 
 ### Normalize once, publish reusable container inventory
 
@@ -316,10 +341,10 @@ query: |
 ```
 
 Each nested container becomes a `Container` node, keyed by its name within the
-Pod and connected with `OWNS`. The query publishes rows as **ContainerImage
-nodes**. `result.label` names those nodes; it does not opt in to a different
-output format. Standard source, query and transformer outputs use
-**graph-change v1**, so another query can consume them directly.
+Pod and connected to the Pod by an `OWNS` relation. `result.label:
+ContainerImage` makes the query publish each result row as a `ContainerImage`
+node, so another query can read the inventory the same way it reads nodes from
+a source.
 
 ### Join the reusable output to risks
 
@@ -354,20 +379,53 @@ The synthetic `HAS_IMAGE` join connects matching image strings across the two
 systems. Inventory updates propagate through the derived graph output;
 database changes update the same join from its other input. Dashboard and
 Discord both subscribe to `high-risk-containers`, so neither duplicates that
-join. The six returned fields are unchanged from the original scenario.
+join.
 
-On this Server/Core version, `nodes`, `relations` and `pipeline` are ordinary
-Source subscription settings. Omit them when consuming another query's output;
-the downstream `MATCH (c:ContainerImage)` selects the published label.
+`nodes`, `relations` and `pipeline` select and reshape what a query reads from
+a source. Leave them out when the input is another query: the downstream
+`MATCH (c:ContainerImage)` already selects the published label, and Server
+cannot start a query that sets them on a query input.
 
-### Dashboard and graph inspection
+### Dashboard and graph inspection {#inspect}
 
-The dashboard reaction subscribes to the risk query and streams its changes
-over WebSocket. The KPI counts rows, the table displays the six fields, and the
-Markdown panel formats the same rows. The predefined layout is available at
-startup; it is not a static or generated screenshot.
+The dashboard reaction subscribes to the risk query and streams its changes to
+the browser over a WebSocket. The KPI counts rows, the table displays the six
+fields, and the Markdown panel formats the same rows. The predefined layout is
+created at startup.
 
-Use `requests.http` for the instance-scoped API requests, including:
+To see how the components are connected, run in Terminal 2:
+
+```bash
+python3 scripts/demo.py graph
+```
+
+```text
+Graph high-risk-containers-server (Running)
+
+Components:
+  devops                          Source     Running
+  k8s                             Source     Running
+  pod-containers                  Query      Running
+  high-risk-containers            Query      Running
+  high-risk-containers-dashboard  Reaction   Running
+  (6 internal helper components hidden)
+
+Connections:
+  devops -> high-risk-containers
+  k8s -> pod-containers
+  pod-containers -> high-risk-containers  (data + bootstrap)
+  high-risk-containers -> high-risk-containers-dashboard
+```
+
+`k8s` feeds only `pod-containers`. The risk query reads the inventory through
+a query-to-query connection that carries live changes (`data`) and, at
+startup, a snapshot of the current inventory (`bootstrap`). Server also creates
+helper components inside each query; the command hides them. With the optional
+webhook reaction enabled, `discord-alerts` appears as a second reaction of
+`high-risk-containers`.
+
+The command summarizes the graph inspection endpoint. `requests.http` contains
+it and the other instance API requests, including:
 
 ```text
 GET /api/v1/instances/high-risk-containers-server/runtime
@@ -376,30 +434,39 @@ GET /api/v1/instances/high-risk-containers-server/queries/e670943a-e9b5-45d4-9b8
 GET /api/v1/instances/high-risk-containers-server/queries/445f4635-64b3-48c4-9218-18c85c58b6f9/results
 ```
 
-Or run:
+`python3 scripts/demo.py check` repeats the readiness checks and prints what
+they read. `python3 scripts/demo.py inspect` prints the full inspection JSON,
+including each component's lifecycle state, health, and any component it is
+waiting for. A successful HTTP response or `running: true` alone does not prove
+the data pipeline is ready; check component states and the actual results too.
+
+## Optional: Webhook Alerts {#discord}
+
+The dashboard is useful for watching; the **HTTP reaction** can also post a
+message when a finding appears or is resolved. It reacts to real query changes;
+nothing is sent on a timer. Send the messages to a Discord channel, or to a
+small local receiver that prints them and needs no account. With the local
+receiver you can also take the receiver offline and watch how the reaction
+handles a delivery that fails.
+
+### 1. Choose where messages go
+
+**Discord:** open **Server Settings > Integrations > Webhooks > New Webhook**,
+choose the channel and copy its URL. Treat that URL as a secret.
+
+**Local receiver:** open a third terminal (Terminal 3) in
+`tutorials/high-risk-containers/` and run:
 
 ```bash
-python3 scripts/demo.py check
-python3 scripts/demo.py inspect
+python3 ../../scripts/webhook_receiver.py
 ```
 
-Inspection shows component lifecycle/health, waiting dependencies and
-relationships. Follow `k8s -> pod-containers -> high-risk-containers` and
-`devops -> high-risk-containers`, then the dashboard/optional HTTP subscriptions.
-An HTTP success response or `runtime.running` alone does not prove the data
-pipeline is ready; inspect component states and actual results too.
+```text
+Listening on http://127.0.0.1:8390/ (Ctrl+C to stop)
+```
 
-## Optional: Discord Alerts {#discord}
-
-The dashboard is useful for watching; the **HTTP reaction** can also notify a
-channel when a finding appears or is resolved. This uses real query changes,
-not periodically generated notifications. It requires a Discord server where
-you are allowed to create a webhook.
-
-### 1. Create a webhook
-
-In Discord, open **Server Settings > Integrations > Webhooks > New Webhook**,
-choose the channel and copy its URL. Treat that URL as a secret.
+Its webhook URL is `http://127.0.0.1:8390/`. Add `--port <number>` to use
+another port. Like Discord, it answers each message with `204 No Content`.
 
 ### 2. Enable the reaction
 
@@ -411,27 +478,36 @@ keeping it aligned with the dashboard reaction in the instance's `reactions`
 list. It subscribes to `high-risk-containers`; `added` and `updated` format
 `after.*`, and `deleted` formats `before.*`, into Discord's
 `{"content": "..."}` body. The update template also handles changes to a risk's
-reason or mitigation without sending Discord an incompatible default payload.
+reason or mitigation. `recoveryPolicy: strict` is the default;
+[step 5](#delivery-failure) shows what it does.
 
 ### 3. Restart Server with the webhook URL
 
-Stop Server with Ctrl+C in Terminal 1, then:
+Stop Server with Ctrl+C in Terminal 1, then set `DISCORD_WEBHOOK_URL` to your
+Discord URL, or to `http://127.0.0.1:8390/` for the local receiver, and start
+it again:
 
 {{< tabpane persist="header" >}}
 {{< tab header="bash / zsh" lang="bash" >}}
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/<id>/<token>"
+# or, for the local receiver:
+# export DISCORD_WEBHOOK_URL="http://127.0.0.1:8390/"
 python3 scripts/demo.py start
 {{< /tab >}}
 {{< tab header="PowerShell" lang="powershell" >}}
 $env:DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/<id>/<token>"
+# or, for the local receiver:
+# $env:DISCORD_WEBHOOK_URL = "http://127.0.0.1:8390/"
 python scripts/demo.py start
 {{< /tab >}}
 {{< /tabpane >}}
 
-The URL is resolved at startup, not committed to the file. The existing
-database rows and Pod images remain unchanged. Readiness now also requires the
-enabled HTTP reaction to be running. Existing findings may be delivered during
-re-bootstrap; notifications are not exactly-once.
+The URL is read at startup; it is not stored in the file. The database rows
+and Pod images remain unchanged. With the reaction enabled, the READY check
+also requires it to be running, and `python3 scripts/demo.py graph` lists
+`discord-alerts` as a second reaction of `high-risk-containers`. The reaction
+sends only changes that happen after it starts: there is no message for
+`my-app-1`, which was already a finding.
 
 ### 4. Observe an alert and resolution
 
@@ -443,11 +519,100 @@ python3 scripts/demo.py add-risk
 python3 scripts/demo.py upgrade
 ```
 
-Adding the risk makes **my-app-2** appear in the table and produces a detection
-message; upgrading it to `:0.3` removes the finding and produces a resolution.
-This same pattern works with another webhook endpoint by changing the URL and
-templates. Check the HTTP reaction logs for rejected deliveries; do not infer
-Discord delivery from the dashboard alone.
+Adding the risk makes **my-app-2** appear in the table and sends a detection
+message; upgrading it to `:0.3` removes the finding and sends a resolution.
+The local receiver prints both (the namespace is your run ID):
+
+```text
+[00:13:59] POST /
+🚨 **High risk container detected**
+• **Pod:** `my-app-2` (namespace `hrc-08b4dfe75ad7`)
+• **Container:** `app`
+• **Image:** `ghcr.io/drasi-project/my-app:0.2`
+• **Reason:** Critical Bug
+• **Mitigation:** Update to latest version
+
+[00:14:01] POST /
+✅ **High risk container resolved**
+• **Pod:** `my-app-2`
+• **Image:** `ghcr.io/drasi-project/my-app:0.2`
+```
+
+The same pattern works with other webhook endpoints by changing the URL and
+templates.
+
+### 5. Take the receiver offline {#delivery-failure}
+
+This step needs the local receiver. In Terminal 2, run
+`python3 scripts/demo.py reset`, then stop the receiver with Ctrl+C in
+Terminal 3 and add the risk again:
+
+```bash
+python3 scripts/demo.py add-risk
+```
+
+**my-app-2** appears on the dashboard as before, but its message cannot be
+delivered. Terminal 1 shows the reaction retrying and then stopping:
+
+```text
+WARN ... Transient HTTP request send error on attempt 1: error sending request for url (http://127.0.0.1:8390/); retrying
+WARN ... Transient HTTP request send error on attempt 2: error sending request for url (http://127.0.0.1:8390/); retrying
+ERROR ... Failed to process result: HTTP request failed after 3 attempts: error sending request for url (http://127.0.0.1:8390/)
+ERROR ... Delivery failed for query '445f4635-64b3-48c4-9218-18c85c58b6f9' (seq 3); stopping per Strict recovery policy — the result replays from the outbox on restart
+```
+
+The sequence number depends on how many changes the query has produced. Check
+the reaction by opening this URL in a browser (use your API port if you changed
+it), or with `curl -s`:
+
+```text
+http://localhost:8380/api/v1/instances/high-risk-containers-server/reactions/discord-alerts
+```
+
+It reports `"status":"Error"` with an `error_message` that ends in `HTTP
+delivery failed for query '445f4635-64b3-48c4-9218-18c85c58b6f9' (seq 3);
+stopped per recovery policy`. The dashboard reaction is still `Running`: one
+failed reaction does not stop the others.
+
+Start the receiver again in Terminal 3 (`python3 ../../scripts/webhook_receiver.py`),
+then start the reaction from Terminal 2:
+
+{{< tabpane persist="header" >}}
+{{< tab header="bash / zsh" lang="bash" >}}
+curl -s -X POST http://localhost:8380/api/v1/instances/high-risk-containers-server/reactions/discord-alerts/start
+{{< /tab >}}
+{{< tab header="PowerShell" lang="powershell" >}}
+Invoke-RestMethod -Method Post -Uri http://localhost:8380/api/v1/instances/high-risk-containers-server/reactions/discord-alerts/start
+{{< /tab >}}
+{{< /tabpane >}}
+
+```json
+{"success":true,"data":{"message":"Reaction started successfully"},"error":null}
+```
+
+The receiver immediately prints the detection message that failed, and the
+reaction is `Running` again. Run `python3 scripts/demo.py upgrade` and the
+resolution arrives as usual.
+
+How the reaction handles failures:
+
+- A request that cannot connect, or that gets a temporary error status (5xx,
+  408, 409, 425 or 429), is tried up to three times, with a short wait that
+  doubles between attempts.
+- If the last attempt fails, or the endpoint answers 401, 403 or 407,
+  `recoveryPolicy` decides. `strict` (the default) stops the reaction with an
+  `Error` status and keeps the undelivered change; starting the reaction sends
+  it and continues. Server does not start the reaction again by itself.
+  `auto_skip_gap` instead logs `Delivery failed ... skipping and advancing
+  checkpoint per AutoSkipGap recovery policy`, drops the change and keeps
+  running.
+- Any other 4xx response, such as 400 or 404, means the message can never be
+  accepted. The reaction logs `Permanent HTTP request failure with status ...;
+  dropping event` and keeps running under either policy.
+
+The undelivered change is held in memory. If Server stops before you start the
+reaction, the message is lost, and the restarted reaction does not send it.
+Discord rejections appear in the Terminal 1 log in the same way.
 
 ## Clean Up {#cleanup}
 
@@ -474,8 +639,12 @@ removing that one stale lock file.
   reusable, labeled inventory for downstream consumers.
 - Synthetic joins connect that inventory to risk records without glue code.
 - Dashboard and HTTP reactions share one maintained risk result set.
-- Computation-graph inspection makes dependencies and failed/waiting components
-  visible, while explicit ownership and non-resetting startup keep the exercise safe to repeat.
+- The HTTP reaction retries failed deliveries; with the default `strict`
+  recovery policy it stops with an `Error` status instead of losing a message,
+  and delivers the held message when you start it again.
+- Graph inspection (`demo.py graph` and the `computation` endpoint) shows how
+  components connect and which have failed or are waiting, while explicit
+  ownership and non-resetting startup keep the exercise safe to repeat.
 
 ### Check your local run
 

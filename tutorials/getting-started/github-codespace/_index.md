@@ -10,8 +10,7 @@ description: "Source requirements for remote tutorial environments"
 The Getting Started tutorial requires the matching **local Server and Core
 sources**, including any uncommitted changes, and separately built plugins.
 A one-click Codespace for this repository alone does not contain those
-sources. The previous released-binary Codespace setup is not equivalent and
-is no longer used by this tutorial.
+sources, and a released Drasi Server binary does not match them.
 
 Use the [local Dev Container](../dev-container/) or
 [local source build](../download-binary/) with your existing sibling checkouts.

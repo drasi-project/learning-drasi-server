@@ -45,8 +45,13 @@ autoInstallPlugins: false
 # =============================================================================
 instances:
   - id: curbside-pickup-server
+    # Store every query's indexes, results and pending timers on disk (RocksDB,
+    # under .runtime/data). After a restart, queries resume from their saved
+    # positions in the PostgreSQL slot and MySQL binlog, and a driver's wait
+    # keeps its original start time.
+    persistIndex: true
     sources:
-  # Retail Operations - PostgreSQL source: the customer orders.
+      # Retail Operations - PostgreSQL source: the customer orders.
       - kind: postgres
         id: 8ec619dc-7515-4721-929a-be905090ded2
         name: retail-ops
@@ -59,30 +64,30 @@ instances:
         password: "${POSTGRES_PASSWORD:-drasi_password}"
         sslMode: prefer
 
-    # Table to monitor. Lower-case/unquoted so the node label matches (o:orders).
+        # Table to monitor. Lower-case/unquoted so the node label matches (o:orders).
         tables:
           - orders
 
-    # The publication is created by database/postgres-init.sql; the slot is
-    # created automatically by the source on startup (with a consistent
-    # snapshot), so the seeded rows are bootstrapped once and not double-counted.
+        # The publication is created by database/postgres-init.sql; the slot is
+        # created automatically by the source on startup (with a consistent
+        # snapshot), so the seeded rows are bootstrapped once and not double-counted.
         slotName: drasi_curbside_slot
         publicationName: drasi_curbside_pub
 
-    # Primary key, so Drasi can track row identity across changes.
+        # Primary key, so Drasi can track row identity across changes.
         tableKeys:
           - table: orders
             keyColumns:
               - id
 
-    # Bootstrap provider loads the existing orders on startup.
+        # Bootstrap provider loads the existing orders on startup.
         bootstrapProvider:
           kind: postgres
 
-  # Physical Operations - MySQL source: the pickup vehicles.
-  # The MySQL source captures changes by streaming the binary log (binlog), so
-  # database/docker-compose.yml starts MySQL with ROW-based logging, full row
-  # images/metadata and GTID mode.
+      # Physical Operations - MySQL source: the pickup vehicles.
+      # The MySQL source captures changes by streaming the binary log (binlog), so
+      # database/docker-compose.yml starts MySQL with ROW-based logging, full row
+      # images/metadata and GTID mode.
       - kind: mysql
         id: a0eeaced-9965-47f4-b6c4-20080fb188a9
         name: physical-ops
@@ -93,25 +98,25 @@ instances:
         database: "${MYSQL_DATABASE:-PhysicalOperations}"
         user: "${MYSQL_USER:-drasi_user}"
         password: "${MYSQL_PASSWORD:-drasi_password}"
-    # The tutorial MySQL container does not enable TLS; disable it so the source
-    # connects in plaintext (the client otherwise negotiates TLS and fails).
+        # The tutorial MySQL container does not enable TLS; disable it so the source
+        # connects in plaintext (the client otherwise negotiates TLS and fails).
         sslMode: disabled
 
-    # Table to monitor. The node label is the table name `vehicles`, matching
-    # (v:vehicles) in the queries.
+        # Table to monitor. The node label is the table name `vehicles`, matching
+        # (v:vehicles) in the queries.
         tables:
           - vehicles
 
-    # Primary key, so Drasi can track row identity across changes.
+        # Primary key, so Drasi can track row identity across changes.
         tableKeys:
           - table: vehicles
             keyColumns:
               - plate
 
-    # Bootstrap provider loads the existing vehicles on startup. Unlike the
-    # PostgreSQL bootstrap provider (which reuses the source connection), the
-    # MySQL bootstrap provider takes its own connection settings. Note it does
-    # not accept an sslMode field.
+        # Bootstrap provider loads the existing vehicles on startup. Unlike the
+        # PostgreSQL bootstrap provider (which reuses the source connection), the
+        # MySQL bootstrap provider takes its own connection settings. Note it does
+        # not accept an sslMode field.
         bootstrapProvider:
           kind: mysql
           host: "${MYSQL_HOST:-localhost}"
@@ -138,9 +143,9 @@ instances:
 #   - delay             : delayed orders - at the curbside too long while not ready
 # pickup-state declares PICKUP_BY once and emits Pickup nodes for both decisions.
     queries:
-  # orders-preparing: orders still being prepared (status != 'ready'). As soon as
-  # an order becomes 'ready' it drops out of this result and appears in
-  # orders-ready - so the order visibly moves between the two dashboard panels.
+      # orders-preparing: orders still being prepared (status != 'ready'). As soon as
+      # an order becomes 'ready' it drops out of this result and appears in
+      # orders-ready - so the order visibly moves between the two dashboard panels.
       - id: 06d6824e-99a3-4c61-9961-78d59d6da38a
         name: orders-preparing
         autoStart: true
@@ -161,7 +166,7 @@ instances:
             o.plate AS plate,
             o.status AS status
 
-  # orders-ready: orders that are ready for pickup (status = 'ready').
+      # orders-ready: orders that are ready for pickup (status = 'ready').
       - id: 56a7465f-c326-4827-a270-8411277a8012
         name: orders-ready
         autoStart: true
@@ -182,9 +187,9 @@ instances:
             o.plate AS plate,
             o.status AS status
 
-  # vehicles-parking: vehicles still in the parking lot (location = 'Parking').
-  # When a driver pulls up to the curb the vehicle drops out of this result and
-  # appears in vehicles-curbside - so the car visibly moves between the panels.
+      # vehicles-parking: vehicles still in the parking lot (location = 'Parking').
+      # When a driver pulls up to the curb the vehicle drops out of this result and
+      # appears in vehicles-curbside - so the car visibly moves between the panels.
       - id: ad563c5b-aa09-440d-8900-ed99bebd5ab5
         name: vehicles-parking
         autoStart: true
@@ -205,7 +210,7 @@ instances:
             v.color AS color,
             v.location AS location
 
-  # vehicles-curbside: vehicles waiting at the curb (location = 'Curbside').
+      # vehicles-curbside: vehicles waiting at the curb (location = 'Curbside').
       - id: 33aec50d-09b2-49e0-9738-496ce44e6406
         name: vehicles-curbside
         autoStart: true
@@ -226,7 +231,7 @@ instances:
             v.color AS color,
             v.location AS location
 
-  # Calculate the cross-database join once, then fan out to both decisions.
+      # Calculate the cross-database join once, then fan out to both decisions.
       - id: 5bc81ea8-a74d-426a-a148-b0817a4dd0f4
         name: pickup-state
         autoStart: true
@@ -264,7 +269,7 @@ instances:
             drasi.changeDateTime(v) AS waitingSinceTimestamp,
             drasi.listMax([drasi.changeDateTime(o), drasi.changeDateTime(v)]) AS readyTimestamp
 
-  # delivery: orders that are READY whose driver has ARRIVED at the curbside.
+      # delivery: orders that are READY whose driver has ARRIVED at the curbside.
       - id: e0061b93-c241-40f8-8610-dba59d35461a
         name: delivery
         autoStart: true
@@ -286,17 +291,17 @@ instances:
             p.vehicleLocation AS vehicleLocation,
             p.readyTimestamp AS readyTimestamp
 
-  # delay: a driver is at the curbside but the order is NOT yet ready, and they
-  # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
-  # re-evaluation so the row appears the instant the threshold is crossed.
+      # delay: a driver is at the curbside but the order is NOT yet ready, and they
+      # have been waiting for more than 10 seconds. drasi.trueFor schedules a future
+      # re-evaluation so the row appears the instant the threshold is crossed.
       - id: 4f1542af-b5af-42a6-9766-f51bf484810e
         name: delay
         autoStart: true
         queryLanguage: Cypher
         inputs:
           - component: pickup-state
-    # Evaluate both conditions inside trueFor so either reversal cancels the
-    # timer. Preserve the vehicle timestamp as data across the query boundary.
+        # Evaluate both conditions inside trueFor so either reversal cancels the
+        # timer. Preserve the vehicle timestamp as data across the query boundary.
         query: |
           MATCH (p:Pickup)
           WHERE drasi.trueFor(
@@ -311,14 +316,14 @@ instances:
 # Reactions
 # =============================================================================
     reactions:
-  # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
-  # A single "Curbside Pickup" dashboard is seeded with six Markdown (text)
-  # widgets arranged in two rows:
-  #   🍕 Orders Preparing | 🍕 Orders Ready | 🚗 Vehicles Parking | 🚗 Vehicles Curbside
-  #   📦 Matched Orders                     | ⚠️  Delayed Orders
-  # Because the "preparing/ready" and "parking/curbside" panels are driven by
-  # filtered continuous queries, an order or vehicle disappears from one panel
-  # and appears in the other the instant its status/location changes.
+      # Dashboard reaction - serves a live web dashboard at http://localhost:3000.
+      # A single "Curbside Pickup" dashboard is seeded with six Markdown (text)
+      # widgets arranged in two rows:
+      #   🍕 Orders Preparing | 🍕 Orders Ready | 🚗 Vehicles Parking | 🚗 Vehicles Curbside
+      #   📦 Matched Orders                     | ⚠️  Delayed Orders
+      # Because the "preparing/ready" and "parking/curbside" panels are driven by
+      # filtered continuous queries, an order or vehicle disappears from one panel
+      # and appears in the other the instant its status/location changes.
       - kind: dashboard
         id: 680cbd42-cb8f-4570-8417-e02823e55753
         name: curbside-dashboard
@@ -341,7 +346,7 @@ instances:
               rowHeight: 60
               margin: 10
             widgets:
-          # Orders being prepared (Retail Operations / PostgreSQL).
+              # Orders being prepared (Retail Operations / PostgreSQL).
               - id: orders-preparing
                 type: text
                 title: 🍕 Orders · Preparing
@@ -357,7 +362,7 @@ instances:
                     _No orders being prepared._
                     {{/if}}
 
-          # Orders ready for pickup (Retail Operations / PostgreSQL).
+              # Orders ready for pickup (Retail Operations / PostgreSQL).
               - id: orders-ready
                 type: text
                 title: 🍕 Orders · Ready
@@ -373,7 +378,7 @@ instances:
                     _No orders ready for pickup._
                     {{/if}}
 
-          # Vehicles in the parking lot (Physical Operations / MySQL).
+              # Vehicles in the parking lot (Physical Operations / MySQL).
               - id: vehicles-parking
                 type: text
                 title: 🚗 Vehicles · Parking
@@ -389,7 +394,7 @@ instances:
                     _No vehicles in the parking lot._
                     {{/if}}
 
-          # Vehicles waiting at the curb (Physical Operations / MySQL).
+              # Vehicles waiting at the curb (Physical Operations / MySQL).
               - id: vehicles-curbside
                 type: text
                 title: 🚗 Vehicles · Curbside
@@ -405,7 +410,7 @@ instances:
                     _No vehicles at the curb._
                     {{/if}}
 
-          # Matched orders (delivery query): ready AND at the curbside.
+              # Matched orders (delivery query): ready AND at the curbside.
               - id: matched-orders
                 type: text
                 title: 📦 Matched Orders (ready + at curbside)
@@ -421,7 +426,7 @@ instances:
                     ⏳ _No orders ready with a driver at the curbside._
                     {{/if}}
 
-          # Delayed orders (delay query): waiting at the curbside for over 10s.
+              # Delayed orders (delay query): waiting at the curbside for over 10s.
               - id: delayed-orders
                 type: text
                 title: ⚠️ Delayed Orders (waiting > 10s, not ready)

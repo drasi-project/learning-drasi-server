@@ -72,16 +72,22 @@ class CliTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=5)
 
-    def command(self, *extra, direct=False):
-        mode = ["--sse-url", f"{self.base}/events"] if direct else [
-            "--server", self.base, "--instance", "selected", "--query", "q",
-            "--sse-port", str(self.port),
-        ]
+    def command(self, *extra, direct=False, attach=False):
+        if direct:
+            mode = ["--sse-url", f"{self.base}/events"]
+        elif attach:
+            mode = ["--server", self.base, "--instance", "selected", "--query", "q", "--attach"]
+        else:
+            mode = [
+                "--server", self.base, "--instance", "selected", "--query", "q",
+                "--sse-port", str(self.port),
+            ]
         return [BINARY, *mode, *extra]
 
-    def execute(self, *extra, direct=False):
+    def execute(self, *extra, direct=False, attach=False):
         return subprocess.run(
-            self.command(*extra, direct=direct), text=True, capture_output=True, timeout=10
+            self.command(*extra, direct=direct, attach=attach),
+            text=True, capture_output=True, timeout=10,
         )
 
     def assert_cleanup(self):
@@ -106,6 +112,31 @@ class CliTests(unittest.TestCase):
         self.assertIn("SSE stream closed", result.stderr)
         self.assertEqual(json.loads(result.stdout)["results"][0]["row_signature"], 2**64 - 1)
         self.assertEqual(self.assert_cleanup()["host"], "127.0.0.1")
+
+    def test_attach_prints_snapshot_then_changes_without_a_reaction(self):
+        snapshot = [{"MessageText": "Hello World", "Count": 2}]
+        change = {
+            "query_id": "q", "sequence": 7, "timestamp": "2026-11-22T06:49:30Z",
+            "results": [{"type": "aggregation", "row_signature": 2**64 - 1,
+                         "before": {"MessageText": "Hello World", "Count": 2},
+                         "after": {"MessageText": "Hello World", "Count": 3}}],
+            "metadata": {},
+        }
+        self.payload = (
+            ": heartbeat\n\n"
+            f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
+            f"data: {json.dumps(change)}\n\n"
+        ).encode()
+        result = self.execute(attach=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(self.requests, [("GET", "/api/v1/instances/selected/queries/q/attach", None)])
+        decoder = json.JSONDecoder()
+        first, end = decoder.raw_decode(result.stdout)
+        second, _ = decoder.raw_decode(result.stdout[end:].lstrip())
+        self.assertEqual(first, snapshot)
+        self.assertEqual(second["results"][0]["row_signature"], 2**64 - 1)
+        self.assertIn("1 current row(s)", result.stderr)
+        self.assertIn("SSE stream closed", result.stderr)
 
     def test_existing_native_endpoint_is_never_created_or_deleted(self):
         payload = {

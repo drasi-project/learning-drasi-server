@@ -17,6 +17,7 @@ The development walkthroughs use matching local `drasi-server`,
 source-build and infrastructure prerequisites; a downloaded release or an
 unrelated plugin bundle is not a substitute for those matching components.
 
-Each scenario keeps its original user flow while using ComputationGraph for
-shared calculations, direct query chaining and explicit initialization and
-live updates where appropriate.
+Drasi Server runs each scenario as one graph of Sources, continuous queries and
+Reactions. Queries can feed other queries, so a calculation made once can serve
+several consumers. Each tutorial has you change the source data yourself and
+watch the results update.

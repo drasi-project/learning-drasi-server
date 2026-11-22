@@ -23,6 +23,11 @@ from unittest.mock import patch
 import demo
 import verify_demo
 
+try:
+    import yaml
+except ImportError:  # The configuration checks below need PyYAML.
+    yaml = None
+
 
 POST_CREATE = demo.TUTORIAL.parents[1] / ".devcontainer/building-comfort/post-create.sh"
 
@@ -137,9 +142,18 @@ class DemoTests(unittest.TestCase):
         self.assertFalse((self.directory / "server.lock").exists())
 
     def test_cleanup_preserves_volume_by_default(self):
+        (self.directory / "data/index").mkdir(parents=True)
         with patch.object(demo, "check_database_ownership"), patch.object(demo, "compose") as compose:
             demo.cleanup()
             compose.assert_called_once_with("down")
+        self.assertTrue((self.directory / "data/index").is_dir())
+
+    def test_removing_the_database_also_removes_its_saved_query_state(self):
+        (self.directory / "data/index").mkdir(parents=True)
+        with patch.object(demo, "check_database_ownership"), patch.object(demo, "compose") as compose:
+            demo.cleanup(True)
+            compose.assert_called_once_with("down", "--volumes")
+        self.assertFalse((self.directory / "data").exists())
 
     def test_existing_database_is_not_reseeded(self):
         with patch.object(demo, "check_database_ownership"), patch.object(demo, "compose"), \
@@ -200,6 +214,20 @@ class DemoTests(unittest.TestCase):
         for actual in ([], expected * 2, [{"RoomId": "r", "ComfortLevel": 47}]):
             with self.assertRaises(AssertionError):
                 verify_demo.assert_rows(actual, expected, "test")
+
+    @unittest.skipUnless(yaml, "PyYAML is required to read server-config.yaml")
+    def test_configuration_is_durable_and_logs_alert_fields(self):
+        config = yaml.safe_load((Path(__file__).resolve().parents[1] / "server-config.yaml").read_text())
+        instance, = config["instances"]
+        self.assertTrue(instance["persistIndex"])
+        log = next(r for r in instance["reactions"] if r["name"] == "console-log")
+        fields = {"room-alert": "Room", "floor-alert": "Floor", "building-alert": "Building"}
+        self.assertEqual(set(log["routes"]), {demo.component_id(name) for name in fields})
+        for name, prefix in fields.items():
+            for operation, template in log["routes"][demo.component_id(name)].items():
+                image = "before" if operation == "deleted" else "after"
+                self.assertIn(f"{{{{{image}.{prefix}Name}}}}", template["template"])
+                self.assertNotIn("query_name", template["template"])
 
     def test_reference_uses_floor_average_not_room_weighting(self):
         rooms = [

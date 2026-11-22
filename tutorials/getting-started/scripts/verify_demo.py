@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 The Drasi Authors. Licensed under the Apache License, Version 2.0.
-"""Execute the seven-step walkthrough on fresh owned data, then test restart."""
+"""Execute the eight-step walkthrough on fresh owned data, including durable restart."""
 
 import argparse
 import json
@@ -162,6 +162,42 @@ class Stream:
                 json.dumps(self.received, indent=2) + "\n")
 
 
+def attached(query, change, predicate, timeout=30):
+    """Read the query's attach stream: its snapshot, then the first matching change."""
+    url = (f"http://127.0.0.1:{os.environ['SERVER_PORT']}/api/v1/instances/{demo.INSTANCE}"
+           f"/queries/{query}/attach")
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        if not response.headers.get("Content-Type", "").startswith("text/event-stream"):
+            raise AssertionError(f"attach is not an event stream: {response.headers}")
+        snapshot, event, data = None, None, []
+        for raw in response:
+            line = raw.decode().rstrip("\r\n")
+            if line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data.append(line[5:].strip())
+            elif not line and data:
+                body = json.loads("\n".join(data))
+                if event == "snapshot":
+                    snapshot = body
+                    change()
+                elif snapshot is None:
+                    raise AssertionError(f"attach sent a change before its snapshot: {body}")
+                elif any(predicate(result) for result in body["results"]):
+                    return snapshot, body
+                event, data = None, []
+    raise AssertionError("attach stream ended before the expected change")
+
+
+def edit_working_config(old, new):
+    """Make the same text edit as the reader in Step 8."""
+    path = demo.state() / "getting-started.yaml"
+    text = path.read_text()
+    if text.count(old) != 1:
+        raise AssertionError(f"Expected exactly one {old!r} in {path}")
+    path.write_text(text.replace(old, new))
+
+
 def free_ports():
     probes = []
     try:
@@ -253,7 +289,13 @@ def main():
         wait_for("Alice filtered", lambda: selected("hello-world-senders", Sender="Alice"))
         wait_for("Bob in upstream", lambda: selected("all-messages", From="Bob"))
         assert not selected("hello-world-senders", Sender="Bob")
-        passed("step 4: query-output bootstrap, Alice included and Bob excluded")
+        view = demo.graph()
+        for line in ("  my-postgres -> all-messages\n",
+                     "  all-messages -> hello-world-senders  (data + bootstrap)\n",
+                     "  all-messages -> log-reaction\n", "  hello-world-senders -> log-reaction"):
+            assert line in view + "\n", f"Missing {line!r} in graph view:\n{view}"
+        (directory / "graph-step-4.txt").write_text(view + "\n")
+        passed("step 4: query-output bootstrap, Alice included and Bob excluded; graph connections")
 
         add_query("message-counts")
         wait_for("Hello World count 2", lambda: selected("message-counts", MessageText="Hello World", Count=2))
@@ -268,6 +310,27 @@ def main():
             assert decrease["before"] == {"MessageText": "Hello World", "Count": 3}
             assert decrease["row_signature"] == increase["row_signature"]
         passed("step 5: exact count transitions 2 -> 3 -> 2 over SSE")
+
+        snapshot, change = attached(
+            "message-counts",
+            lambda: demo.sql("""INSERT INTO "Message" ("From","Message") VALUES ('Eve','Hello World');"""),
+            lambda r: r["type"] == "aggregation" and r["after"] == {"MessageText": "Hello World", "Count": 3})
+        assert {"MessageText": "Hello World", "Count": 2} in snapshot, snapshot
+        assert change["query_id"] == demo.component_id("message-counts") and change["sequence"] > 0
+        demo.sql("""DELETE FROM "Message" WHERE "From"='Eve';""")
+        wait_for("Eve removed", lambda: selected("message-counts", MessageText="Hello World", Count=2))
+        log = (directory / "watch-cli.log").open("w")
+        logs.append(log)
+        watcher = subprocess.Popen(
+            [sys.executable, str(demo.TUTORIAL / "scripts/demo.py"), "watch", "message-counts"],
+            stdout=log, stderr=subprocess.STDOUT, env=os.environ.copy(), cwd=demo.TUTORIAL)
+        try:
+            wait_for("watch snapshot", lambda: "Live changes follow" in
+                     (directory / "watch-cli.log").read_text(), 15)
+        finally:
+            stop(watcher)
+        assert "Snapshot of the query's 4 current row(s):" in (directory / "watch-cli.log").read_text()
+        passed("step 5: attach snapshot then change, and watch prints the snapshot without a reaction")
 
         add_query("inactive-senders")
         with Stream("inactive-senders", directory) as stream:
@@ -308,20 +371,56 @@ def main():
             demo.sql("""UPDATE "Message" SET "Message"='Good afternoon!' WHERE "From"='Carol';""")
             stream.change("Carol message update", lambda r: r["type"] == "UPDATE"
                           and r["after"]["Sender"] == "Carol" and r["after"]["Message"] == "Good afternoon!")
+        view = demo.graph()
+        assert "  location-tracker -> messages-with-location\n" in view + "\n", view
+        assert "  all-messages -> messages-with-location  (data + bootstrap)" in view, view
         passed("step 7: HTTP and PostgreSQL changes both propagate through the chained join")
 
         stop(server)
         server = None
-        demo.sql("""INSERT INTO "Message" ("From","Message") VALUES ('While stopped','Hello World');""")
+        edit_working_config("  persistIndex: false\n", "  persistIndex: true\n")
+        rejected_log = directory / "durable-rejected.log"
+        with rejected_log.open("w") as log:
+            rejected = subprocess.Popen(
+                [sys.executable, str(demo.TUTORIAL / "scripts/demo.py"), "start"],
+                stdout=log, stderr=subprocess.STDOUT, env=os.environ.copy(), cwd=demo.TUTORIAL)
+            try:
+                rejected.wait(timeout=120)
+            except subprocess.TimeoutExpired:
+                stop(rejected)
+                raise AssertionError("A durable HTTP-fed query was not rejected")
+        output = rejected_log.read_text()
+        assert rejected.returncode != 0, output
+        assert ("IncompatibleSource: sources that do not support replay cannot feed persistent query "
+                f"'{demo.component_id('messages-with-location')}' "
+                f"(source '{demo.component_id('location-tracker')}', supports_replay=false)") in output, output
+        edit_working_config("    result:\n      label: LocatedMessage\n",
+                            "    result:\n      label: LocatedMessage\n"
+                            "    storageBackend:\n      kind: memory\n")
+        server = launch("durable.log")
+        wait_for("durable queries running", lambda: selected("hello-world-senders", Sender="Alice"))
+        assert list((directory / "data").glob("*/index")), "No durable index directory under data/"
+        passed("step 8: HTTP-fed durable query rejected; durable indexes with an in-memory join start")
+
+        stop(server)
+        server = None
+        demo.sql("""INSERT INTO "Message" ("From","Message") VALUES ('Dana','Hello World');""")
         server = launch("restart.log")
-        wait_for("offline message reconstructed", lambda: selected("hello-world-senders", Sender="While stopped"))
+        wait_for("offline message applied", lambda: selected("hello-world-senders", Sender="Dana"))
+        wait_for("count includes Dana", lambda: selected("message-counts", MessageText="Hello World", Count=3))
+        restart = (directory / "restart.log").read_text()
+        assert "Bootstrapped" not in restart, "Durable PostgreSQL queries bootstrapped again"
+        assert "Replication started from read LSN" in restart, restart
+        assert (f"Bootstrap completed successfully for query "
+                f"'{demo.component_id('messages-with-location')}', sent 4 events") in restart, restart
         wait_for("static location restored", lambda: selected("messages-with-location", Sender="Brian Kernighan",
                                                             Location="Building A, Floor 3"))
         assert not selected("messages-with-location", Sender="Carol")
         location("carol", "Carol", "Home Office")
         wait_for("HTTP location resent", lambda: selected("messages-with-location", Sender="Carol",
                                                        Message="Good afternoon!", Location="Home Office"))
-        passed("restart: configuration/PG retained, HTTP state rebuilt from file and explicitly resent")
+        wait_for("Dana inactive after the restart", lambda: selected("inactive-senders", MessageFrom="Dana"), 35)
+        passed("step 8: restart resumed durable queries without bootstrap; join rebuilt from file; timer ran")
     except BaseException as caught:
         error = caught
         raise

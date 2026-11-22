@@ -214,7 +214,12 @@ def cleanup(volumes=False):
         raise RuntimeError("Stop this demo with Ctrl+C before cleanup; server.lock is present")
     check_ownership()
     compose("down", *(["--volumes"] if volumes else []))
-    print("Owned databases removed." if volumes else "Owned containers removed; database volumes preserved.")
+    if volumes:
+        # Saved query state records positions in the deleted databases' change
+        # streams; new databases must start from a fresh bootstrap.
+        shutil.rmtree(state_dir() / "data", ignore_errors=True)
+    print("Owned databases and saved query state removed." if volumes
+          else "Owned containers removed; database volumes and saved query state preserved.")
 
 
 def get_json(url):
@@ -253,6 +258,14 @@ def check():
             "orders", "vehicles", "log"} <= console.keys():
         raise RuntimeError(f"Operations console is not connected to both databases: {console}")
     return proof
+
+
+def graph():
+    import graph_view
+    response = get_json(api_url() + "/computation")
+    if response.get("success") is not True:
+        raise RuntimeError(f"Graph inspection failed: {response}")
+    return graph_view.render(response["data"], INSTANCE)
 
 
 def start():
@@ -296,7 +309,7 @@ def start():
 
         proof = wait_for(ready, "Curbside Pickup readiness")
         (state / "runtime.json").write_text(json.dumps(proof, indent=2) + "\n")
-        print(f"\nCurbside Pickup READY: ComputationGraph; two sources, seven queries, six panels."
+        print(f"\nCurbside Pickup READY: two sources, seven queries, six panels."
               f"\nDashboard: http://localhost:{os.environ['DASHBOARD_PORT']}"
               f"\nOperations console: http://localhost:{os.environ['WEBUI_PORT']}"
               "\nCtrl+C stops both processes and preserves database data.", flush=True)
@@ -325,7 +338,8 @@ def start():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for action in ("build", "verify-build", "database", "start", "start-demo", "check", "reset"):
+    for action in ("build", "verify-build", "database", "start", "start-demo", "check", "reset",
+                   "graph"):
         commands.add_parser(action)
     commands.add_parser("cleanup").add_argument("--volumes", action="store_true")
     args = parser.parse_args()
@@ -347,6 +361,8 @@ def main():
             start()
         elif args.action == "check":
             print(json.dumps(check(), indent=2))
+        elif args.action == "graph":
+            print(graph())
         elif args.action == "reset":
             reset()
         elif args.action == "cleanup":

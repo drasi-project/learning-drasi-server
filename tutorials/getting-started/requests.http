@@ -29,6 +29,9 @@ Content-Type: application/json
 ### Filtered result set
 GET {{api}}/queries/420bc6f5-d87a-4f99-9c79-7f88a7f0a88e/results
 
+### The running graph: components, lifecycle, and connections
+GET {{api}}/computation
+
 ### Step 5: aggregation
 POST {{api}}/queries
 Content-Type: application/json
@@ -37,6 +40,10 @@ Content-Type: application/json
 
 ### Aggregated result set
 GET {{api}}/queries/ac1a10bb-59c8-4572-9bf7-c610f166c19d/results
+
+### Snapshot, then live changes (SSE; stop the request to disconnect)
+GET {{api}}/queries/ac1a10bb-59c8-4572-9bf7-c610f166c19d/attach
+Accept: text/event-stream
 
 ### Step 6: source-based change timestamps
 POST {{api}}/queries

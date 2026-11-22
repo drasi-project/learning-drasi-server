@@ -58,7 +58,7 @@ GET {{instance}}/sources/cea0f028-8811-42a6-8b67-88e20a7b9a78
 ### List all queries
 GET {{instance}}/queries
 
-### Shared inventory: graph-change v1 nodes labeled ContainerImage
+### Shared inventory: rows published as ContainerImage nodes
 GET {{instance}}/queries/e670943a-e9b5-45d4-9b88-c55ac28ce994/results
 
 ### Running high risk containers (the dashboard feed)
@@ -73,6 +73,12 @@ GET {{instance}}/reactions
 
 ### Get the dashboard reaction status
 GET {{instance}}/reactions/9eb5ad98-218d-4e02-8c2b-1e7e1bfc12ce
+
+### Optional webhook reaction status (after enabling discord-alerts)
+GET {{instance}}/reactions/discord-alerts
+
+### Start the webhook reaction again after a failed delivery
+POST {{instance}}/reactions/discord-alerts/start
 
 ### Open the dashboard in a browser instead: {{dashboardUrl}}
 ### The seeded "High Risk Containers" dashboard is available via the dashboard API:

@@ -339,6 +339,7 @@ COMPONENT_IDS = {
     "current-health": "97471d43-3175-45e4-a663-0cbf726b2739",
     "checkout-health": "0569fc47-5ba8-470d-87d1-eb007dadeb5e",
     "slo-alert": "7b55919e-aefa-4510-8f9e-4fe4b05fbf33",
+    "slo-alert-notices": "3f0c1a52-7d0e-4c55-9a51-2b8f1f3e6a10",
     "service-dependencies": "d37d4c90-e044-4e98-a66b-6b7a6c2b7f21",
     "checkout-heartbeat": "a7024e87-9e2a-4d9e-b65f-99df9c471a26",
     "missing-heartbeat": "fd251a01-8e67-453b-ac4a-50d6ffb1b6b3",
@@ -370,7 +371,7 @@ def check():
     }:
         raise RuntimeError(f"Wrong runtime identity/readiness: {proof}")
     for kind, expected in (("sources", {"slo", "k8s", "otel"}),
-                           ("queries", set(QUERIES)),
+                           ("queries", set(QUERIES) | {"slo-alert-notices"}),
                            ("reactions", {"console-log", "otel-observability-dashboard"})):
         response = get_json(api() + "/" + kind)
         if response.get("success") is not True:
@@ -386,6 +387,42 @@ def check():
     if not any(item["id"] == "otel-observability" for item in dashboards):
         raise RuntimeError("OTel dashboard is not seeded")
     return proof
+
+
+METRIC_LINE = re.compile(
+    r'^(drasi_component_info|drasi_query_events_processed|drasi_query_results_emitted)\{(.*)\} (\S+)$')
+
+
+def query_metrics(text):
+    """Events processed and result changes per query, from Server's Prometheus text."""
+    names, totals = {}, {}
+    for line in text.splitlines():
+        match = METRIC_LINE.match(line)
+        if not match:
+            continue
+        metric, value = match.group(1), float(match.group(3))
+        labels = dict(re.findall(r'(\w+)="([^"]*)"', match.group(2)))
+        if metric == "drasi_component_info":
+            if value == 1 and labels.get("component_kind") == "query":
+                names[labels["component_id"]] = labels["component_name"]
+            continue
+        column = 0 if metric == "drasi_query_events_processed" else 1
+        totals.setdefault(labels.get("query_id"), [0, 0])[column] += value
+    return {names[key]: (int(events), int(changes))
+            for key, (events, changes) in totals.items() if key in names}
+
+
+def show_metrics():
+    url = f"http://127.0.0.1:{os.environ['SERVER_PORT']}/metrics"
+    with urllib.request.urlopen(url, timeout=5) as response:
+        counts = query_metrics(response.read().decode())
+    if not counts:
+        raise RuntimeError(f"No query metrics at {url}; is the telemetry section enabled?")
+    width = max(len(name) for name in counts)
+    print(f"{'Query'.ljust(width)}  {'Events processed':>16}  {'Result changes':>14}")
+    for name in sorted(counts):
+        events, changes = counts[name]
+        print(f"{name.ljust(width)}  {events:>16}  {changes:>14}")
 
 
 def render_config(source):
@@ -535,7 +572,8 @@ def cleanup(volumes=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for action in ("build", "verify-build", "database", "cluster", "start", "start-demo", "check", "reset"):
+    for action in ("build", "verify-build", "database", "cluster", "start", "start-demo", "check", "graph",
+                   "metrics", "reset"):
         commands.add_parser(action)
     clean = commands.add_parser("cleanup")
     clean.add_argument("--volumes", action="store_true")
@@ -568,6 +606,14 @@ def main():
             start()
         elif args.action == "check":
             print(json.dumps(check(), indent=2))
+        elif args.action == "metrics":
+            show_metrics()
+        elif args.action == "graph":
+            import graph_view
+            response = get_json(api() + "/computation")
+            if response.get("success") is not True:
+                raise RuntimeError(f"Graph inspection failed: {response}")
+            print(graph_view.render(response["data"], INSTANCE))
         elif args.action == "cleanup":
             cleanup(args.volumes)
         elif args.action == "roll":

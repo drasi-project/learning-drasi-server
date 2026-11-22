@@ -271,7 +271,7 @@ def run(no_prices):
             children.append((name, process, log))
 
         start("trading-api", [sys.executable, EXAMPLE / "mock-generator/trading_api.py"])
-        wait_for("real Trading API", lambda: request(urls["api"] + "/health")["status"] == "healthy", children)
+        wait_for("Trading API", lambda: request(urls["api"] + "/health")["status"] == "healthy", children)
         config = json.loads(command([generator, "inspect", EXAMPLE / "server/trading-sources-only.yaml"]))
         validate_source_config(config)
         config.update({"host": "127.0.0.1", "port": ports["server"], "enableUi": False,
@@ -279,7 +279,7 @@ def run(no_prices):
         config_path = work / "server.json"
         config_path.write_text(json.dumps(config, indent=2) + "\n")
         start("server", [binary, "--config", config_path, "--plugins-dir", plugins, "--skip-verification"])
-        wait_for("trading-server ComputationGraph",
+        wait_for("trading-server running",
                  lambda: runtime_ready(request(urls["server"] + f"/api/v1/instances/{INSTANCE}/runtime")),
                  children)
         setup = command(["node", "--import", "tsx", "scripts/qualify-native-setup.ts"], cwd=APP, env=env)
@@ -291,7 +291,7 @@ def run(no_prices):
             with urlopen(urls["app"], timeout=5) as response:
                 return response.status == 200
 
-        wait_for("existing Trading dashboard", app_ready, children)
+        wait_for("Trading dashboard", app_ready, children)
         source_ids = installed_components(urls["server"], "sources", TRADING_SOURCE_NAMES)
         query_ids = installed_components(urls["server"], "queries", TRADING_QUERY_NAMES)
         if not no_prices:
@@ -337,7 +337,7 @@ def verify(work):
     record = json.loads((work / "endpoints.json").read_text())
     api = record["urls"]["server"] + f"/api/v1/instances/{INSTANCE}"
     if not runtime_ready(request(api + "/runtime")):
-        raise RuntimeError("Expected running trading-server ComputationGraph")
+        raise RuntimeError("Expected trading-server to be running")
     queries = request(api + "/queries")
     if queries.get("success") is not True or len(queries["data"]) != 11:
         raise RuntimeError("Expected all eleven Trading queries")
@@ -358,6 +358,16 @@ def verify(work):
     print(f"All eleven queries running; full initial snapshots saved to {work / 'snapshots.json'}")
 
 
+def graph(work):
+    record = json.loads((work / "endpoints.json").read_text())
+    body = request(record["urls"]["server"] + f"/api/v1/instances/{INSTANCE}/computation")
+    if body.get("success") is not True:
+        raise RuntimeError(f"Could not read the computation graph: {body}")
+    sys.path.insert(0, str(LEARNING / "scripts"))
+    import graph_view
+    print(graph_view.render(body["data"], INSTANCE))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     actions = parser.add_subparsers(dest="action", required=True)
@@ -366,11 +376,15 @@ def main():
     runner.add_argument("--no-prices", action="store_true", help="Keep bootstrap prices for deterministic exercises")
     checker = actions.add_parser("verify", help="Read and save the initial real query snapshots")
     checker.add_argument("run_directory", type=Path)
+    grapher = actions.add_parser("graph", help="Print the running instance's components and connections")
+    grapher.add_argument("run_directory", type=Path)
     args = parser.parse_args()
     if args.action == "build":
         build()
     elif args.action == "run":
         run(args.no_prices)
+    elif args.action == "graph":
+        graph(args.run_directory.resolve())
     else:
         verify(args.run_directory.resolve())
 

@@ -32,7 +32,6 @@
         "CARGO_TARGET_DIR": "/home/vscode/.cache/drasi-getting-started/target",
         "CARGO_BUILD_JOBS": "1",
         "CARGO_INCREMENTAL": "0",
-        "CARGO_PROFILE_DEV_DEBUG": "0",
-        "DRASI_TUTORIAL_EVALUATION": "${localEnv:DRASI_TUTORIAL_EVALUATION}"
+        "CARGO_PROFILE_DEV_DEBUG": "0"
     }
 }

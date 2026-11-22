@@ -94,9 +94,12 @@ def main():
         demo.roll("v42")
         observe("rolled checkout v42", "checkout-health", lambda rows: checkout(rows, "v42", True))
         observe("rollout SLO Added", "slo-alert", lambda rows: alert(rows) and rows[0]["deployVersion"] == "v42")
+        observe("rollout notice Added", "slo-alert-notices", lambda rows: rows == [
+            {"deployVersion": "v42", "service": "checkout", "thresholdMs": 750.0}])
         demo.roll("v41")
         observe("recovered checkout v41", "checkout-health", lambda rows: checkout(rows, "v41"))
         observe("rollout SLO Removed", "slo-alert", empty)
+        observe("rollout notice Removed", "slo-alert-notices", empty)
 
         for iteration in range(2):
             demo.set_slo(100)

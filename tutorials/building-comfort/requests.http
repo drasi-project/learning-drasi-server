@@ -32,8 +32,11 @@ GET {{baseUrl}}/health
 ### List API versions
 GET {{baseUrl}}/api/versions
 
-### Confirm the selected instance uses ComputationGraph
+### Confirm the selected instance is running
 GET {{instanceUrl}}/runtime
+
+### The running graph: components, lifecycle and connections
+GET {{instanceUrl}}/computation
 
 ### ==========================================================================
 ### Sources

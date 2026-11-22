@@ -41,6 +41,7 @@ class TutorialTests(unittest.TestCase):
             self.assertNotIn("pluginRegistry", config)
             instance, = config["instances"]
             self.assertEqual(instance["id"], demo.INSTANCE)
+            self.assertFalse(instance["persistIndex"])
             self.assertNotIn("allowExternalComponentIds", instance)
             queries = {item["name"]: item for item in instance["queries"]}
             self.assertEqual(list(queries), expected[:step - 2])
@@ -58,6 +59,12 @@ class TutorialTests(unittest.TestCase):
                                      fixture | {"query": " ".join(fixture["query"].split())})
             previous = queries
         complete = yaml.safe_load((demo.TUTORIAL / "server-config.yaml").read_text())["instances"][0]
+        # Step 8: durable indexes, except the join fed by the non-replayable HTTP Source.
+        self.assertTrue(complete["persistIndex"])
+        self.assertEqual(
+            {q["name"]: q.get("storageBackend") for q in complete["queries"]},
+            {name: None for name in expected} | {"messages-with-location": {"kind": "memory"}},
+        )
         self.assertEqual(
             [q["name"] for q in complete["queries"]],
             expected + ["messages-with-location"],
@@ -140,9 +147,21 @@ class TutorialTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.object(
             demo, "state", return_value=Path(directory)
         ), patch.object(demo, "owned", return_value=True), patch.object(demo, "run") as run:
+            (Path(directory) / "data/index").mkdir(parents=True)
             demo.cleanup()
             self.assertEqual([call.args[0] for call in run.call_args_list],
                              [["podman", "stop", demo.container()], ["podman", "rm", demo.container()]])
+            self.assertTrue((Path(directory) / "data/index").is_dir())
+
+    def test_removing_the_database_also_removes_its_saved_query_state(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            demo, "state", return_value=Path(directory)
+        ), patch.object(demo, "owned", return_value=True), patch.object(demo, "run") as run:
+            (Path(directory) / "data/index").mkdir(parents=True)
+            demo.cleanup(True)
+            self.assertIn(["podman", "volume", "rm", demo.volume()],
+                          [call.args[0] for call in run.call_args_list])
+            self.assertFalse((Path(directory) / "data").exists())
 
     def test_cleanup_refuses_an_active_server_lock(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(

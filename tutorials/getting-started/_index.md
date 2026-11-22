@@ -23,24 +23,26 @@ code to write.
 | [1. Set up](#setup) | Build the current local Server, Core plugins, and SSE CLI |
 | [2. Start the database](#database) | Load four sample messages into PostgreSQL |
 | [3. Run the first query](#phase-1) | See inserts, updates, and deletes through `all-messages` |
-| [4. Filter messages](#phase-2) | Add `hello-world-senders` to the running Server |
+| [4. Filter messages](#phase-2) | Add `hello-world-senders` and see it in the running graph |
 | [5. Count messages](#phase-3) | Add `message-counts` and stream changes through SSE |
 | [6. Detect inactivity](#phase-4) | Watch `inactive-senders` change without new database writes |
 | [7. Join locations](#phase-5) | Join the message feed with live HTTP location updates |
+| [8. Keep query state](#phase-6) | Store query indexes on disk so a restart resumes instead of rebuilding |
 
-**The runtime is ComputationGraph.** Sources, queries, and reactions are connected
-components in the same running graph. The convenient `sources`, `queries`, and
-`reactions` configuration below uses that runtime directly; it is not a
-different engine or an opt-in execution mode.
+**Drasi Server runs your solution as one computation graph.** Each Source,
+query, and reaction is a component in that graph, and the graph connects them:
+a connection carries changes from one component's output to another
+component's input. You describe the components with the `sources`, `queries`,
+and `reactions` configuration below; Server builds the graph from it.
 
-An `inputs` entry names an upstream component, not just a Source. We will reuse
-the `all-messages` query's output for filtering, counting, and joining, instead
-of repeating the message projection or introducing another connector.
+An `inputs` entry names an upstream component, not just a Source. You will
+reuse the `all-messages` query's output for filtering, counting, and joining,
+instead of repeating the message projection or introducing another connector.
 
-## Step 1 of 7: Set Up Your Environment {#setup}
+## Step 1 of 8: Set Up Your Environment {#setup}
 
-Use these existing sibling checkouts, on matching ComputationGraph-capable
-branches, in the same parent directory:
+Use these existing sibling checkouts, on matching branches, in the same parent
+directory:
 
 ```text
 workspace/
@@ -61,8 +63,8 @@ curl, and a running **Podman**. On macOS start your Podman machine first. On
 Windows, follow the bash commands in WSL2 or use the
 [local Dev Container](dev-container/). The first build can take much longer
 than the walkthrough; reserve enough disk space for Rust build artifacts.
-The [local source setup page](download-binary/) explains the replacement for
-the previous binary-download route. A standard single-repository
+The [local source build page](download-binary/) lists the native build
+prerequisites. A standard single-repository
 [Codespace is not sufficient](github-codespace/).
 
 In a terminal, change to `learning-drasi-server/tutorials/getting-started`.
@@ -75,17 +77,23 @@ python3 scripts/demo.py build-cli
 python3 scripts/demo.py verify-build
 ```
 
-`build` compiles Server and **separately compiles all seven dynamic plugins**:
-PostgreSQL Source and Bootstrap, Log and SSE Reactions, HTTP Source, and ScriptFile
-Bootstrap, plus `drasi-computation-transformer-query`. Server registers that native
-query factory before creating the tutorial's queries; there is no implicit
-linked-query fallback. The query plugin includes the standard middleware and
-system JQ support. The build records source/build provenance and copies the exact artifacts to
-a private hash-checked bundle. `build-cli` builds this repository's
-`tutorials/sse-cli`, installs a private copy, and records its provenance.
-Every start verifies the bundle; every `stream` command verifies the CLI.
-After editing either checkout or the CLI, rebuild the corresponding artifacts.
-Do not share a Cargo target with another simultaneous build.
+`build` compiles Server and seven plugins: the PostgreSQL Source and its
+Bootstrap Provider, the HTTP Source, the ScriptFile Bootstrap Provider, the Log
+and SSE Reactions, and `drasi-computation-transformer-query`, which runs
+continuous queries. Server loads the query plugin before it creates any query;
+without it, query creation fails. The query plugin includes the standard
+middleware and JQ support. The build records source/build provenance and copies
+the exact artifacts to a private hash-checked bundle. `build-cli` builds this
+repository's `tutorials/sse-cli`, installs a private copy, and records its
+provenance. Every start verifies the bundle; every `stream` and `watch` command
+verifies the CLI. After editing either checkout or the CLI, rebuild the
+corresponding artifacts.
+
+Both commands use `../../../drasi-server/target` for Cargo output unless you set
+`CARGO_TARGET_DIR`. Do not share a Cargo target with another simultaneous
+build. The helper compiles one crate at a time (`CARGO_BUILD_JOBS=1`) to limit
+memory use; export a larger `CARGO_BUILD_JOBS` value to build faster when your
+machine has the memory.
 
 The `.env` defaults select run `getting-started-cg`, PostgreSQL port `5532`,
 Server API `8180`, SSE `8181`, and HTTP Source `8182`. Everything binds to
@@ -98,7 +106,7 @@ Use **Terminal 1** for Server, **Terminal 2** for SQL and REST calls, and
 **Terminal 3** for SSE. The helper scripts keep process and container ownership
 separate from the query concepts you are learning.
 
-## Step 2 of 7: Set Up the Tutorial Database {#database}
+## Step 2 of 8: Set Up the Tutorial Database {#database}
 
 Start the database:
 
@@ -138,7 +146,7 @@ The `sql` helper sends your SQL to `psql` inside the **owned** container with
 `ON_ERROR_STOP=1`. It also accepts SQL on stdin, which avoids shell quoting
 problems in the exercises below.
 
-## Step 3 of 7: Run Your First Drasi Server {#phase-1}
+## Step 3 of 8: Run Your First Drasi Server {#phase-1}
 
 The initial `configs/getting-started-step-3.yaml` declares an instance named
 `getting-started-server`, a PostgreSQL Source `my-postgres`, one query, and
@@ -169,7 +177,7 @@ node has the returned fields, a stable runtime identity, and label `Message`.
 It is a new result node, not the original PostgreSQL node with all of its
 properties and timestamps. Later queries can match this label by naming
 `all-messages` in `inputs`. Setting the label does not change the output
-contract: query output is always **canonical graph-change v1**.
+format: every Source and query publishes the same kind of graph changes.
 
 In **Terminal 1**:
 
@@ -183,11 +191,11 @@ that working copy. REST changes are saved there because `persistConfig: true`;
 the checked-in reference configurations are never modified.
 
 Server loads only the local hash-checked plugin directory.
-`autoInstallPlugins: false` prevents registry fallback. `--skip-verification`
+`autoInstallPlugins: false` stops Server from downloading plugins. `--skip-verification`
 is used only for this unsigned local development bundle, not arbitrary
 downloaded plugins. Missing or changed artifacts are an error, not a reason to
-download replacements. The optional Admin UI is disabled; it is not required
-for this walkthrough.
+download replacements. The optional Web UI is disabled (`enableUi: false`); it
+is not required for this walkthrough.
 
 Wait for `READY: getting-started-server, computationGraph`, then verify in
 **Terminal 2**:
@@ -229,7 +237,7 @@ curl --fail-with-body http://127.0.0.1:8180/api/v1/instances/getting-started-ser
 There should be four rows, including:
 
 ```json
-{"MessageId":2,"From":"Brian Kernighan","Message":"Hello World"}
+{"From":"Brian Kernighan","Message":"Hello World","MessageId":2}
 ```
 
 Results are current state, not an event history. Ordering is not guaranteed.
@@ -245,11 +253,15 @@ INSERT INTO "Message" ("From", "Message") VALUES ('You', 'My first message!');
 SQL
 ```
 
-The Log Reaction prints an `ADD` from `all-messages`:
+In Terminal 1, the Log Reaction prints an `ADD` from `all-messages`:
 
 ```text
-[log-reaction]   [ADD] {"From":"You","Message":"My first message!","MessageId":5}
+[92e8fa7a-bd91-46a3-95ff-8c364677f077] Query '67ff1d64-e938-4a9b-b80e-074666bdef95' (1 items):
+[92e8fa7a-bd91-46a3-95ff-8c364677f077]   [ADD] {"From":"You","Message":"My first message!","MessageId":5}
 ```
+
+Each line starts with the ID of `log-reaction`, and the first line names the
+query by its ID: `67ff1d64-…` is `all-messages`.
 
 Now update it:
 
@@ -259,7 +271,8 @@ UPDATE "Message" SET "Message" = 'My first UPDATED message!' WHERE "From" = 'You
 SQL
 ```
 
-The Log Reaction prints `UPDATE`, with the old and new message text. Finally:
+The Log Reaction prints `UPDATE`, with the old row, `->`, and the new row.
+Finally:
 
 ```bash
 python3 scripts/demo.py sql <<'SQL'
@@ -276,7 +289,7 @@ the next serial ID.
 results and reaction notifications. A change to the Source generates a
 notification only when it changes the query's result.
 
-## Step 4 of 7: Add a Continuous Query with Criteria {#phase-2}
+## Step 4 of 8: Add a Continuous Query with Criteria {#phase-2}
 
 Who sent messages containing exactly `Hello World`? Add a query to the running
 Server without restarting:
@@ -307,9 +320,22 @@ curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-sta
   -H 'Content-Type: application/json' --data-binary @configs/hello-world-senders.json
 ```
 
-Subscribe the Log Reaction to both queries using the current API's `PUT`
-operation. It replaces the reaction and resumes it if it was running, without
-requiring a separate delete and create:
+The response confirms that Server **accepted** the change:
+
+```json
+{"success":true,"data":{"message":"query 'hello-world-senders' change accepted",
+ "configuration":{"requestId":"…","revision":2,"durable":false,
+  "componentId":"420bc6f5-d87a-4f99-9c79-7f88a7f0a88e","status":"reconciling"}},"error":null}
+```
+
+Accepting a change and running it are separate events. `revision` counts the
+accepted changes to this instance's configuration, and `status: reconciling`
+means Server is now creating and starting the query. `durable: false` means
+the accepted configuration is held in memory and the YAML file, not in a
+separate configuration store. The query is ready when `results` answers.
+
+Subscribe the Log Reaction to both queries with a `PUT`. It replaces the
+reaction's configuration and restarts it, without a separate delete and create:
 
 ```bash
 curl --fail-with-body -X PUT http://127.0.0.1:8180/api/v1/instances/getting-started-server/reactions/92e8fa7a-bd91-46a3-95ff-8c364677f077 \
@@ -318,11 +344,49 @@ curl --fail-with-body -X PUT http://127.0.0.1:8180/api/v1/instances/getting-star
 python3 scripts/demo.py results hello-world-senders
 ```
 
+The `PUT` response includes `"plan":{"mode":"recreate","data":"preserve"}`:
+Server rebuilds the reaction with its new settings and keeps the queries' data.
+
 Brian Kernighan is already in the current results: `{"Id":2,"Sender":"Brian Kernighan"}`.
 Adding a reaction later is not a promise to replay changes that happened before
 it subscribed; use the results endpoint to inspect current state.
 Replacing a reaction can replay retained changes, so repeated console messages
 are not evidence of duplicate database writes or exactly-once delivery.
+
+### See the graph
+
+Server built a graph from these declarations. Print it:
+
+```bash
+python3 scripts/demo.py graph
+```
+
+```text
+Graph getting-started-server (Running)
+
+Components:
+  my-postgres          Source     Running
+  all-messages         Query      Running
+  hello-world-senders  Query      Running
+  log-reaction         Reaction   Running
+  (5 internal helper components hidden)
+
+Connections:
+  my-postgres -> all-messages
+  all-messages -> hello-world-senders  (data + bootstrap)
+  all-messages -> log-reaction
+  hello-world-senders -> log-reaction
+```
+
+The helper reads `GET /api/v1/instances/getting-started-server/computation`,
+which reports every component's lifecycle state and, when one fails, why. It
+hides the helper components that Server adds inside each query.
+
+`all-messages -> hello-world-senders` is two connections. The **bootstrap**
+connection delivered the current `all-messages` rows to the new query when it
+started; the **data** connection carries every later change. That is how a
+query added to a running graph starts from the upstream query's current results
+instead of an empty state.
 
 Now insert Alice's matching message and Bob's non-matching message:
 
@@ -340,7 +404,7 @@ does not. `configs/getting-started-step-4.yaml` is the reference after this step
 **Checkpoint:** one graph output now feeds both a reaction and another query,
 and the same database changes drive both result sets.
 
-## Step 5 of 7: Add an Aggregation Query and the SSE Reaction {#phase-3}
+## Step 5 of 8: Add an Aggregation Query and the SSE Reaction {#phase-3}
 
 `message-counts` counts how many times each message text appears:
 
@@ -388,13 +452,11 @@ This verifies and runs the locally built CLI with:
 The instance argument matters: component APIs are instance-scoped.
 Wait for the connection message before changing data.
 
-**Graph data versus reaction payloads:** ComputationGraph transports canonical
-graph-change v1 internally. The ordinary `kind: sse` reaction used here is a
-query-output adapter and emits `{queryId, results, timestamp}` with typed
-result differences. Its `results` are not native graph-change records.
-Native graph sinks can consume Source, transformer, or query outputs; ordinary
-Log/SSE reaction adapters still require **query output**. No custom sink is
-needed for this tutorial.
+**Graph data versus reaction payloads:** inside the graph, every connection
+carries graph changes: nodes and relations being added, replaced, or deleted.
+The `kind: sse` reaction used here subscribes to query results and sends each
+change as `{queryId, results, timestamp}`, where `results` lists the row
+differences. Reactions of this kind consume query outputs only.
 
 In Terminal 2:
 
@@ -408,7 +470,7 @@ The stream includes an aggregation transition from `2` to `3`:
 
 ```json
 {
-  "queryId": "message-counts",
+  "queryId": "ac1a10bb-59c8-4572-9bf7-c610f166c19d",
   "results": [{
     "type": "aggregation",
     "before": {"MessageText": "Hello World", "Count": 2},
@@ -419,10 +481,12 @@ The stream includes an aggregation transition from `2` to `3`:
 }
 ```
 
-The timestamp and opaque `row_signature` are illustrative. Preserve result
-identity rather than treating the row's JSON values as its identity; the
-signature may exceed JavaScript's safe integer range. Non-aggregate `ADD`,
-`UPDATE`, and `DELETE` differences also carry `row_signature`.
+`queryId` is the query's ID (`ac1a10bb-…` is `message-counts`). The timestamp is
+when the reaction published the change. `row_signature` is the result row's
+identity: use it, not the row's values, to match a change to a row you already
+have. It can exceed JavaScript's safe integer range, so read it as text or as a
+64-bit integer. `ADD`, `UPDATE`, and `DELETE` differences also carry
+`row_signature`.
 
 Delete Eve's message:
 
@@ -436,13 +500,49 @@ The same group changes from `3` back to `2`. Check `results message-counts`
 to confirm. Press **Ctrl+C in Terminal 3** before moving to the next stream.
 `configs/getting-started-step-5.yaml` intentionally omits the temporary reaction.
 
-The SSE stream is **live observation, not durable replay**. It does not promise
-delivery of bootstrap rows, missed events, or exactly-once external effects.
-A fresh REST snapshot and a separate SSE subscription are not an atomic
-snapshot-plus-stream handoff. This exercise connects first, then makes a
-controlled change; current state is checked independently.
+The SSE stream is **live observation, not durable replay**. It does not deliver
+the rows that existed before you connected, changes made while you were
+disconnected, or exactly-once external effects.
 
-## Step 6 of 7: Add Time-Based Detection {#phase-4}
+### Watch a query from its current results
+
+To see the current rows *and* every change that follows, without creating a
+reaction, attach to the query through the Server API. In Terminal 3:
+
+```bash
+python3 scripts/demo.py watch message-counts
+```
+
+The CLI connects to
+`GET /api/v1/instances/getting-started-server/queries/message-counts/attach`.
+That stream begins with a `snapshot` event holding the current rows, then sends
+each result change that happened after that snapshot, with a `sequence` number:
+
+```text
+Attaching to query 'message-counts'; no reaction is created.
+Connected to SSE stream at http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries/message-counts/attach
+Snapshot of the query's 4 current row(s):
+[
+  {
+    "Count": 2,
+    "MessageText": "I am Spartacus"
+  },
+  …
+]
+Live changes follow (Ctrl-C to stop).
+```
+
+Insert and delete Eve's message again and compare: each change arrives as a
+`results` list with the same `before`, `after`, and `row_signature` fields,
+plus `query_id`, `sequence`, and `timestamp`. Because the snapshot and the
+changes come from one subscription, no change can fall between them. If the
+connection drops, reconnect: a new attachment starts with a fresh snapshot.
+Press **Ctrl+C** to stop watching.
+
+Use a reaction to deliver changes to another system; use `watch` (or the
+`attach` endpoint) to inspect a query.
+
+## Step 6 of 8: Add Time-Based Detection {#phase-4}
 
 `inactive-senders` detects people whose latest observed message change was at
 least 20 seconds ago. A time condition alone would only be re-evaluated when
@@ -483,10 +583,12 @@ In Terminal 3:
 python3 scripts/demo.py stream inactive-senders
 ```
 
-Bootstrap can assign load-time change timestamps. Do not assume old database
-rows are immediately inactive when a new query starts. Wait at least 20
-seconds, then check `python3 scripts/demo.py results inactive-senders` in
-Terminal 2; Alice should now be present.
+When the query starts, it loads the existing rows (bootstrap) and records the
+load time as each row's change time. So no sender is inactive yet. About 20
+seconds after you created the query, the stream shows an `ADD` for every
+sender, and `python3 scripts/demo.py results inactive-senders` in Terminal 2
+lists all of them, including Alice. Every row shows the same
+`LastMessageTimestamp`: the load time.
 
 Make Alice active:
 
@@ -502,9 +604,12 @@ An illustrative result difference is:
 
 ```json
 {
-  "type": "ADD",
-  "data": {"MessageFrom": "Alice", "LastMessageTimestamp": "ZonedDateTime(2026-02-17 05:35:51.703 +00:00)"},
-  "row_signature": 12345
+  "data": {
+    "LastMessageTimestamp": "2026-11-22T06:50:06.810+00:00",
+    "MessageFrom": "Alice"
+  },
+  "row_signature": 10285043417284617156,
+  "type": "ADD"
 }
 ```
 
@@ -524,7 +629,7 @@ that adds Alice back.
 Stop the SSE CLI with Ctrl+C. The reference is
 `configs/getting-started-step-6.yaml`.
 
-## Step 7 of 7: Add Cross-Source Joins {#phase-5}
+## Step 7 of 8: Add Cross-Source Joins {#phase-5}
 
 Add an HTTP Source named `location-tracker`. Its ScriptFile Bootstrap provider
 loads four initial `UserLocation` nodes from `locations.jsonl`. The file starts
@@ -575,8 +680,8 @@ The join query reads the message **query output** and the new **Source output**:
 
 `FROM_USER` is a virtual relationship between equal `Message.From` and
 `UserLocation.name` values. No relationship is written back to either system.
-Both inputs use the same graph contract, so a derived message node joins just
-like a Source node.
+Both inputs publish the same kind of graph changes, so a result node from
+`all-messages` joins just like a node from a Source.
 
 ```bash
 curl --fail-with-body -X POST http://127.0.0.1:8180/api/v1/instances/getting-started-server/queries \
@@ -646,10 +751,111 @@ SQL
 
 Now the joined row updates through PostgreSQL, `all-messages`, and the join,
 while retaining Carol's location. Stop the CLI with Ctrl+C.
-`server-config.yaml` is the completed five-query reference, not a different
-three-query demo.
 
-## State, Restarts, and Cleanup {#cleanup}
+Print the graph again with `python3 scripts/demo.py graph`. It now has two
+Sources and five queries. A connection from a Source shows only `data`: the
+Source sends a new query its existing rows, read by its Bootstrap Provider, and
+then its changes over the same subscription. That is how the join received the
+four locations from `locations.jsonl`. Connections between queries show
+`data + bootstrap`.
+
+## Step 8 of 8: Keep Query State Across Restarts {#phase-6}
+
+So far every query keeps its indexes, the data it needs to update its results,
+in memory. Stopping Server discards them, and the next start rebuilds every
+query by reading all of its input rows again (bootstrap). With **durable
+indexes**, each query stores its indexes, its current results, and its
+position in each input's change stream on disk, using RocksDB. A restart then
+resumes from that position: the query applies only the changes it has not seen.
+
+### Turn on durable indexes
+
+Stop the SSE CLI if it is running, then stop Server with **Ctrl+C in
+Terminal 1**. Server saved every change you made through the API in its
+working configuration, `.runtime/getting-started-cg/getting-started.yaml` (the
+directory name is your `DRASI_RUN_ID`). Open that file and change the instance
+setting `persistIndex` to `true`:
+
+```yaml
+instances:
+- id: getting-started-server
+  persistIndex: true
+```
+
+Start Server:
+
+```bash
+python3 scripts/demo.py start
+```
+
+Server refuses to start. The error ends with:
+
+```text
+IncompatibleSource: sources that do not support replay cannot feed persistent query '1261cc70-9cbe-47b9-8ab3-eada717ac2b3' (source '9b42f663-9f3d-4655-9843-47120021c01d', supports_replay=false)
+ERROR: Server exited during startup: 1
+```
+
+Before Server starts a query, it checks that every input can provide what the
+query needs. A durable query must be able to ask its inputs to replay the
+changes it missed while Server was stopped. PostgreSQL can: the replication
+slot keeps each change until Drasi confirms it, and the queries that read
+`all-messages` can ask that query. The HTTP Source `location-tracker`
+(`9b42f663-…`) cannot: it only sees the requests sent to it while it runs. So
+`messages-with-location` (`1261cc70-…`) cannot be durable.
+
+### Keep the join in memory
+
+Each query can choose its own index storage. In the same file, find the
+`messages-with-location` query and add `storageBackend` below its `result`:
+
+```yaml
+  - id: 1261cc70-9cbe-47b9-8ab3-eada717ac2b3
+    name: messages-with-location
+    # ... keep the existing settings ...
+    result:
+      label: LocatedMessage
+    storageBackend:
+      kind: memory
+```
+
+Run `python3 scripts/demo.py start` again. Server reaches `READY`. The four
+queries that do not depend on the HTTP Source now keep their indexes under
+`.runtime/<run-id>/data/`; the join keeps its indexes in memory.
+
+### Change data while Server is stopped
+
+Stop Server with Ctrl+C. While it is stopped, insert a message in Terminal 2:
+
+```bash
+python3 scripts/demo.py sql <<'SQL'
+INSERT INTO "Message" ("From", "Message") VALUES ('Dana', 'Hello World');
+SQL
+```
+
+Start Server again with `python3 scripts/demo.py start`, then check the
+filtered query in Terminal 2:
+
+```bash
+python3 scripts/demo.py results hello-world-senders
+```
+
+Dana is listed. Look at Terminal 1's startup output. It has no
+`Bootstrapped ... rows from table 'Message'` lines this time: the durable
+queries did not read the table again. They resumed from their saved positions
+in the replication slot (`Replication started from read LSN ...`) and processed
+only Dana's insert. `message-counts` counts one more `Hello World` message, and
+Dana joins `inactive-senders` 20 seconds after Server processed her message.
+
+Only the in-memory join bootstrapped again:
+`Bootstrap completed successfully for query '1261cc70-…', sent 4 events`.
+Brian is back at `Building A, Floor 3`, and Carol has no location until you send
+it again, because no component stored the HTTP location updates.
+
+`server-config.yaml` is the reference configuration for the end of this step:
+two Sources, five queries with durable indexes except the in-memory join, and
+the Log Reaction.
+
+## Stop and Clean Up {#cleanup}
 
 Stop SSE before Server. A normal CLI exit deletes its temporary reaction.
 If the CLI was forcibly killed, inspect the instance's `/reactions` endpoint
@@ -658,15 +864,18 @@ else's subscription.
 
 Stop Server with **Ctrl+C in Terminal 1**. The helper waits for that child
 process only. Run `python3 scripts/demo.py start` again to reuse the working
-configuration and rebuild in-memory query state from the inputs.
+configuration. Here is what each restart keeps:
 
-**Configuration persistence is not data durability.** This tutorial uses
-`persistIndex: false`. PostgreSQL rows survive in the owned volume, but the
-HTTP location updates are not written back to `locations.jsonl`: after a full
-restart Brian starts at the file's original location and Carol has no location
-until you send it again. Inactivity timers are rebuilt from observed input
-timestamps; they are not a durable alarm-delivery ledger. Neither Log nor SSE
-claims exactly-once external effects across restarts.
+| State | Where it lives | After a restart |
+| --- | --- | --- |
+| Sources, queries, reactions | Working configuration (`persistConfig: true`) | Recreated as you last changed them |
+| Messages | The owned PostgreSQL volume | Unchanged; changes made while Server was stopped wait in the replication slot |
+| Durable query indexes and results | `.runtime/<run-id>/data/` | Restored; queries resume from their saved positions |
+| In-memory query indexes | Server memory | Rebuilt from the inputs (bootstrap) |
+| HTTP location updates | Nowhere | Lost; the join starts again from `locations.jsonl` |
+
+Neither the Log nor the SSE Reaction records what it delivered, so neither
+promises exactly-once effects across restarts.
 
 Remove only this run's database container, keeping its volume:
 
@@ -680,25 +889,29 @@ Or explicitly remove the owned database volume too:
 python3 scripts/demo.py cleanup --volumes
 ```
 
+`--volumes` also deletes the run's saved query state in `.runtime/<run-id>/data/`.
+That state records positions in the deleted database's change stream, so the
+next start must bootstrap from the new database instead of resuming.
+
 The helper refuses cleanup while its Server lock exists and refuses unowned
-containers or volumes. It never kills processes by name. Configuration,
-build provenance, and logs remain in `.runtime/`. For a fresh seven-step
-walkthrough use a new run ID and free ports instead of resetting old data.
+containers or volumes. It never kills processes by name. Configuration, build
+provenance, and logs remain in `.runtime/`. For a fresh walkthrough, use a new
+run ID and free ports instead of resetting old data.
 
 ## Optional Viewer and Repeatable Checks
 
-While one SSE CLI is connected, run:
+While Server is running, start the viewer:
 
 ```bash
 bash scripts/open-viewer.sh
 ```
 
-Open `http://127.0.0.1:5173` and click **Connect / refresh**. The viewer fetches
-current results for the configured queries and refreshes the subscribed
-query's table when an event arrives. Other queries' tables remain snapshots
-until refreshed or subscribed. Its event log preserves received payload text,
-including large row signatures, without claiming it is a durable history.
-Reconnect after adding queries or changing the CLI subscription.
+Open `http://127.0.0.1:5173` and click **Connect / refresh**. The viewer attaches
+to each tutorial query that exists, the same way `watch` does: each table starts
+from the query's snapshot and applies every change that follows. If the
+connection drops, the browser reconnects and the next snapshot replaces the
+table. Click **Connect / refresh** after adding queries. The event log keeps
+the received text, including large row signatures; it is not a durable history.
 
 For a self-checking run after building local artifacts:
 
@@ -707,10 +920,11 @@ bash scripts/run-end-to-end.sh
 ```
 
 This uses a fresh run name, free loopback ports, and isolated owned data.
-It exercises the same incremental five-query sequence, controlled SQL/HTTP
-changes, timer transitions, ordinary SSE payloads, and full Server restart,
-then cleans only its resources. Its report distinguishes live acceptance from
-configuration or compiler checks. It does not invoke Cargo.
+It exercises the same eight-step sequence: the incremental five-query graph,
+controlled SQL/HTTP changes, timer transitions, ordinary SSE payloads, the
+snapshot-first `attach` stream, and the durable-index restart, including the
+rejected HTTP-fed durable query. It then cleans only its resources and writes
+`acceptance.json` in its run directory. It does not invoke Cargo.
 
 Lightweight configuration/helper tests use a separate test-only environment:
 
@@ -727,9 +941,19 @@ The viewer checks use Node.js's built-in test runner and need no npm packages.
 
 You built a message monitor using Sources, five Continuous Queries, and
 Reactions. You caused changes and watched them propagate through filters,
-aggregations, time-based conditions, and a cross-source join. The labeled
-`all-messages` output became a reusable input to three other queries in the
-same ComputationGraph.
+aggregations, time-based conditions, and a cross-source join. Along the way:
+
+- Server runs the Sources, queries, and Reactions as one graph. The labeled
+  `all-messages` output became a reusable input to three other queries, and
+  `graph` showed each connection, including the bootstrap connections that
+  give a new query the current upstream results.
+- An API change is accepted first and then applied; check the component, not
+  only the response, to know when it is running.
+- A Reaction delivers changes to other systems; `watch` (the query `attach`
+  endpoint) shows a query's current rows followed by its changes.
+- Durable indexes let queries resume after a restart. Server checks that every
+  input of a durable query can replay what it missed, and each query can choose
+  in-memory storage instead.
 
 For another scenario, keep the same approach: establish the input data,
 project a useful shared result, add focused queries, then attach reactions

@@ -65,15 +65,20 @@ class DemoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(demo, "state_dir", return_value=Path(directory)), \
                 patch.object(demo, "check_ownership"), patch.object(demo, "compose") as compose:
+            (Path(directory) / "data/index").mkdir(parents=True)
             demo.cleanup()
             compose.assert_called_once_with("down")
+            self.assertTrue((Path(directory) / "data/index").is_dir())
 
     def test_cleanup_requires_explicit_volume_flag(self):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(demo, "state_dir", return_value=Path(directory)), \
                 patch.object(demo, "check_ownership"), patch.object(demo, "compose") as compose:
+            (Path(directory) / "data/index").mkdir(parents=True)
             demo.cleanup(True)
             compose.assert_called_once_with("down", "--volumes")
+            # Saved query state belongs to the deleted databases.
+            self.assertFalse((Path(directory) / "data").exists())
 
     def test_cleanup_refuses_running_demo(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -134,6 +139,7 @@ class DemoTests(unittest.TestCase):
         self.assertIn("p.orderStatus <> 'ready' AND p.vehicleLocation = 'Curbside'", config)
         self.assertIn("autoInstallPlugins: false", config)
         self.assertNotIn("ref: source/", config)
+        self.assertIn("    persistIndex: true\n", config)
 
 
 if __name__ == "__main__":

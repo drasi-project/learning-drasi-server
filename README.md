@@ -6,17 +6,17 @@ Hands-on tutorials for [Drasi Server](https://github.com/drasi-project/drasi-ser
 
 | Tutorial | Scenario |
 | --- | --- |
-| [Getting started](tutorials/getting-started) | PostgreSQL messages, continuous queries, joins, inactivity and Log/SSE reactions |
+| [Getting started](tutorials/getting-started) | PostgreSQL messages, continuous queries, joins, inactivity, Log/SSE reactions, graph inspection and durable query state |
 | [Building Comfort](tutorials/building-comfort) | Shared room, floor and building calculations with live comfort alerts and a dashboard |
 | [Curbside Pickup](tutorials/curbside-pickup) | Correlate orders and arriving vehicles, show pickup readiness and delays |
 | [High-risk Containers](tutorials/high-risk-containers) | Join running Kubernetes container images to a risk catalogue and react to risk changes |
 | [OTel Observability](tutorials/otel-observability) | Correlate Kubernetes rollouts, OpenTelemetry health and PostgreSQL SLO policy |
 | [Trading](tutorials/trading) | Run the local Server trading application with prices, portfolio views and chained calculations |
-| [SSE CLI](tutorials/sse-cli) | Inspect live Server reaction streams or an explicitly selected existing SSE endpoint |
+| [SSE CLI](tutorials/sse-cli) | Watch a running query through a temporary SSE reaction, the Server's snapshot-first `attach` stream, or an existing SSE endpoint |
 
 Follow the README in each tutorial for its exact build, run and exercise
-sequence. The scenarios use the current local ComputationGraph implementation,
-not unrelated released Drasi binaries or automatically downloaded plugins.
+sequence. The tutorials build Drasi Server and its plugins from your local
+source checkouts; they do not use released Drasi binaries or download plugins.
 
 ## Local source layout
 
@@ -29,11 +29,11 @@ workspace/
   learning-drasi-server/
 ```
 
-Use matching `agentofreality-parallel-computation-graph` branches for the current
-development tutorials. Server must use the sibling `drasi-core/lib` dependency.
-The helpers never clone, switch branches, or substitute a release build.
-Tutorial folders are not standalone ZIP distributions: keep repository-level
-`scripts/` and the matching sibling checkouts available.
+Check out matching branches of the three repositories. Server must use the
+sibling `drasi-core/lib` dependency. The helpers never clone, switch branches,
+or substitute a release build. Tutorial folders are not standalone ZIP
+distributions: keep repository-level `scripts/` and the matching sibling
+checkouts available.
 
 Most tutorial helpers share [`scripts/local_build.py`](scripts/local_build.py).
 It builds Server and the tutorial's exact Core plugin packages, copies them
@@ -43,20 +43,30 @@ library from the shared Cargo target. Rebuild after changing Core or Server.
 The SSE CLI has its own [source-build and verification helper](tutorials/sse-cli)
 so callers use this repository's CLI, not a similarly named Server example.
 
-Every Server tutorial explicitly includes `drasi-computation-transformer-query`
-in its required plugin set. The shared builder enables its standard middleware
-and system JQ support, and Server registers its query factory before creating
-queries. Rebuilding only Server or retaining a pre-query-plugin bundle is not
-sufficient. SSE CLI is a client of an existing running tutorial, not another
-query host.
+Every Server tutorial includes `drasi-computation-transformer-query` in its
+plugin set. That plugin runs continuous queries: Server loads it before it
+creates any query, and query creation fails without it. The shared builder
+enables the plugin's standard middleware and JQ support. Rebuilding only Server
+is not sufficient. SSE CLI is a client of an existing running tutorial, not
+another query host.
 
 Use the documented Rust toolchain (currently 1.95.0), Python 3.11 or newer, and
-the native dependencies listed by the tutorial. Before a locked build, generate
-Core's untracked workspace lockfile if it is absent:
+the native dependencies listed by the tutorial. Builds pass `--locked`, so Cargo
+uses the lockfiles committed in `drasi-server` and `drasi-core` and does not
+change them.
+
+[`scripts/graph_view.py`](scripts/graph_view.py) prints the components and
+connections of a running instance from Server's graph inspection API
+(`GET /api/v1/instances/<instance>/computation`); tutorial helpers use it for
+their `graph` commands.
+[`scripts/webhook_receiver.py`](scripts/webhook_receiver.py) is a local stand-in
+for a Discord webhook: it prints each message an HTTP reaction posts, for the
+optional webhook steps in High Risk Containers and OTel Observability. Test the
+shared helpers with:
 
 ```bash
 # From learning-drasi-server/
-RUSTUP_TOOLCHAIN=1.95.0 cargo generate-lockfile --manifest-path ../drasi-core/Cargo.toml
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 Tutorials use Podman for local infrastructure. Kubernetes scenarios also need
@@ -136,11 +146,8 @@ python3 scripts/render-tutorials.py --check   # fail if any are stale (CI check)
 
 ## Isolated Runtime Evaluation
 
-Use each tutorial's current helper and verification commands. They own their
-scenario-specific database, service and Kubernetes setup rather than relying on
-one script to guess all tutorial layouts. The older `scripts/tutorial-runtime.py`
-targets prior configuration layouts; it is not the shared runner for these
-source-based walkthroughs.
+Use each tutorial's helper and verification commands. They own their
+scenario-specific database, service and Kubernetes setup.
 
 For an independent check, select an unused run name, private state directory and
 free loopback ports using the tutorial's documented options. Preserve existing
@@ -148,8 +155,8 @@ user data. Do not reuse a cluster by name alone or switch the global Kubernetes
 context. Stop only the processes you started and use ownership-checked cleanup;
 deleting volumes must be an explicit choice.
 
-ComputationGraph is the only Server runtime. Readiness must identify the correct
-instance and required components, not merely a healthy HTTP listener. Retain
+Readiness must identify the correct instance and required components, not
+merely a healthy HTTP listener. Retain
 the exact build record and runtime evidence, then exercise the actual scenario:
 database changes, query results, timer behavior, browser updates and restart
 where documented. Infrastructure setup or a successful build alone does not

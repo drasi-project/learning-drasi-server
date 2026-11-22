@@ -163,7 +163,7 @@ def exercise():
         demo.reset_room()
         evidence.append(capture("multi-row transaction clears every alert"))
         demo.sql("""INSERT INTO "Room" (id,name,temperature,humidity,co2,floor_id)
-                    VALUES ('room_migration_probe','Migration probe',82,40,10,'floor_01_01');""")
+                    VALUES ('room_extra_probe','Extra room',82,40,10,'floor_01_01');""")
         probe_created = True
         unequal = capture("insert: unequal floor sizes still average floors correctly")
         evidence.append(unequal)
@@ -174,14 +174,14 @@ def exercise():
         room_average = sum(row["ComfortLevel"] for row in rooms) / len(rooms)
         print(f"Unequal floors: Floor 01 = {floor:g}; building = {building:g}; "
               f"averaging all rooms directly would give {room_average:g}.")
-        demo.sql("""DELETE FROM "Room" WHERE id='room_migration_probe';""")
+        demo.sql("""DELETE FROM "Room" WHERE id='room_extra_probe';""")
         probe_created = False
         evidence.append(capture("delete restores nine rooms and all aggregates"))
         demo.simulate(0.2, count=3)
         evidence.append(capture("three real simulator updates"))
     finally:
         if probe_created:
-            demo.sql("""DELETE FROM "Room" WHERE id='room_migration_probe';""")
+            demo.sql("""DELETE FROM "Room" WHERE id='room_extra_probe';""")
         for room in original:
             demo.set_room(room["id"], room["temperature"], room["humidity"], room["co2"])
     evidence.append(capture("original readings restored"))

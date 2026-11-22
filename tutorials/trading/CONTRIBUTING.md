@@ -1,10 +1,9 @@
 # Contributing to the Trading tutorial
 
-Follow [the tutorial](README.md) using the existing sibling
-`drasi-server/examples/trading` application. The copied application files in this
-directory are not the current entry point. Update the actual source example
-when changing app behavior; keep tutorial instructions and launch/check helpers
-here. Do not create another application copy or regenerate unrelated tutorials.
+Follow [the tutorial](README.md) using the sibling
+`drasi-server/examples/trading` application. Change application behavior in
+the Server example; keep tutorial instructions and the launch and check helpers
+here. Do not create another copy of the application.
 
 ## Hands-on extensions
 
@@ -24,19 +23,17 @@ here. Do not create another application copy or regenerate unrelated tutorials.
 All holdings and orders are local simulations. Do not add real financial
 transactions, brokerage accounts or unrelated external integrations.
 
-## Query and transport contracts
+## Query and output conventions
 
-Use `inputs` with component names or `{ component, port? }` objects, explicit
-`queryLanguage: 'Cypher'`, and `result.label` when a downstream query needs a
-specific result-node label. Preserve the same graph-change schema. Do not
-reintroduce `sources`, `sourceId`, runtime-selection flags or a second execution
-graph. Native sinks may consume sources, queries and transformers; the existing
-ordinary SSE adapter has its own documented browser envelope.
+Declare query inputs with `inputs`, using component names, `{ id }` objects or
+`{ component, port? }` objects; set `queryLanguage: 'Cypher'`; and set
+`result.label` when a downstream query needs a specific label for the nodes a
+query publishes. The SSE reaction sends the message format the `@drasi/react`
+client expects (`queryId`, `results`, `timestamp`).
 
-Keep real PostgreSQL query-owner membership and the complete native bundle
-consistent. Export from the actual `app/src/services/queries.ts`, preserving
-joins, input order and result options. A changed native member set requires a
-new isolated run, not silent late-consumer setup on an existing slot.
+Generate `native-computation.json` only with `demo.py build`, which exports the
+queries from `app/src/services/queries.ts` with their joins, input order and
+result settings. After changing which queries are installed, start a fresh run.
 
 ## Checks
 
@@ -52,6 +49,7 @@ In another terminal, using the printed run directory:
 
 ```bash
 python3 scripts/demo.py verify .runtime/run-YOUR-RUN
+python3 scripts/demo.py graph .runtime/run-YOUR-RUN
 python3 scripts/exercise.py .runtime/run-YOUR-RUN
 ```
 
