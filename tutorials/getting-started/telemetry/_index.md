@@ -1,0 +1,349 @@
+---
+type: "docs"
+title: "Optional: Watch Drasi's Telemetry"
+linkTitle: "Telemetry"
+weight: 20
+toc_hide: true
+description: "Watch Drasi Server's own traces and metrics in Jaeger, Prometheus, and Grafana while you work through Getting Started"
+---
+
+This optional page runs alongside the [Getting Started tutorial](../). Drasi
+Server can report what it is doing: a **trace** for each change it processes,
+and **metrics** about its queries, queues, and its own process. You will start
+Jaeger, Prometheus, and Grafana, turn telemetry on before you first start
+Server, and then follow the tutorial exactly as written. After each step, come
+back to the matching section below to see what your change did inside Drasi.
+
+Server reads its telemetry settings **only when it starts**. Set this up after
+[Step 2](../#database) and **before you run `python3 scripts/demo.py start` in
+[Step 3](../#phase-1)**.
+
+## What you will see
+
+| Telemetry | What it shows | Where |
+| --- | --- | --- |
+| Traces | One trace per change: which queries processed it and which reactions received the result | Jaeger, and one trace at a time in Grafana |
+| Pipeline metrics | `drasi_*` series: events processed and results emitted per query, query evaluation time, queue depth | Prometheus and Grafana |
+| Process metrics | `process_*` series: Server's CPU, memory, threads, open files, and start time | Prometheus and Grafana |
+| Inspection API | The active telemetry settings | `GET /api/v1/telemetry` on Server's API port |
+
+The pieces connect like this. Each arrow points from the side that starts the
+request:
+
+```text
+your SQL and HTTP changes ──▶ Drasi Server (127.0.0.1:8180)
+                                │                     ▲
+              sends each trace  │                     │ scrapes /metrics every 5 s
+              (OTLP/HTTP)       ▼                     │
+                             Jaeger               Prometheus
+                                ▲                     ▲
+              opens one trace   │                     │ runs each panel's query
+              by ID             └────── Grafana ──────┘
+                                           ▲
+                                           │ you open the dashboard
+                                        browser
+```
+
+Server runs on your machine, bound to `127.0.0.1`. Jaeger, Prometheus, and
+Grafana run as Podman containers owned by your tutorial run and published only
+on `127.0.0.1`.
+
+## Before You Begin
+
+- Finish Steps 1 and 2 of the tutorial. Do **not** start Server yet.
+- Podman must be running (on macOS, `podman machine start`).
+- These ports must be free on `127.0.0.1`, in addition to the tutorial's four:
+
+  | Setting | Default | Used by |
+  | --- | --- | --- |
+  | `OTLP_PORT` | `4318` | Jaeger's trace receiver; Server sends traces here |
+  | `JAEGER_PORT` | `16686` | Jaeger UI |
+  | `PROMETHEUS_PORT` | `9090` | Prometheus UI |
+  | `GRAFANA_PORT` | `3000` | Grafana |
+
+  To use other ports, add the settings to `.env`, for example
+  `GRAFANA_PORT=13000`. The helper refuses a port that is already in use rather
+  than taking it over. The links on this page use the defaults; use the links
+  the helper prints.
+
+If you already started Server for this run, its working configuration exists
+without telemetry, and the helper refuses to change it. Start a fresh run
+instead, as the tutorial describes: choose a new `DRASI_RUN_ID` and four free
+tutorial ports in `.env`, run Step 2's `python3 scripts/demo.py database`
+again, and come back here.
+
+## Start the Backends and Turn On Telemetry {#setup}
+
+From `learning-drasi-server/tutorials/getting-started`:
+
+```bash
+python3 scripts/telemetry.py up
+```
+
+The first run pulls three pinned images (`jaeger:2.22.0`,
+`prometheus:v3.16.0`, `grafana:13.3.1`). The helper then:
+
+1. creates the run's working configuration,
+   `.runtime/<run-id>/getting-started.yaml`, from the Step 3 configuration plus a
+   `telemetry:` block;
+2. creates a Podman network and the Jaeger, Prometheus, and Grafana containers,
+   labelled as owned by this run;
+3. points Prometheus at Server's management port (`8180`);
+4. waits until all three answer, then prints their links:
+
+```text
+Telemetry backends are ready. Server configuration: …/.runtime/getting-started-cg/getting-started.yaml
+Grafana dashboard: http://127.0.0.1:3000/d/drasi-getting-started
+Jaeger traces:     http://127.0.0.1:16686/search?service=drasi-getting-started
+Prometheus:        http://127.0.0.1:9090/targets
+Next: return to Step 3 and run python3 scripts/demo.py start
+```
+
+This is the block it added to the working configuration:
+
+```yaml
+telemetry:
+  profile: debug
+  inspection:
+    enabled: true
+  tracing:
+    endpoint: http://127.0.0.1:4318/v1/traces
+    protocol: http/protobuf
+    serviceName: drasi-getting-started
+    sampleRatio: 1.0
+  metrics:
+    backend: prometheus
+    processMetrics: true
+    prometheus:
+      path: /metrics
+```
+
+- **`profile`** sets how much detail Server collects. `debug` adds the phases
+  of each query evaluation (`query.evaluate`, `query.commit`, …) to traces. The
+  other profiles are `off`, `basic`, and `persistence`.
+- **`inspection`** turns on the read-only `GET /api/v1/telemetry` endpoint.
+- **`tracing`** sends each trace to Jaeger over OTLP/HTTP. `serviceName` is the
+  name you search for in Jaeger; `sampleRatio: 1.0` keeps every trace.
+- **`metrics`** serves Prometheus metrics at `/metrics` on Server's API port,
+  `8180`. `processMetrics` adds the `process_*` series.
+
+When Server saves your REST changes to the working configuration, it keeps this
+block; it may move it and fill in defaults such as `shutdownTimeoutSeconds`.
+Nothing else in the tutorial changes.
+
+Now [return to Step 3](../#phase-1) and run `python3 scripts/demo.py start`.
+After `READY`, come back for a first look.
+
+## First Look {#first-look}
+
+Check the telemetry settings Server is using:
+
+```bash
+curl --fail-with-body http://127.0.0.1:8180/api/v1/telemetry
+```
+
+The response includes `"profile":"debug"`, `"exportEnabled":true` for tracing,
+and `"backend":"prometheus"` with `"processMetrics":true` for metrics. List the
+metric families Server serves:
+
+```bash
+curl -s http://127.0.0.1:8180/metrics | grep '^# TYPE'
+```
+
+Then open the three links:
+
+- **Prometheus:** the targets page shows the `drasi-server` job as **UP**. Its
+  endpoint, `http://host.containers.internal:8180/metrics`, is how the
+  Prometheus container reaches your machine; that name works only inside the
+  containers, so open `http://127.0.0.1:8180/metrics` instead.
+- **Grafana:** the **Drasi Getting Started telemetry** dashboard shows the
+  last 15 minutes and refreshes every 5 seconds. Its **Server process** row is
+  already filled in; the **Drasi pipeline** row shows `all-messages`.
+- **Jaeger:** choose the service `drasi-getting-started` and **Find Traces**.
+  The traces from startup are already there: a `control.apply` trace for each
+  component Server started, and a `query.bootstrap` trace in which
+  `all-messages` loads the four sample messages, one `process_changes_inner`
+  span per row.
+
+### Reading a trace
+
+| Span | What happened |
+| --- | --- |
+| `source.publish` | A query's input handed it a change. The component is named `__internal/<query id>/input/0`: a helper Server adds inside each query for each of its inputs. `demo.py graph` hides these helpers. |
+| `query.process` | The query processed the change. With `debug`, its children show the phases, such as `query.evaluate` and `query.commit`. |
+| `sink.handle` | The query delivered a result change: once to its own results helper (`__internal/<query id>/results`), and once to each reaction subscribed to it. |
+| `query.bootstrap` | A query loaded its input's current rows when it started. |
+| `component.scheduled` | A timer re-evaluated the query (Step 6). |
+| `control.apply`, `component.start` | Server applied a configuration change and started a component. |
+
+Spans identify components by ID, in the `component_id` attribute. The
+tutorial's IDs are fixed:
+
+| ID | Component |
+| --- | --- |
+| `7d38f9ea-…` | `my-postgres` |
+| `9b42f663-…` | `location-tracker` |
+| `67ff1d64-…` | `all-messages` |
+| `420bc6f5-…` | `hello-world-senders` |
+| `ac1a10bb-…` | `message-counts` |
+| `193fae0b-…` | `inactive-senders` |
+| `1261cc70-…` | `messages-with-location` |
+| `92e8fa7a-…` | `log-reaction` |
+
+The dashboard labels its lines with names: Drasi publishes
+`drasi_component_info`, which maps each `component_id` to its name.
+
+To see a trace in Grafana, copy its trace ID from Jaeger into the
+**Trace ID** box at the top of the dashboard.
+
+## Step 3: Insert, Update, and Delete {#step-3}
+
+Each of [Step 3's](../#phase-1) three SQL commands produces **one trace**:
+
+```text
+source.publish        __internal/67ff1d64-…/input/0
+  query.process       all-messages
+    query.evaluate, query.commit, …
+    sink.handle       __internal/67ff1d64-…/results
+    sink.handle       log-reaction
+```
+
+The whole trace takes a few milliseconds. In Grafana, **Query results emitted**
+shows an `add`, an `update`, and a `delete` for `all-messages`. Try these on
+Prometheus's **Query** page:
+
+```promql
+sum by (change_kind) (drasi_query_results_emitted)
+sum by (phase) (drasi_query_events_processed)
+```
+
+`drasi_query_events_processed` counts the four startup rows under
+`phase="bootstrap"` and each of your changes under `phase="steady"`. Every query
+evaluation is also timed: **Query engine duration** shows its p50 and p95.
+
+## Step 4: Add a Filter {#step-4}
+
+When you add `hello-world-senders` in [Step 4](../#phase-2), Jaeger shows its
+`component.start` traces and a `query.bootstrap` trace in which it loads the four
+current rows of `all-messages`. That is the bootstrap connection `demo.py graph`
+shows. Every per-query panel in Grafana gains a `hello-world-senders` line.
+
+Alice's and Bob's inserts show the step's lesson in their traces:
+
+- **Alice** (`Hello World`): one trace. `query.process hello-world-senders`
+  runs **inside** `query.process all-messages`, because the filter reads that
+  query's output. Both queries end with `sink.handle` for their results helper
+  and for `log-reaction`.
+- **Bob** (`Goodbye World`): `hello-world-senders` processes the change, but its
+  branch ends at `query.process` with **no `sink.handle`**: its result did not
+  change, so there was nothing to deliver.
+
+Your REST changes do not turn telemetry off: the working configuration still
+contains the `telemetry:` block.
+
+## Step 5: Count Messages and Stream Them {#step-5}
+
+After [Step 5](../#phase-3) adds `message-counts`, one trace for Eve's insert
+covers all three queries. While `stream message-counts` runs, the
+`message-counts` branch ends with `sink.handle` for its results helper and for
+`sse-cli-<uuid>`, the CLI's temporary reaction. In **Query results emitted**,
+each count change (2 → 3 → 2) is an `update` of `message-counts`.
+
+Repeat Eve's change while `watch message-counts` runs instead: the
+`message-counts` branch now ends at its results helper only. `watch` attaches to
+the query; it creates no reaction.
+
+## Step 6: Timers {#step-6}
+
+About 20 seconds after you add `inactive-senders` in [Step 6](../#phase-4),
+Jaeger shows one trace per sender with the root span **`component.scheduled`**:
+the timer set by `drasi.trueLater` re-evaluated the query. These traces have no
+`source.publish` because no data changed.
+
+Alice's insert now produces **two traces**. `inactive-senders` reads
+`my-postgres` directly, so it gets its own trace, which removes Alice from its
+result. The other trace is the `all-messages` chain. A query that reads a
+Source directly gets its own trace; a query that reads another query's output
+appears inside that query's trace. Twenty idle seconds later, another
+`component.scheduled` trace adds Alice back.
+
+In Grafana, `inactive-senders` emits an `add` for each sender and a `delete` and
+`add` for Alice, while `drasi_query_events_processed{phase="steady"}` counts only
+Alice's real changes: timer evaluations are not input events.
+
+## Step 7: Join Two Sources {#step-7}
+
+The changes in [Step 7](../#phase-5) arrive from two places:
+
+- **Moving Brian** (HTTP): the trace starts at
+  `__internal/1261cc70-…/input/1`, the join's second input. Only
+  `messages-with-location` processes it.
+- **Carol's message** (SQL): two traces, as in Step 6. In the `all-messages`
+  trace, `messages-with-location` processes the message but delivers nothing,
+  because Carol has no location yet.
+- **Carol's location** (HTTP): the join delivers its `add`.
+- **Carol's new message text** (SQL): the change travels through
+  `all-messages` into the join, which delivers an `update`.
+
+**Source events dispatched** in Grafana counts events handed to each query's
+input helper, so `drasi_source_events_dispatched` for `my-postgres` and
+`location-tracker` themselves stays 0 while the panel's total grows.
+
+## Step 8: Restarts {#step-8}
+
+Each time you stop and start Server in [Step 8](../#phase-6), telemetry comes
+back with it: Server reads the block again at startup. Jaeger and Prometheus
+keep running, so earlier traces and metrics stay available. A new Server
+process restarts **Uptime** and the Drasi counters from zero, so the rate panels
+dip around each restart.
+
+After the durable restart, compare the startup traces in Jaeger with those from
+Step 3: the durable queries resume from their saved positions instead of loading
+every row again, while the in-memory join bootstraps again.
+
+## Things That Look Odd but Are Expected {#oddities}
+
+- **`drasi_reaction_results_processed` stays 0** for both the Log and the SSE
+  reactions: they do not report through the counter Core provides for
+  reactions. The `sink.handle` spans show their deliveries, and the
+  **deliveries** line in **Reaction results and deliveries** counts result
+  changes delivered by each query's results helper.
+- **Prometheus marks Drasi counters "might not be a counter"**: Prometheus 3
+  expects counter names to end in `_total`, and Drasi's do not. The rates are
+  correct.
+- **Grafana cannot search Jaeger traces.** Its Jaeger data source opens a trace
+  by ID but cannot search Jaeger 2.21 or later, so its health check reports
+  `404 Not Found`. Search in the Jaeger UI and paste a trace ID into the
+  dashboard's **Trace ID** box.
+- **`__internal/…` components** appear in Jaeger and in `drasi_component_info`.
+  They are the helpers Server adds inside each query; `demo.py graph` hides them.
+
+## Turn Telemetry Off
+
+Stop Server, then in the working configuration either set `profile: off` or
+delete the `telemetry:` block, and start Server again. If you remove the
+backends but leave telemetry on, Server keeps working; it only logs a
+rate-limited warning when it cannot send traces.
+
+## Stop and Clean Up {#cleanup}
+
+Stop Server and the SSE CLI as described in the tutorial's
+[Stop and Clean Up](../#cleanup). Then remove the backends:
+
+```bash
+python3 scripts/telemetry.py down
+```
+
+This removes only this run's Jaeger, Prometheus, and Grafana containers, with the
+traces and metrics they stored, and its network. It refuses resources it did
+not create and does not touch Server, the database, or the working
+configuration. Clean up the database as usual with
+`python3 scripts/demo.py cleanup`.
+
+`python3 scripts/telemetry.py status` shows whether this run's backends exist.
+Running `up` again later recreates them, with empty history, and keeps the
+working configuration.
+
+These backends are for local development only: Jaeger and Prometheus have no
+authentication, and Grafana lets anyone on your machine view the dashboard.
+They listen only on `127.0.0.1`.

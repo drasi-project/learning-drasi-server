@@ -146,6 +146,10 @@ The `sql` helper sends your SQL to `psql` inside the **owned** container with
 `ON_ERROR_STOP=1`. It also accepts SQL on stdin, which avoids shell quoting
 problems in the exercises below.
 
+**Optional:** to watch Drasi's own traces and metrics while you work through the
+next steps, follow [Watch Drasi's telemetry](telemetry/) now, before you start
+Server in Step 3.
+
 ## Step 3 of 8: Run Your First Drasi Server {#phase-1}
 
 The initial `configs/getting-started-step-3.yaml` declares an instance named

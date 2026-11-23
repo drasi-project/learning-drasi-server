@@ -186,6 +186,30 @@ class TelemetryHelperTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, f"GRAFANA_PORT={busy}"):
                     self.up()
         self.assertEqual(self.created(), [])
+        self.assertFalse(self.config.exists())
+
+    def test_up_refuses_port_used_on_all_interfaces(self):
+        with socket.socket() as listener:
+            listener.bind(("0.0.0.0", 0))
+            listener.listen(1)
+            busy = str(listener.getsockname()[1])
+            otlp, jaeger, prometheus = free_ports(3)
+            with patch.dict(os.environ, {
+                "OTLP_PORT": otlp, "JAEGER_PORT": jaeger,
+                "PROMETHEUS_PORT": prometheus, "GRAFANA_PORT": busy,
+            }), patch.object(demo, "free_port", new=REAL_FREE_PORT):
+                with self.assertRaisesRegex(RuntimeError, f"GRAFANA_PORT={busy}"):
+                    self.up()
+        self.assertEqual(self.created(), [])
+        self.assertFalse(self.config.exists())
+
+    def test_existing_telemetry_config_with_another_otlp_port_is_refused(self):
+        content = "telemetry:\n  tracing:\n    endpoint: http://127.0.0.1:4318/v1/traces\n"
+        self.config.write_text(content)
+        with patch.dict(os.environ, {"OTLP_PORT": "14318"}):
+            with self.assertRaisesRegex(RuntimeError, "OTLP_PORT=14318"):
+                telemetry.prepare_config()
+        self.assertEqual(self.config.read_text(), content)
 
     def test_published_ports_are_loopback_only(self):
         self.up()

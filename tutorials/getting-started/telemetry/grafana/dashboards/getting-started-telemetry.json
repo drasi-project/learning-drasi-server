@@ -229,7 +229,7 @@
       "type": "timeseries",
       "id": 5,
       "title": "Reaction results and deliveries",
-      "description": "drasi_reaction_results_processed counts results a reaction reports through Core's reaction worker; the tutorial's Log reaction does not, so its results are not counted here. The graph's deliveries to reactions (sink.handle, drasi_component_inputs_processed for sinks) show the results reaching them.",
+      "description": "drasi_reaction_results_processed counts results a reaction reports through Core's reaction worker; the tutorial's Log and SSE reactions do not, so their results are not counted here. The graph's deliveries to reactions (sink.handle, drasi_component_inputs_processed for sinks) show the results reaching them.",
       "datasource": {
         "type": "prometheus",
         "uid": "drasi-prometheus"

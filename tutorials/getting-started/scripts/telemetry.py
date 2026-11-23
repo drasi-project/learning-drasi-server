@@ -88,7 +88,14 @@ def telemetry_block():
 def prepare_config():
     path = demo.state() / "getting-started.yaml"
     if path.exists():
-        if re.search(r"^telemetry:", path.read_text(), re.MULTILINE):
+        content = path.read_text()
+        if re.search(r"^telemetry:", content, re.MULTILINE):
+            endpoint = re.search(r"endpoint:\s*['\"]?http://127\.0\.0\.1:(\d+)/v1/traces", content)
+            if endpoint and endpoint.group(1) != os.environ["OTLP_PORT"]:
+                raise RuntimeError(
+                    f"{path} sends traces to port {endpoint.group(1)}, but "
+                    f"OTLP_PORT={os.environ['OTLP_PORT']}. Set OTLP_PORT={endpoint.group(1)} "
+                    "in .env, or stop Server and change the tracing endpoint.")
             return path
         raise RuntimeError(
             f"{path} already exists without telemetry, and Server reads telemetry only at "
@@ -209,7 +216,6 @@ def up():
         raise RuntimeError("Podman is not working (on macOS: podman machine start)") from error
     existing = {service: demo.owned("container", container(service)) for service in SERVICES}
     has_network = owned_network(network())
-    config = prepare_config()
     for service in SERVICES:
         if existing[service]:
             record = json.loads(demo.run(["podman", "container", "inspect", container(service)],
@@ -220,11 +226,16 @@ def up():
     missing = [service for service in SERVICES if not existing[service]]
     for service in missing:
         for key in SERVICE_PORTS[service].values():
+            busy = listening(os.environ[key])
             try:
                 demo.free_port(os.environ[key])
-            except OSError as error:
+            except OSError:
+                busy = True
+            # A bind probe alone misses listeners on 0.0.0.0 or [::] on macOS.
+            if busy:
                 raise RuntimeError(f"{key}={os.environ[key]} is already in use on 127.0.0.1; "
-                                   "set a free port in .env") from error
+                                   "set a free port in .env")
+    config = prepare_config()
     for service in missing:
         if not image_present(IMAGES[service]):
             demo.run(["podman", "pull", IMAGES[service]])
