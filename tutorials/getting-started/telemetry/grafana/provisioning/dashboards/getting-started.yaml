@@ -1,0 +1,15 @@
+# Grafana dashboard provider for the optional Getting Started telemetry page.
+# scripts/telemetry.py mounts grafana/dashboards read-only at
+# /etc/grafana/dashboards and makes getting-started-telemetry.json the home dashboard.
+apiVersion: 1
+
+providers:
+  - name: drasi-getting-started
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/dashboards

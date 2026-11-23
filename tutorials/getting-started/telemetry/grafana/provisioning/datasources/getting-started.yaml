@@ -1,0 +1,22 @@
+# Grafana data sources for the optional Getting Started telemetry page.
+# Both are reached by network alias on the run's own Podman network.
+# No credentials: Prometheus and Jaeger run without authentication here.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: drasi-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s
+      httpMethod: POST
+  - name: Jaeger
+    uid: drasi-jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
