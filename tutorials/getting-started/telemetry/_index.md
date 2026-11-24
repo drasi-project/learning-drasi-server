@@ -1,6 +1,6 @@
 ---
 type: "docs"
-title: "Optional: Watch Drasi's Telemetry"
+title: "Getting Started with Telemetry Enabled"
 linkTitle: "Telemetry"
 weight: 20
 toc_hide: true

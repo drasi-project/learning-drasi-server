@@ -39,6 +39,14 @@ An `inputs` entry names an upstream component, not just a Source. You will
 reuse the `all-messages` query's output for filtering, counting, and joining,
 instead of repeating the message projection or introducing another connector.
 
+{{% alert title="Optional: Follow this tutorial with telemetry enabled" color="info" %}}
+You can watch Drasi Server's traces in Jaeger and its pipeline and process
+metrics in Grafana while you work through this tutorial. After
+[Step 2](#database), follow
+[Getting Started with Telemetry Enabled](telemetry/), then come back to
+[Step 3](#phase-1).
+{{% /alert %}}
+
 ## Step 1 of 8: Set Up Your Environment {#setup}
 
 Use these existing sibling checkouts, on matching branches, in the same parent
@@ -145,10 +153,6 @@ python3 scripts/demo.py sql 'SELECT "MessageId", "From", "Message" FROM "Message
 The `sql` helper sends your SQL to `psql` inside the **owned** container with
 `ON_ERROR_STOP=1`. It also accepts SQL on stdin, which avoids shell quoting
 problems in the exercises below.
-
-**Optional:** to watch Drasi's own traces and metrics while you work through the
-next steps, follow [Watch Drasi's telemetry](telemetry/) now, before you start
-Server in Step 3.
 
 ## Step 3 of 8: Run Your First Drasi Server {#phase-1}
 

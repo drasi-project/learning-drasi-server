@@ -26,6 +26,7 @@ STEP_3 = demo.TUTORIAL / "configs/getting-started-step-3.yaml"
 DEFAULT_PORTS = {"OTLP_PORT": "4318", "JAEGER_PORT": "16686",
                  "PROMETHEUS_PORT": "9090", "GRAFANA_PORT": "3000"}
 REAL_FREE_PORT = demo.free_port
+REAL_LISTENING = telemetry.listening
 
 
 class TelemetryAssetTests(unittest.TestCase):
@@ -86,6 +87,7 @@ class TelemetryHelperTests(unittest.TestCase):
             patch.object(telemetry, "image_present", return_value=True),
             patch.object(telemetry, "wait_ready"),
             patch.object(telemetry, "wait_closed"),
+            patch.object(telemetry, "listening", return_value=False),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -182,7 +184,8 @@ class TelemetryHelperTests(unittest.TestCase):
             with patch.dict(os.environ, {
                 "OTLP_PORT": otlp, "JAEGER_PORT": jaeger,
                 "PROMETHEUS_PORT": prometheus, "GRAFANA_PORT": busy,
-            }), patch.object(demo, "free_port", new=REAL_FREE_PORT):
+            }), patch.object(demo, "free_port", new=REAL_FREE_PORT), patch.object(
+                telemetry, "listening", new=REAL_LISTENING):
                 with self.assertRaisesRegex(RuntimeError, f"GRAFANA_PORT={busy}"):
                     self.up()
         self.assertEqual(self.created(), [])
@@ -197,7 +200,8 @@ class TelemetryHelperTests(unittest.TestCase):
             with patch.dict(os.environ, {
                 "OTLP_PORT": otlp, "JAEGER_PORT": jaeger,
                 "PROMETHEUS_PORT": prometheus, "GRAFANA_PORT": busy,
-            }), patch.object(demo, "free_port", new=REAL_FREE_PORT):
+            }), patch.object(demo, "free_port", new=REAL_FREE_PORT), patch.object(
+                telemetry, "listening", new=REAL_LISTENING):
                 with self.assertRaisesRegex(RuntimeError, f"GRAFANA_PORT={busy}"):
                     self.up()
         self.assertEqual(self.created(), [])
