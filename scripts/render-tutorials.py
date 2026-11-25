@@ -25,8 +25,15 @@ Markdown.
 Source of truth:   tutorials/<name>/_index.md   (shortcodes, used by doc site)
 Generated output:  tutorials/<name>/README.md   (plain Markdown, shown on GitHub)
 
+A tutorial may also have variant pages: tutorials/<name>/<variant>/additions.md.in
+holds the variant's front matter and blocks marked
+``<!-- telemetry: before|after #heading-id -->``. The script composes
+tutorials/<name>/<variant>/_index.md from the main ``_index.md`` plus those
+blocks, dropping main content between ``<!-- telemetry-variant: omit -->`` and
+``<!-- /telemetry-variant: omit -->``.
+
 Usage:
-    python3 scripts/render-tutorials.py          # write README.md files
+    python3 scripts/render-tutorials.py          # write generated files
     python3 scripts/render-tutorials.py --check   # fail if any are stale
 """
 
@@ -213,6 +220,106 @@ def render(source: str) -> str:
     return GENERATED_BANNER + out.lstrip("\n")
 
 
+# --- Variant pages -------------------------------------------------------
+# tutorials/<name>/<variant>/additions.md.in + tutorials/<name>/_index.md
+# -> tutorials/<name>/<variant>/_index.md (the whole tutorial plus additions).
+
+VARIANT_SOURCE = "additions.md.in"
+VARIANT_BANNER = (
+    "<!-- DO NOT EDIT. Generated from ../_index.md and additions.md.in by "
+    "scripts/render-tutorials.py. -->\n"
+)
+_VARIANT_MARKER_RE = re.compile(
+    r"^<!-- telemetry: (before|after) #([\w-]+) -->[ \t]*\n?", re.MULTILINE
+)
+_OMIT_RE = re.compile(
+    r"^<!-- telemetry-variant: omit -->[ \t]*\n.*?^<!-- /telemetry-variant: omit -->[ \t]*\n?",
+    re.DOTALL | re.MULTILINE,
+)
+_OMIT_MARKER_RE = re.compile(r"<!-- /?telemetry-variant: omit -->")
+_ID_HEADING_RE = re.compile(r"^#{1,6} .*\{#(?P<id>[\w-]+)\}\s*$")
+# Relative to the tutorial page; one folder deeper in the variant.
+_RELATIVE_LINK_RE = re.compile(r"\]\((?!#|/|\.\./|https?://|mailto:)([^)\s]+)\)")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def _split_front_matter(source: str) -> tuple[str, str]:
+    match = _FRONT_MATTER_RE.match(source)
+    return (match.group(0), source[match.end():]) if match else ("", source)
+
+
+def _rewrite_relative_links(body: str) -> str:
+    out: list[str] = []
+    fenced = False
+    for line in body.splitlines(keepends=True):
+        if _FENCE_RE.match(line):
+            fenced = not fenced
+        elif not fenced:
+            line = _RELATIVE_LINK_RE.sub(r"](../\1)", line)
+        out.append(line)
+    return "".join(out)
+
+
+def compose_variant(main_source: str, additions: str) -> str:
+    front, rest = _split_front_matter(additions)
+    parts = _VARIANT_MARKER_RE.split(rest)
+    top = parts[0].strip("\n")
+    blocks = [(parts[i], parts[i + 1], parts[i + 2].strip("\n"))
+              for i in range(1, len(parts), 3)]
+
+    body = _OMIT_RE.sub("", _split_front_matter(main_source)[1])
+    if _OMIT_MARKER_RE.search(body):
+        raise ValueError("Unmatched telemetry-variant omit marker in the main tutorial page")
+    body = _rewrite_relative_links(body).lstrip("\n")
+    if not body.endswith("\n"):
+        body += "\n"
+    lines = body.splitlines(keepends=True)
+
+    # Positions come from the main text only, so headings inside inserted
+    # blocks never move a later anchor.
+    anchors: dict[str, int] = {}
+    sections: list[int] = []
+    fenced = False
+    for index, line in enumerate(lines):
+        if _FENCE_RE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        match = _ID_HEADING_RE.match(line)
+        if match:
+            anchors[match.group("id")] = index
+        if line.startswith("## "):
+            sections.append(index)
+
+    inserts: dict[int, list[str]] = {}
+    for where, anchor, text in blocks:
+        if anchor not in anchors:
+            raise ValueError(f"Variant anchor #{anchor} not found in the main tutorial page")
+        index = anchors[anchor]
+        if where == "after":
+            index = next((start for start in sections if start > index), len(lines))
+        inserts.setdefault(index, []).append(text)
+
+    out: list[str] = [front, VARIANT_BANNER, "\n"]
+    if top:
+        out.append(top + "\n\n")
+    for index in range(len(lines) + 1):
+        for text in inserts.get(index, []):
+            if not "".join(out[-2:]).endswith("\n\n"):
+                out.append("\n")
+            out.append(text + "\n\n")
+        if index < len(lines):
+            out.append(lines[index])
+    return "".join(out).rstrip("\n") + "\n"
+
+
+def iter_variants() -> list[Path]:
+    if not TUTORIALS_DIR.is_dir():
+        return []
+    return sorted(TUTORIALS_DIR.glob(f"*/*/{VARIANT_SOURCE}"))
+
+
 def iter_sources() -> list[Path]:
     if not TUTORIALS_DIR.is_dir():
         return []
@@ -224,7 +331,7 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Verify generated READMEs are up to date; do not write.",
+        help="Verify generated files are up to date; do not write.",
     )
     args = parser.parse_args()
 
@@ -234,9 +341,20 @@ def main() -> int:
         return 0
 
     stale: list[Path] = []
-    for source in sources:
-        target = source.with_name("README.md")
-        expected = render(source.read_text(encoding="utf-8"))
+    outputs = [(source.with_name("README.md"),
+                lambda source=source: render(source.read_text(encoding="utf-8")))
+               for source in sources]
+    outputs += [(additions.with_name("_index.md"),
+                 lambda additions=additions: compose_variant(
+                     (additions.parent.parent / "_index.md").read_text(encoding="utf-8"),
+                     additions.read_text(encoding="utf-8")))
+                for additions in iter_variants()]
+    for target, build in outputs:
+        try:
+            expected = build()
+        except ValueError as error:
+            print(f"{target.relative_to(REPO_ROOT)}: {error}", file=sys.stderr)
+            return 1
         current = target.read_text(encoding="utf-8") if target.exists() else None
 
         if args.check:
@@ -252,7 +370,7 @@ def main() -> int:
 
     if args.check and stale:
         print(
-            "The following generated READMEs are out of date:\n"
+            "The following generated files are out of date:\n"
             + "\n".join(f"  - {p.relative_to(REPO_ROOT)}" for p in stale)
             + "\n\nRun `python3 scripts/render-tutorials.py` and commit the result.",
             file=sys.stderr,

@@ -32,6 +32,14 @@ An `inputs` entry names an upstream component, not just a Source. You will
 reuse the `all-messages` query's output for filtering, counting, and joining,
 instead of repeating the message projection or introducing another connector.
 
+<!-- telemetry-variant: omit -->
+> **Optional: Follow this tutorial with telemetry enabled**
+>
+> Prefer to watch Drasi Server's traces in Jaeger and its metrics in Grafana as you
+> go? Follow [Getting Started with Telemetry Enabled](telemetry/) instead: it is
+> this tutorial with the telemetry steps added.
+<!-- /telemetry-variant: omit -->
+
 ## Step 1 of 8: Set Up Your Environment
 Use these existing sibling checkouts, on matching branches, in the same parent
 directory:
@@ -235,7 +243,8 @@ The same requests are in `requests.http` for VS Code's REST Client extension.
 
 ### Cause an insert, update, and delete
 
-In **Terminal 2**, insert your first message:
+In **Terminal 2**, from `learning-drasi-server/tutorials/getting-started` (like
+every command in this tutorial), insert your first message:
 
 ```bash
 python3 scripts/demo.py sql <<'SQL'
